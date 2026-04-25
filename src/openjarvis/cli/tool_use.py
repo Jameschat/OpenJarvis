@@ -215,23 +215,94 @@ _TOOL_DISPATCH = {
 }
 
 
-def _run_tool(name: str, arguments_json: str) -> str:
-    fn = _TOOL_DISPATCH.get(name)
-    if fn is None:
+# ---------------------------------------------------------------------------
+# Bridge to the Agno-style ToolRegistry — exposes a curated whitelist of
+# voice-friendly tools (apps, media, weather, crypto, etc.) to gpt-4o-mini.
+#
+# Excluded by design: shell_exec, browser_*, apply_patch, file_write,
+# git_commit, code_interpreter — those have side effects that should be
+# agent-dispatched (with the user's explicit "spin up an agent to..." voice
+# command), not chosen autonomously by an LLM mid-conversation.
+# ---------------------------------------------------------------------------
+
+_AGNO_TOOL_WHITELIST = (
+    "weather", "crypto", "calculator", "app_launcher",
+    "music_control", "hue_lights", "lutron", "sonos", "calendar",
+)
+
+_agno_loaded = False
+_agno_schemas: List[Dict[str, Any]] = []
+_agno_instances: Dict[str, Any] = {}
+
+
+def _load_agno_tools() -> None:
+    """Instantiate whitelisted Agno tools once, cache schemas + instances."""
+    global _agno_loaded
+    if _agno_loaded:
+        return
+    _agno_loaded = True
+    try:
+        import openjarvis.tools  # noqa: F401  — triggers @register decorators
+        from openjarvis.core.registry import ToolRegistry
+    except Exception as exc:
+        logger.warning("tool-use: agno bridge import failed: %s", exc)
+        return
+    for name in _AGNO_TOOL_WHITELIST:
+        try:
+            if not ToolRegistry.contains(name):
+                continue
+            cls_or_inst = ToolRegistry.get(name)
+            inst = cls_or_inst() if isinstance(cls_or_inst, type) else cls_or_inst
+            schema = inst.to_openai_function()
+            _agno_schemas.append(schema)
+            _agno_instances[schema["function"]["name"]] = inst
+        except Exception as exc:
+            logger.warning("tool-use: agno tool '%s' load failed: %s", name, exc)
+    if _agno_instances:
+        logger.info("tool-use: loaded %d agno tools (%s)",
+                    len(_agno_instances), ", ".join(_agno_instances.keys()))
+
+
+def _run_agno_tool(name: str, args: dict) -> str:
+    inst = _agno_instances.get(name)
+    if inst is None:
         return json.dumps({"error": f"unknown tool '{name}'"})
+    try:
+        result = inst.execute(**args)
+    except TypeError as exc:
+        return json.dumps({"error": f"bad arguments: {exc}"})
+    except Exception as exc:
+        logger.exception("agno tool '%s' raised", name)
+        return json.dumps({"error": str(exc)})
+    content = getattr(result, "content", None)
+    success = getattr(result, "success", True)
+    if isinstance(content, (dict, list)):
+        return json.dumps({"ok": success, "result": content})
+    return json.dumps({"ok": success, "result": str(content) if content is not None else ""})
+
+
+def _run_tool(name: str, arguments_json: str) -> str:
     try:
         args = json.loads(arguments_json or "{}")
     except json.JSONDecodeError as exc:
         return json.dumps({"error": f"bad arguments json: {exc}"})
     if not isinstance(args, dict):
         return json.dumps({"error": "arguments must be a JSON object"})
-    try:
-        return fn(**args)
-    except TypeError as exc:
-        return json.dumps({"error": f"bad arguments: {exc}"})
-    except Exception as exc:
-        logger.exception("tool '%s' raised", name)
-        return json.dumps({"error": str(exc)})
+
+    fn = _TOOL_DISPATCH.get(name)
+    if fn is not None:
+        try:
+            return fn(**args)
+        except TypeError as exc:
+            return json.dumps({"error": f"bad arguments: {exc}"})
+        except Exception as exc:
+            logger.exception("tool '%s' raised", name)
+            return json.dumps({"error": str(exc)})
+
+    if name in _agno_instances:
+        return _run_agno_tool(name, args)
+
+    return json.dumps({"error": f"unknown tool '{name}'"})
 
 
 # ---------------------------------------------------------------------------
@@ -253,6 +324,8 @@ def generate_with_tools(messages: Sequence, fallback_engine: Any = None,
         return generate_fallback(messages, fallback_engine=fallback_engine,
                                  fallback_model=fallback_model)
 
+    _load_agno_tools()
+    all_tools = TOOL_SCHEMAS + _agno_schemas
     msgs = list(_messages_to_openai(messages))
 
     try:
@@ -260,7 +333,7 @@ def generate_with_tools(messages: Sequence, fallback_engine: Any = None,
             resp = client.chat.completions.create(
                 model=DEFAULT_OPENAI_MODEL,
                 messages=msgs,
-                tools=TOOL_SCHEMAS,
+                tools=all_tools,
                 tool_choice="auto",
                 max_tokens=MAX_OUTPUT_TOKENS,
                 temperature=0.7,
