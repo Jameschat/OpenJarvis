@@ -63,6 +63,7 @@ logger = logging.getLogger(__name__)
 ROOT = Path.home() / ".openjarvis" / "agents"
 STATE_FILE = ROOT / "state.json"
 RUNS_DIR = ROOT / "runs"
+PROJECTS_DIR = ROOT / "projects"
 TICK_INTERVAL = 2.0  # seconds between worker iterations
 
 # Default model used when we ask claude-code to run a task. The Claude CLI
@@ -232,6 +233,12 @@ class Task:
     exit_code: Optional[int] = None
     workspace: Optional[str] = None
     error: Optional[str] = None
+    # Optional project handle. When set, this task and any other task with
+    # the same project_id share a workspace at ``PROJECTS_DIR/<project_id>/``
+    # so an architect-led team can pass files between agents (PLAN.md,
+    # code, etc). When None, the task gets a fresh isolated workspace at
+    # ``RUNS_DIR/<task.id>/``.
+    project_id: Optional[str] = None
 
 
 @dataclass
@@ -377,15 +384,18 @@ class _Registry:
 
     # ----- mutators -----
 
-    def add_task(self, title: str, agent_id: str, prompt: str) -> str:
+    def add_task(self, title: str, agent_id: str, prompt: str,
+                 project_id: Optional[str] = None) -> str:
         if agent_id not in self.stats:
             raise ValueError(f"unknown agent: {agent_id}")
         tid = "t_" + uuid.uuid4().hex[:10]
-        task = Task(id=tid, title=title, agent_id=agent_id, prompt=prompt)
+        task = Task(id=tid, title=title, agent_id=agent_id, prompt=prompt,
+                    project_id=project_id)
         with self._lock:
             self.tasks[tid] = task
             self._save_unlocked()
-        logger.info("agent_runner: queued task %s for %s", tid, agent_id)
+        logger.info("agent_runner: queued task %s for %s%s", tid, agent_id,
+                    f" (project={project_id})" if project_id else "")
         return tid
 
     def next_ready_task(self) -> Optional[Task]:
@@ -983,12 +993,25 @@ def _run_task(task: Task) -> None:
             _reg.mark_finished(task.id, exit_code=-1, error="claude CLI not found on PATH")
             return
 
-    # Workspace: timestamped folder per task, so writes don't collide
-    ws = RUNS_DIR / task.id
-    ws.mkdir(parents=True, exist_ok=True)
-    (ws / "prompt.txt").write_text(task.prompt, encoding="utf-8")
-    stdout_log = ws / "stdout.log"
-    stderr_log = ws / "stderr.log"
+    # Workspace: project-scoped (shared across tasks with the same
+    # project_id, so an architect's PLAN.md is readable by backend-dev) or
+    # isolated per-task (default).
+    if task.project_id:
+        ws = PROJECTS_DIR / task.project_id
+        ws.mkdir(parents=True, exist_ok=True)
+        # Namespace the per-task artifacts so concurrent tasks (if ever
+        # >1) don't clobber each other's prompt/log files. Code, PLAN.md
+        # etc. that the agents create live at the project root and are
+        # shared by design.
+        (ws / "prompt.txt").write_text(task.prompt, encoding="utf-8")
+        stdout_log = ws / f"{task.id}.stdout.log"
+        stderr_log = ws / f"{task.id}.stderr.log"
+    else:
+        ws = RUNS_DIR / task.id
+        ws.mkdir(parents=True, exist_ok=True)
+        (ws / "prompt.txt").write_text(task.prompt, encoding="utf-8")
+        stdout_log = ws / "stdout.log"
+        stderr_log = ws / "stderr.log"
 
     # Prepend the agent's role as system instructions
     role = agent_spec["role"] if agent_spec else ""
@@ -1236,9 +1259,17 @@ def stop_worker() -> None:
 # ---------------------------------------------------------------------------
 
 
-def add_task(title: str, agent_id: str, prompt: Optional[str] = None) -> str:
-    """Queue a task. ``prompt`` defaults to ``title`` if not supplied."""
-    return _reg.add_task(title=title, agent_id=agent_id, prompt=prompt or title)
+def add_task(title: str, agent_id: str, prompt: Optional[str] = None,
+             project_id: Optional[str] = None) -> str:
+    """Queue a task. ``prompt`` defaults to ``title`` if not supplied.
+
+    If ``project_id`` is set, the task shares a workspace at
+    ``~/.openjarvis/agents/projects/<project_id>/`` with any other task
+    using the same id. Use this when an architect-led team needs to pass
+    files (PLAN.md, source code, test results) between agents.
+    """
+    return _reg.add_task(title=title, agent_id=agent_id,
+                         prompt=prompt or title, project_id=project_id)
 
 
 def cancel_task(task_id: str) -> bool:
