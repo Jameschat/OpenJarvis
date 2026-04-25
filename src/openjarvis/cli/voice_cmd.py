@@ -1281,7 +1281,14 @@ def voice(
         system_with_vault = persona if not vault_ctx else (persona + "\n\n" + vault_ctx)
 
         try:
-            if agent is not None:
+            # Prefer the OpenAI tool-use path when available — it has
+            # vault recall, vault write, agent dispatch, agent listing as
+            # native function calls. The legacy Agno agent (apps, media,
+            # weather, crypto tools) is still used for local-engine users.
+            from openjarvis.cli.llm_fallback import _get_openai_client
+            use_openai_tools = _get_openai_client() is not None
+
+            if agent is not None and not use_openai_tools:
                 # If the agent supports a system_prompt override, use it; else
                 # prepend the vault context to the user message so the agent
                 # still sees it.
@@ -1453,7 +1460,13 @@ def voice(
 
         history.append(Message(role=Role.USER, content=text))
         try:
-            if agent is not None:
+            # Prefer the OpenAI tool-use path when available (vault recall,
+            # vault write, agent dispatch). Legacy Agno agent stays for
+            # local-engine users.
+            from openjarvis.cli.llm_fallback import _get_openai_client
+            use_openai_tools = _get_openai_client() is not None
+
+            if agent is not None and not use_openai_tools:
                 response = agent.run(text if not vault_ctx else f"{vault_ctx}\n\nUser: {text}")
                 content = (
                     response.content
