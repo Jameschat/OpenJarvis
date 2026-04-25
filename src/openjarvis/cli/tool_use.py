@@ -42,6 +42,35 @@ logger = logging.getLogger(__name__)
 MAX_TOOL_ITERATIONS = 8
 
 
+# Addendum spliced in front of the operator's persona for tool-use turns.
+# The voice persona insists on 1-3 sentence responses with no markdown —
+# correct for chitchat, wrong for "research X then dispatch Y" requests
+# that need the model to actually use its tools instead of describing
+# what it would do. This addendum explicitly overrides the brevity rule
+# for the planning/tool-calling phase while preserving it for the final
+# spoken reply.
+_TOOL_USE_ADDENDUM = """\
+TOOL-USE MODE
+=============
+You have native function-calling tools available. ACT first, summarise after.
+
+Rules:
+- For any request that involves looking something up, saving information, \
+dispatching agents, or controlling devices: CALL THE RELEVANT TOOL. Do not \
+describe what you would do — do it.
+- Chain tools freely when a request needs multiple steps (e.g. web_search \
+then fetch_url on the best hit then remember_fact then dispatch_agent).
+- The brevity rule (1-3 sentences, no markdown) applies ONLY to the FINAL \
+spoken reply after tools have run. Until then, drive the work to completion.
+- For multi-agent project work, pass the same project_id to every \
+dispatch_agent call so they share a workspace and leave a vault trail.
+- When you cite a fact you looked up, mention the source briefly so the \
+operator knows where it came from.
+- Failure of one tool does not mean give up — try an alternative or report \
+specifically what went wrong.\
+"""
+
+
 # ---------------------------------------------------------------------------
 # Tool schemas (OpenAI chat-completions tool format)
 # ---------------------------------------------------------------------------
@@ -613,6 +642,19 @@ def generate_with_tools(messages: Sequence, fallback_engine: Any = None,
     _load_agno_tools()
     all_tools = TOOL_SCHEMAS + _agno_schemas
     msgs = list(_messages_to_openai(messages))
+    # Splice the tool-use addendum in as a SYSTEM message right before the
+    # last user turn. Placing it close to the user message gives it more
+    # weight than the persona block at the start (which the voice model
+    # may otherwise interpret as 'always answer in 1-3 sentences').
+    last_user_idx = next(
+        (i for i in range(len(msgs) - 1, -1, -1) if msgs[i].get("role") == "user"),
+        None,
+    )
+    addendum = {"role": "system", "content": _TOOL_USE_ADDENDUM}
+    if last_user_idx is None:
+        msgs.append(addendum)
+    else:
+        msgs.insert(last_user_idx, addendum)
 
     try:
         for iteration in range(MAX_TOOL_ITERATIONS):

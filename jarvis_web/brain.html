@@ -3631,7 +3631,9 @@ async function sendChat() {
   logEvent('voice', ' chat: ' + (text.slice(0, 80) || '[' + payload.files.length + ' files]'));
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort('client-timeout'), 90000);
+  // 180s — multi-tool LLM loops (web_search + 3 fetch_url + recall +
+  // dispatch + reply + TTS) routinely take 60-120s. 90s was too tight.
+  const timeoutId = setTimeout(() => controller.abort('client-timeout'), 180000);
   try {
     const params = new URLSearchParams(window.location.search);
     const host = params.get('host') || window.location.host || 'localhost:7710';
