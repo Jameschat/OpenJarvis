@@ -22,6 +22,38 @@ def _read_input(prompt: str = "You> ") -> Optional[str]:
         return None
 
 
+def _init_voice_components(config, console: Console):
+    """Lazy-init mic, STT, and TTS for /voice toggle. Returns (mic, stt, tts) or None."""
+    try:
+        from openjarvis.speech.microphone import Microphone
+
+        mic = Microphone()
+    except ImportError:
+        console.print(
+            "[red]sounddevice not installed.[/red] Run: uv sync --extra voice"
+        )
+        return None
+
+    from openjarvis.speech._discovery import get_speech_backend
+
+    stt = get_speech_backend(config)
+    if stt is None:
+        console.print(
+            "[red]No STT backend available.[/red] "
+            "Set OPENAI_API_KEY or run: uv sync --extra speech"
+        )
+        return None
+
+    console.print("[dim]Calibrating mic (stay quiet for 2 seconds)...[/dim]")
+    threshold = mic.calibrate(duration=2.0, multiplier=5.0)
+    console.print(f"[dim]Silence threshold: {threshold:.0f}[/dim]")
+
+    from openjarvis.cli.voice_cmd import _get_tts_backend
+
+    tts = _get_tts_backend(config)
+    return mic, stt, tts, threshold
+
+
 @click.command()
 @click.option("-e", "--engine", "engine_key", default=None, help="Engine backend.")
 @click.option("-m", "--model", "model_name", default=None, help="Model to use.")
@@ -41,6 +73,7 @@ def chat(
       /quit, /exit  — end session
       /clear        — clear conversation history
       /model        — show current model
+      /voice        — toggle voice input/output
       /help         — show available commands
       /history      — show conversation history
     """
@@ -138,12 +171,24 @@ def chat(
     if system_prompt:
         history.append(Message(role=Role.SYSTEM, content=system_prompt))
 
+    # Voice mode state (lazy-initialized on /voice)
+    voice_mode = False
+    voice_components = None  # (mic, stt, tts) tuple
+
     # REPL loop
     while True:
-        user_input = _read_input()
-        if user_input is None:
-            console.print("\n[dim]Goodbye![/dim]")
-            break
+        if voice_mode and voice_components:
+            mic, stt, _tts, _threshold = voice_components
+            from openjarvis.cli.voice_cmd import _voice_input
+
+            user_input = _voice_input(mic, stt, console, _threshold)
+            if user_input is None:
+                continue
+        else:
+            user_input = _read_input()
+            if user_input is None:
+                console.print("\n[dim]Goodbye![/dim]")
+                break
 
         user_input = user_input.strip()
         if not user_input:
@@ -165,12 +210,26 @@ def chat(
                 f"Model: [cyan]{model}[/cyan]  Engine: [cyan]{engine_name}[/cyan]"
             )
             continue
+        elif cmd == "/voice":
+            if not voice_mode:
+                if voice_components is None:
+                    result = _init_voice_components(config, console)
+                    if result is None:
+                        continue
+                    voice_components = result
+                voice_mode = True
+                console.print("[green]Voice mode ON[/green] — speak into your mic.")
+            else:
+                voice_mode = False
+                console.print("[yellow]Voice mode OFF[/yellow] — back to text input.")
+            continue
         elif cmd == "/help":
             console.print(
                 "[bold]Commands:[/bold]\n"
                 "  /quit, /exit  — end session\n"
                 "  /clear        — clear conversation\n"
                 "  /model        — show model info\n"
+                "  /voice        — toggle voice input/output\n"
                 "  /history      — show conversation\n"
                 "  /help         — this message"
             )
@@ -184,6 +243,10 @@ def chat(
                     role = role_str.upper()
                     console.print(f"[bold]{role}:[/bold] {msg.content[:200]}")
             continue
+
+        # In voice mode, print what was transcribed
+        if voice_mode:
+            console.print(f"[bold]You>[/bold] {user_input}")
 
         # Add user message
         history.append(Message(role=Role.USER, content=user_input))
@@ -207,6 +270,15 @@ def chat(
             console.print()
             console.print(Markdown(content))
             console.print()
+
+            # Speak response in voice mode
+            if voice_mode and voice_components:
+                _mic, _stt, tts, _thr = voice_components
+                if tts and content:
+                    from openjarvis.cli.voice_cmd import _speak_response
+
+                    _speak_response(content, tts, config)
+
         except KeyboardInterrupt:
             console.print("\n[dim]Generation interrupted.[/dim]")
         except Exception as exc:
