@@ -1296,9 +1296,9 @@ def voice(
                     Message(role=Role.SYSTEM, content=system_with_vault),
                     Message(role=Role.USER, content=text),
                 ]
-                from openjarvis.cli.llm_fallback import generate_fallback
-                return generate_fallback(messages, fallback_engine=engine,
-                                          fallback_model=model)
+                from openjarvis.cli.tool_use import generate_with_tools
+                return generate_with_tools(messages, fallback_engine=engine,
+                                           fallback_model=model)
         except Exception as exc:
             return f"Error, sir: {exc}"
 
@@ -1472,9 +1472,9 @@ def voice(
                     ]
                 else:
                     msgs_for_engine = history
-                from openjarvis.cli.llm_fallback import generate_fallback
-                content = generate_fallback(msgs_for_engine, fallback_engine=engine,
-                                             fallback_model=model)
+                from openjarvis.cli.tool_use import generate_with_tools
+                content = generate_with_tools(msgs_for_engine, fallback_engine=engine,
+                                              fallback_model=model)
 
             history.append(Message(role=Role.ASSISTANT, content=content))
             console.print()
