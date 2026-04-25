@@ -22,7 +22,7 @@ from openjarvis.cli import unifi_bridge
 
 logger = logging.getLogger(__name__)
 
-_WEB_DIR = Path(__file__).resolve().parent.parent.parent.parent / "kitt_web"
+_WEB_DIR = Path(__file__).resolve().parent.parent.parent.parent / "jarvis_web"
 _PORT = 7710
 
 
