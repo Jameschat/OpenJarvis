@@ -17,10 +17,13 @@ Public surface:
 
 from __future__ import annotations
 
+import html
 import json
 import logging
 import os
+import re
 from typing import Any, Dict, List, Optional, Sequence
+from urllib.parse import quote_plus
 
 from openjarvis.cli.llm_fallback import (
     DEFAULT_OPENAI_MODEL,
@@ -34,7 +37,9 @@ logger = logging.getLogger(__name__)
 
 # Cap loop iterations so a misbehaving model can't burn budget. Each
 # iteration is one round-trip to gpt-4o-mini plus zero or more tool runs.
-MAX_TOOL_ITERATIONS = 4
+# 8 is enough for "search → fetch → recall → dispatch → reply" chains
+# while still bounding a runaway loop to ~30s and ~$0.05.
+MAX_TOOL_ITERATIONS = 8
 
 
 # ---------------------------------------------------------------------------
@@ -121,7 +126,9 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
                 "its own workspace and writes a session note when complete. Use "
                 "for substantive work like 'spin up an agent to research X' or "
                 "'have the architect plan Y'. The operator does NOT need to "
-                "wait for completion — confirm dispatch and move on."
+                "wait for completion — confirm dispatch and move on. Pass the "
+                "same project_id to multiple dispatches when they should share "
+                "files (e.g. an architect's PLAN.md read by backend-dev)."
             ),
             "parameters": {
                 "type": "object",
@@ -138,8 +145,65 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
                         "type": "string",
                         "description": "Short label (~60 chars) for the task in the HUD.",
                     },
+                    "project_id": {
+                        "type": "string",
+                        "description": (
+                            "Optional project handle (e.g. 'tiktok-poster'). Tasks "
+                            "with the same project_id share a workspace so they can "
+                            "pass files. Use lowercase-hyphenated. Omit for one-off tasks."
+                        ),
+                    },
                 },
                 "required": ["agent", "prompt", "title"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "web_search",
+            "description": (
+                "Search the public web via DuckDuckGo. Returns a list of "
+                "{title, url, snippet} hits. Use for current events, "
+                "documentation lookups, library comparisons, or any factual "
+                "question whose answer might post-date training. Follow up "
+                "with fetch_url(url) to read promising results in full."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Search query."},
+                    "limit": {
+                        "type": "integer",
+                        "description": "Max results to return (default 5, cap 10).",
+                        "default": 5,
+                    },
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "fetch_url",
+            "description": (
+                "Download a URL and return the readable text content with "
+                "HTML stripped. Capped at ~8000 characters. Use after "
+                "web_search to read a promising hit, or directly when given "
+                "a URL by the operator."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "description": "Absolute http(s) URL to fetch."},
+                    "max_chars": {
+                        "type": "integer",
+                        "description": "Max characters of body text to return (default 8000, cap 20000).",
+                        "default": 8000,
+                    },
+                },
+                "required": ["url"],
             },
         },
     },
@@ -194,7 +258,8 @@ def _tool_list_agents() -> str:
     return json.dumps({"agents": roster})
 
 
-def _tool_dispatch_agent(agent: str, prompt: str, title: str) -> str:
+def _tool_dispatch_agent(agent: str, prompt: str, title: str,
+                         project_id: Optional[str] = None) -> str:
     from openjarvis.tools import agent_runner
     valid_ids = {a["id"] for a in agent_runner.list_agents()}
     if agent not in valid_ids:
@@ -203,8 +268,107 @@ def _tool_dispatch_agent(agent: str, prompt: str, title: str) -> str:
             "error": f"unknown agent '{agent}'",
             "valid": sorted(valid_ids),
         })
-    task_id = agent_runner.add_task(title=title[:80], agent_id=agent, prompt=prompt)
-    return json.dumps({"ok": True, "task_id": task_id, "agent": agent})
+    pid = (project_id or "").strip().lower() or None
+    if pid:
+        # Defensive — keep project ids filesystem-safe
+        pid = re.sub(r"[^a-z0-9._-]+", "-", pid).strip("-") or None
+    task_id = agent_runner.add_task(title=title[:80], agent_id=agent,
+                                    prompt=prompt, project_id=pid)
+    return json.dumps({
+        "ok": True,
+        "task_id": task_id,
+        "agent": agent,
+        "project_id": pid,
+    })
+
+
+# ---------------------------------------------------------------------------
+# Web tools — DuckDuckGo HTML + plain GET, no API keys
+# ---------------------------------------------------------------------------
+
+_DDG_HTML_URL = "https://html.duckduckgo.com/html/"
+_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+)
+_TAG_RE = re.compile(r"<[^>]+>")
+_WS_RE = re.compile(r"\s+")
+_RESULT_RE = re.compile(
+    r'<a[^>]+class="[^"]*result__a[^"]*"[^>]+href="([^"]+)"[^>]*>(.*?)</a>'
+    r'.*?<a[^>]+class="[^"]*result__snippet[^"]*"[^>]*>(.*?)</a>',
+    re.DOTALL,
+)
+
+
+def _strip_html(text: str) -> str:
+    text = _TAG_RE.sub(" ", text)
+    text = html.unescape(text)
+    return _WS_RE.sub(" ", text).strip()
+
+
+def _tool_web_search(query: str, limit: int = 5) -> str:
+    try:
+        import httpx
+    except Exception as exc:
+        return json.dumps({"error": f"httpx unavailable: {exc}"})
+    limit = max(1, min(int(limit or 5), 10))
+    try:
+        with httpx.Client(timeout=12.0, follow_redirects=True,
+                          headers={"User-Agent": _USER_AGENT}) as client:
+            resp = client.post(_DDG_HTML_URL, data={"q": query})
+            resp.raise_for_status()
+            body = resp.text
+    except Exception as exc:
+        return json.dumps({"error": f"search failed: {exc}"})
+    hits = []
+    for m in _RESULT_RE.finditer(body):
+        url = html.unescape(m.group(1))
+        # DDG wraps real URLs in /l/?uddg=...
+        if "uddg=" in url:
+            from urllib.parse import parse_qs, urlparse, unquote
+            qs = parse_qs(urlparse(url).query)
+            url = unquote(qs.get("uddg", [url])[0])
+        title = _strip_html(m.group(2))
+        snippet = _strip_html(m.group(3))
+        if not url or not title:
+            continue
+        hits.append({"title": title, "url": url, "snippet": snippet[:280]})
+        if len(hits) >= limit:
+            break
+    if not hits:
+        return json.dumps({"hits": [], "note": "no results (DDG may have rate-limited)"})
+    return json.dumps({"hits": hits})
+
+
+def _tool_fetch_url(url: str, max_chars: int = 8000) -> str:
+    try:
+        import httpx
+    except Exception as exc:
+        return json.dumps({"error": f"httpx unavailable: {exc}"})
+    if not (url.startswith("http://") or url.startswith("https://")):
+        return json.dumps({"error": "url must start with http:// or https://"})
+    cap = max(500, min(int(max_chars or 8000), 20000))
+    try:
+        with httpx.Client(timeout=15.0, follow_redirects=True,
+                          headers={"User-Agent": _USER_AGENT}) as client:
+            resp = client.get(url)
+            resp.raise_for_status()
+            ctype = (resp.headers.get("content-type") or "").lower()
+            if "html" in ctype or "xml" in ctype:
+                text = _strip_html(resp.text)
+            elif "text" in ctype or "json" in ctype:
+                text = resp.text
+            else:
+                return json.dumps({"error": f"unsupported content-type: {ctype}"})
+    except Exception as exc:
+        return json.dumps({"error": f"fetch failed: {exc}"})
+    truncated = len(text) > cap
+    return json.dumps({
+        "url": url,
+        "chars": len(text),
+        "truncated": truncated,
+        "text": text[:cap],
+    })
 
 
 _TOOL_DISPATCH = {
@@ -212,6 +376,8 @@ _TOOL_DISPATCH = {
     "remember_fact": _tool_remember_fact,
     "list_agents": _tool_list_agents,
     "dispatch_agent": _tool_dispatch_agent,
+    "web_search": _tool_web_search,
+    "fetch_url": _tool_fetch_url,
 }
 
 
