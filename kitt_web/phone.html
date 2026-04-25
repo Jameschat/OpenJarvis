@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>J.A.R.V.I.S.</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: #02040a; color: #fff; font-family: -apple-system, 'Segoe UI', sans-serif; }
+
+#brain { position: fixed; inset: 0; z-index: 0; }
+
+#title {
+  position: fixed; top: env(safe-area-inset-top, 20px); left: 0; right: 0;
+  text-align: center;
+  color: rgba(80,130,210,0.5); font-size: 12px; letter-spacing: 8px;
+  padding-top: 24px; z-index: 2;
+}
+#status {
+  position: fixed; top: 80px; left: 0; right: 0;
+  text-align: center;
+  color: rgba(200,220,255,0.7); font-size: 14px; letter-spacing: 4px;
+  text-transform: uppercase; z-index: 2;
+}
+
+#transcript {
+  position: fixed; top: 130px; left: 24px; right: 24px;
+  text-align: center; color: rgba(180,210,255,0.9);
+  font-size: 17px; font-weight: 500; line-height: 1.4;
+  min-height: 50px; z-index: 2;
+  text-shadow: 0 0 16px rgba(0,0,0,0.6);
+}
+#response {
+  position: fixed; top: 210px; left: 24px; right: 24px; bottom: 260px;
+  overflow-y: auto; text-align: center;
+  color: rgba(240,250,255,0.95);
+  font-size: 18px; font-weight: 400; line-height: 1.5; z-index: 2;
+  text-shadow: 0 0 16px rgba(0,0,0,0.8);
+}
+
+#button-container {
+  position: fixed; left: 0; right: 0;
+  bottom: calc(env(safe-area-inset-bottom, 20px) + 40px);
+  display: flex; justify-content: center; z-index: 3;
+}
+
+#talk-btn {
+  width: 140px; height: 140px; border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, #0a84ff 0%, #0050aa 70%, #002855 100%);
+  border: 3px solid rgba(255,255,255,0.2);
+  box-shadow: 0 0 40px rgba(10,132,255,0.4), inset 0 0 30px rgba(255,255,255,0.1);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: transform 0.1s, box-shadow 0.2s;
+  color: white; font-size: 13px; font-weight: 600; letter-spacing: 1px;
+}
+#talk-btn.recording {
+  background: radial-gradient(circle at 30% 30%, #ff3b30 0%, #aa0000 70%, #550000 100%);
+  box-shadow: 0 0 60px rgba(255,59,48,0.6), inset 0 0 30px rgba(255,255,255,0.2);
+  transform: scale(1.1);
+}
+#talk-btn.processing {
+  background: radial-gradient(circle at 30% 30%, #ffa500 0%, #aa7000 70%, #553800 100%);
+  box-shadow: 0 0 50px rgba(255,165,0,0.5);
+  animation: pulse 1s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%,100% { transform: scale(1); }
+  50% { transform: scale(1.08); }
+}
+
+#mic-icon { pointer-events: none; }
+
+#hint {
+  position: fixed; left: 0; right: 0;
+  bottom: calc(env(safe-area-inset-bottom, 20px) + 12px);
+  text-align: center; color: rgba(150,180,220,0.5);
+  font-size: 12px; letter-spacing: 2px; z-index: 3;
+}
+</style>
+</head>
+<body>
+
+<canvas id="brain"></canvas>
+
+<div id="title">J . A . R . V . I . S .</div>
+<div id="status">READY</div>
+
+<div id="transcript"></div>
+<div id="response"></div>
+
+<div id="button-container">
+  <div id="talk-btn">
+    <svg id="mic-icon" width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round">
+      <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/>
+      <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+      <line x1="12" y1="19" x2="12" y2="23"/>
+      <line x1="8" y1="23" x2="16" y2="23"/>
+    </svg>
+  </div>
+</div>
+
+<div id="hint">HOLD TO TALK</div>
+
+<script>
+// =====================================================================
+// Brain background (simplified version of the full visualization)
+// =====================================================================
+const canvas = document.getElementById('brain');
+const ctx2d = canvas.getContext('2d');
+let W, H, cx, cy;
+function resize() {
+  W = canvas.width = window.innerWidth * (window.devicePixelRatio || 1);
+  H = canvas.height = window.innerHeight * (window.devicePixelRatio || 1);
+  canvas.style.width = window.innerWidth + 'px';
+  canvas.style.height = window.innerHeight + 'px';
+  cx = W / 2; cy = H / 2;
+}
+resize();
+window.addEventListener('resize', resize);
+
+const DPR = window.devicePixelRatio || 1;
+const NEURON_COUNT = 90;
+const CONNECTION_DIST = 110 * DPR;
+const neurons = [];
+
+for (let i = 0; i < NEURON_COUNT; i++) {
+  const theta = Math.random() * Math.PI * 2;
+  const phi = Math.acos(2 * Math.random() - 1);
+  const r = (80 + Math.random() * 100) * DPR;
+  neurons.push({
+    bx: r * 1.3 * Math.sin(phi) * Math.cos(theta),
+    by: r * 0.85 * Math.sin(phi) * Math.sin(theta),
+    bz: r * Math.cos(phi),
+    phase: Math.random() * Math.PI * 2,
+    fire: 0,
+    decay: 0.93 + Math.random() * 0.05,
+    size: (1 + Math.random() * 1.5) * DPR,
+    sx: 0, sy: 0, sd: 1,
+  });
+}
+
+const connections = [];
+for (let i = 0; i < neurons.length; i++) {
+  for (let j = i + 1; j < neurons.length; j++) {
+    const dx = neurons[i].bx - neurons[j].bx;
+    const dy = neurons[i].by - neurons[j].by;
+    const dz = neurons[i].bz - neurons[j].bz;
+    const d = Math.sqrt(dx*dx + dy*dy + dz*dz);
+    if (d < CONNECTION_DIST) connections.push({ a: i, b: j, pulse: 0 });
+  }
+}
+
+let state = 'idle';
+let rotY = 0;
+let t = 0;
+
+const PAL = {
+  idle:      { r: 40, g: 100, b: 200 },
+  listening: { r: 0,  g: 200, b: 255 },
+  thinking:  { r: 255, g: 160, b: 40 },
+  speaking:  { r: 80, g: 180, b: 255 },
+};
+
+function animate() {
+  t += 1/60;
+  const pal = PAL[state] || PAL.idle;
+
+  const rotSpeed = state === 'thinking' ? 0.25 : state === 'speaking' ? 0.15 : 0.08;
+  rotY += rotSpeed / 60;
+
+  // Fade background
+  ctx2d.fillStyle = 'rgba(2,4,10,1)';
+  ctx2d.fillRect(0, 0, W, H);
+
+  // Fire neurons
+  if (state === 'idle' && Math.random() < 0.02) {
+    neurons[Math.floor(Math.random() * neurons.length)].fire = 0.5;
+  } else if (state === 'thinking') {
+    const wave = Math.sin(t * 6) * 0.5 + 0.5;
+    for (const n of neurons) {
+      const norm = (n.bz + 150 * DPR) / (300 * DPR);
+      if (Math.abs(norm - wave) < 0.12) n.fire = Math.min(1, n.fire + 0.15);
+    }
+  } else if (state === 'listening' || state === 'speaking') {
+    if (Math.random() < 0.15) {
+      neurons[Math.floor(Math.random() * neurons.length)].fire = 0.7;
+    }
+  }
+
+  // Project + update
+  const cosY = Math.cos(rotY), sinY = Math.sin(rotY);
+  const PERSP = 500 * DPR;
+  for (const n of neurons) {
+    const breathe = Math.sin(t * 0.8 + n.phase) * 2 * DPR;
+    const x = n.bx + breathe, y = n.by, z = n.bz;
+    const x1 = x * cosY - z * sinY;
+    const z1 = x * sinY + z * cosY;
+    const y1 = y * Math.cos(0.15) - z1 * Math.sin(0.15);
+    const z2 = y * Math.sin(0.15) + z1 * Math.cos(0.15);
+    const scale = PERSP / (PERSP + z2 + 200 * DPR);
+    n.sx = cx + x1 * scale;
+    n.sy = cy + y1 * scale;
+    n.sd = scale;
+    n.fire *= n.decay;
+  }
+
+  for (const c of connections) {
+    const f = Math.max(neurons[c.a].fire, neurons[c.b].fire);
+    c.pulse += (f - c.pulse) * 0.15;
+  }
+
+  // Draw connections
+  for (const c of connections) {
+    if (c.pulse < 0.02) continue;
+    const a = neurons[c.a], b = neurons[c.b];
+    const alpha = c.pulse * Math.min(a.sd, b.sd) * 0.5;
+    ctx2d.beginPath();
+    ctx2d.moveTo(a.sx, a.sy);
+    ctx2d.lineTo(b.sx, b.sy);
+    ctx2d.strokeStyle = `rgba(${pal.r},${pal.g},${pal.b},${alpha.toFixed(3)})`;
+    ctx2d.lineWidth = c.pulse * 1.2 * DPR;
+    ctx2d.stroke();
+  }
+
+  // Draw neurons (back to front)
+  const sorted = neurons.slice().sort((a, b) => a.sd - b.sd);
+  for (const n of sorted) {
+    const alpha = (0.2 + n.fire * 0.7) * n.sd;
+    const size = (n.size + n.fire * 2) * n.sd;
+    if (n.fire > 0.1) {
+      const g = ctx2d.createRadialGradient(n.sx, n.sy, 0, n.sx, n.sy, size * 4);
+      g.addColorStop(0, `rgba(${pal.r},${pal.g},${pal.b},${(alpha * 0.3).toFixed(3)})`);
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx2d.fillStyle = g;
+      ctx2d.fillRect(n.sx - size * 4, n.sy - size * 4, size * 8, size * 8);
+    }
+    ctx2d.beginPath();
+    ctx2d.arc(n.sx, n.sy, Math.max(0.5, size), 0, Math.PI * 2);
+    ctx2d.fillStyle = `rgba(${pal.r},${pal.g},${pal.b},${alpha.toFixed(3)})`;
+    ctx2d.fill();
+  }
+
+  requestAnimationFrame(animate);
+}
+animate();
+
+// =====================================================================
+// Push-to-talk
+// =====================================================================
+const btn = document.getElementById('talk-btn');
+const statusEl = document.getElementById('status');
+const transcriptEl = document.getElementById('transcript');
+const responseEl = document.getElementById('response');
+
+let mediaRecorder = null;
+let chunks = [];
+let stream = null;
+
+async function startRecording() {
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') return;
+
+  try {
+    if (!stream) {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true }
+      });
+    }
+    chunks = [];
+
+    // Prefer opus in webm — Safari may fall back to mp4
+    let options = {};
+    if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+      options = { mimeType: 'audio/webm;codecs=opus' };
+    } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+      options = { mimeType: 'audio/mp4' };
+    }
+
+    mediaRecorder = new MediaRecorder(stream, options);
+    mediaRecorder.ondataavailable = (e) => {
+      if (e.data.size > 0) chunks.push(e.data);
+    };
+    mediaRecorder.onstop = handleRecordingEnd;
+
+    mediaRecorder.start();
+    state = 'listening';
+    btn.classList.add('recording');
+    btn.classList.remove('processing');
+    statusEl.textContent = 'LISTENING';
+    transcriptEl.textContent = '';
+  } catch (e) {
+    statusEl.textContent = 'MIC ERROR';
+    responseEl.textContent = 'Microphone permission required.';
+  }
+}
+
+function stopRecording() {
+  if (!mediaRecorder || mediaRecorder.state === 'inactive') return;
+  mediaRecorder.stop();
+  btn.classList.remove('recording');
+  btn.classList.add('processing');
+  state = 'thinking';
+  statusEl.textContent = 'PROCESSING';
+}
+
+async function handleRecordingEnd() {
+  const blob = new Blob(chunks, { type: mediaRecorder.mimeType || 'audio/webm' });
+  if (blob.size < 1000) {
+    btn.classList.remove('processing');
+    state = 'idle';
+    statusEl.textContent = 'READY';
+    return;
+  }
+
+  try {
+    const resp = await fetch('/voice_turn', {
+      method: 'POST',
+      headers: { 'Content-Type': blob.type },
+      body: blob,
+    });
+    const data = await resp.json();
+
+    transcriptEl.textContent = data.transcript || '';
+    responseEl.textContent = data.response || '';
+
+    if (data.audio_b64) {
+      state = 'speaking';
+      statusEl.textContent = 'SPEAKING';
+      btn.classList.remove('processing');
+      const audio = new Audio('data:audio/mpeg;base64,' + data.audio_b64);
+      audio.onended = () => {
+        state = 'idle';
+        statusEl.textContent = 'READY';
+      };
+      audio.play();
+    } else {
+      btn.classList.remove('processing');
+      state = 'idle';
+      statusEl.textContent = 'READY';
+    }
+  } catch (e) {
+    btn.classList.remove('processing');
+    state = 'idle';
+    statusEl.textContent = 'ERROR';
+    responseEl.textContent = String(e);
+  }
+}
+
+// Touch & mouse handlers (push-to-talk)
+btn.addEventListener('touchstart', (e) => { e.preventDefault(); startRecording(); }, { passive: false });
+btn.addEventListener('touchend',   (e) => { e.preventDefault(); stopRecording();  }, { passive: false });
+btn.addEventListener('mousedown',  (e) => { e.preventDefault(); startRecording(); });
+btn.addEventListener('mouseup',    (e) => { e.preventDefault(); stopRecording();  });
+btn.addEventListener('mouseleave', (e) => { if (mediaRecorder && mediaRecorder.state === 'recording') stopRecording(); });
+</script>
+</body>
+</html>

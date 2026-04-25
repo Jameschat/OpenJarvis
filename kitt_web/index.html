@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>K.I.T.T.</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body {
+  width: 100%; height: 100%;
+  background: #020204;
+  overflow: hidden;
+  font-family: 'Courier New', monospace;
+}
+#scanner-container {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: 90vw;
+  max-width: 600px;
+}
+#scanner {
+  display: flex;
+  gap: 4px;
+  justify-content: center;
+  align-items: center;
+  padding: 12px 16px;
+  border: 1px solid #1a0808;
+  border-radius: 10px;
+  background: #0a0406;
+}
+.led {
+  flex: 1;
+  height: 16px;
+  min-width: 8px;
+  border-radius: 3px;
+  background: #0a0000;
+  transition: none;
+}
+#status {
+  text-align: center;
+  color: #4a2020;
+  font-size: 13px;
+  margin-top: 16px;
+  letter-spacing: 2px;
+}
+#title {
+  text-align: center;
+  color: #501010;
+  font-size: 12px;
+  letter-spacing: 6px;
+  margin-bottom: 20px;
+}
+#glow {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: 100%;
+  height: 120px;
+  pointer-events: none;
+  filter: blur(30px);
+  opacity: 0.3;
+  background: radial-gradient(ellipse, rgba(255,0,0,0.3), transparent 70%);
+}
+</style>
+</head>
+<body>
+
+<div id="glow"></div>
+
+<div id="scanner-container">
+  <div id="title">K . I . T . T .</div>
+  <div id="scanner"></div>
+  <div id="status">CONNECTING...</div>
+</div>
+
+<script>
+const LED_COUNT = 15;
+const scanner = document.getElementById('scanner');
+const statusEl = document.getElementById('status');
+const glowEl = document.getElementById('glow');
+
+// Create LEDs
+const leds = [];
+for (let i = 0; i < LED_COUNT; i++) {
+  const led = document.createElement('div');
+  led.className = 'led';
+  scanner.appendChild(led);
+  leds.push(led);
+}
+
+// State from server
+let state = 'idle';
+let energy = 0;
+let smoothEnergy = 0;
+
+// Scanner animation
+let t = 0;
+const FPS = 60;
+
+function getSpeed() {
+  switch (state) {
+    case 'idle': return 0.6;
+    case 'listening': return 1.4 + smoothEnergy * 2.0;
+    case 'thinking': return 3.5;
+    case 'speaking': return 2.5 + smoothEnergy * 2.0;
+    default: return 0.6;
+  }
+}
+
+function animate() {
+  t += getSpeed() / FPS;
+  smoothEnergy += (energy - smoothEnergy) * 0.3;
+
+  const cycle = (t % 2);
+  const pos = cycle < 1 ? cycle : 2 - cycle;
+  const activeLed = pos * (LED_COUNT - 1);
+
+  for (let i = 0; i < LED_COUNT; i++) {
+    const dist = Math.abs(i - activeLed);
+    let brightness;
+
+    if (dist < 0.5) brightness = 1.0;
+    else if (dist < 1.5) brightness = 0.7;
+    else if (dist < 2.5) brightness = 0.4;
+    else if (dist < 3.5) brightness = 0.2;
+    else if (dist < 4.5) brightness = 0.08;
+    else brightness = 0.02;
+
+    // State modulation
+    if (state === 'listening') {
+      brightness = Math.min(1, brightness + smoothEnergy * 0.3);
+    } else if (state === 'speaking') {
+      const pulse = Math.sin(t * 8 + i * 0.5);
+      brightness = Math.min(1, brightness + smoothEnergy * 0.2 * pulse * pulse);
+    }
+
+    const r = Math.round(255 * brightness);
+    const g = Math.round(10 * brightness);
+
+    leds[i].style.background = `rgb(${r}, ${g}, 0)`;
+
+    if (brightness > 0.5) {
+      const glow = Math.round(brightness * 12);
+      leds[i].style.boxShadow = `0 0 ${glow}px ${glow/2}px rgba(255, 0, 0, ${brightness * 0.6})`;
+    } else {
+      leds[i].style.boxShadow = 'none';
+    }
+  }
+
+  // Glow follows scanner
+  const glowX = 10 + pos * 80;
+  glowEl.style.background = `radial-gradient(ellipse at ${glowX}% 50%, rgba(255,0,0,${0.2 + smoothEnergy * 0.3}), transparent 70%)`;
+
+  requestAnimationFrame(animate);
+}
+
+// Status labels
+const STATUS_TEXT = {
+  idle: 'READY',
+  listening: 'LISTENING',
+  thinking: 'PROCESSING',
+  speaking: 'TRANSMITTING',
+  disconnected: 'OFFLINE',
+};
+
+function updateStatus(s) {
+  statusEl.textContent = STATUS_TEXT[s] || s.toUpperCase();
+  statusEl.style.color = {
+    idle: '#4a2020',
+    listening: '#cc3030',
+    thinking: '#cc8020',
+    speaking: '#cc2020',
+    disconnected: '#302020',
+  }[s] || '#4a2020';
+}
+
+// SSE connection to server for live state
+function connectSSE() {
+  // Get server URL from query param or default
+  const params = new URLSearchParams(window.location.search);
+  const host = params.get('host') || window.location.host || 'localhost:7710';
+  const proto = window.location.protocol === 'https:' ? 'https' : 'http';
+  const url = `${proto}://${host}/events`;
+
+  const es = new EventSource(url);
+
+  es.onopen = () => {
+    updateStatus(state);
+  };
+
+  es.onmessage = (event) => {
+    try {
+      const data = JSON.parse(event.data);
+      if (data.state) {
+        state = data.state;
+        updateStatus(state);
+      }
+      if (data.energy !== undefined) {
+        energy = data.energy;
+      }
+    } catch (e) {}
+  };
+
+  es.onerror = () => {
+    updateStatus('disconnected');
+    es.close();
+    // Reconnect after 3s
+    setTimeout(connectSSE, 3000);
+  };
+}
+
+// Start
+animate();
+connectSSE();
+</script>
+</body>
+</html>

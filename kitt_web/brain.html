@@ -1,0 +1,4435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+<title>J.A.R.V.I.S. — Mission Control</title>
+
+<!-- PWA / iOS app shell -->
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#0a1428">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Jarvis">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="apple-touch-icon" sizes="180x180" href="/icons/icon-180.png">
+<link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="/icons/favicon-16.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
+<link rel="icon" type="image/png" sizes="512x512" href="/icons/icon-512.png">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: #020208; font-family: 'Segoe UI', sans-serif; }
+canvas { display: block; }
+
+/* -------- Auth gate (shown until PIN is verified) -------- */
+#auth-gate {
+  position: fixed; inset: 0;
+  background: radial-gradient(circle at 50% 40%, #0a1230 0%, #020208 70%);
+  z-index: 99999;
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  color: rgba(220,235,255,0.92);
+  /* Subtle scan-line texture for that "operator console" feel */
+  background-image:
+    repeating-linear-gradient(
+      0deg,
+      rgba(80,140,220,0.04) 0px,
+      rgba(80,140,220,0.04) 1px,
+      transparent 1px,
+      transparent 4px
+    ),
+    radial-gradient(circle at 50% 40%, #0a1230 0%, #020208 70%);
+}
+.auth-card {
+  width: min(360px, 86vw);
+  background: rgba(10,16,28,0.85);
+  border: 1px solid rgba(80,140,220,0.32);
+  border-radius: 14px;
+  padding: 28px 26px 22px 26px;
+  backdrop-filter: blur(22px) saturate(150%);
+  -webkit-backdrop-filter: blur(22px) saturate(150%);
+  box-shadow: 0 18px 48px rgba(0,0,0,0.6),
+              0 0 60px rgba(80,140,220,0.12);
+  text-align: center;
+}
+.auth-card .auth-brand {
+  font-size: 16px; letter-spacing: 8px;
+  color: rgba(180,215,255,0.95);
+  font-weight: 600;
+  text-shadow: 0 0 14px rgba(90,170,255,0.55);
+  margin-bottom: 8px;
+}
+.auth-card .auth-sub {
+  font-size: 10px; letter-spacing: 4px; text-transform: uppercase;
+  color: rgba(150,200,240,0.55);
+  margin-bottom: 22px;
+}
+.auth-card input {
+  width: 100%;
+  background: rgba(8,14,28,0.85);
+  border: 1px solid rgba(120,180,255,0.32);
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-family: 'Consolas','SF Mono','Menlo',monospace;
+  font-size: 15px;
+  letter-spacing: 4px;
+  color: #e8f1ff;
+  text-align: center;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.auth-card input:focus {
+  border-color: rgba(140,200,255,0.7);
+  box-shadow: 0 0 0 3px rgba(80,140,255,0.18);
+}
+.auth-card input.error {
+  border-color: rgba(220,100,100,0.7);
+  box-shadow: 0 0 0 3px rgba(220,100,100,0.18);
+  animation: authShake 0.45s ease-out;
+}
+@keyframes authShake {
+  0%,100% { transform: translateX(0); }
+  20%,60% { transform: translateX(-6px); }
+  40%,80% { transform: translateX(6px); }
+}
+.auth-card .auth-error {
+  min-height: 18px;
+  font-size: 11px;
+  color: rgba(255,140,140,0.85);
+  margin-top: 6px;
+  letter-spacing: 0.5px;
+}
+.auth-card button {
+  width: 100%;
+  margin-top: 14px;
+  background: rgba(80,140,255,0.22);
+  border: 1px solid rgba(120,180,255,0.55);
+  color: #e8f1ff;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 2px;
+  padding: 11px 14px;
+  border-radius: 10px;
+  cursor: pointer;
+  text-transform: uppercase;
+  transition: background 0.15s, border-color 0.15s, transform 0.1s;
+}
+.auth-card button:hover { background: rgba(80,140,255,0.38); border-color: rgba(140,200,255,0.85); }
+.auth-card button:active { transform: scale(0.98); }
+.auth-card button:disabled { opacity: 0.4; cursor: wait; }
+.auth-card .auth-foot {
+  margin-top: 16px;
+  font-size: 10px; letter-spacing: 1px;
+  color: rgba(150,180,210,0.45);
+}
+/* Legacy bottom-centre status indicator — superseded by the composer's
+   own talk-hint line and the agent status row in the SYSTEM panel.
+   Hidden so it doesn't overlap the composer's "HOLD SPACE / CLICK MIC"
+   text. Code that updates statusEl.textContent still runs harmlessly. */
+#status { display: none; }
+#title-wrap {
+  position: fixed; top: 18px; left: 50%; transform: translateX(-50%);
+  text-align: center;
+  pointer-events: none;
+  user-select: none;
+  z-index: 4;
+}
+#title {
+  color: rgba(180,215,255,0.92);
+  font-size: 15px;
+  letter-spacing: 10px;
+  text-transform: uppercase;
+  font-weight: 600;
+  white-space: nowrap;
+  /* Soft cyan glow so the title reads against neurons without looking harsh */
+  text-shadow:
+    0 0 12px rgba(90,170,255,0.45),
+    0 0 28px rgba(40,120,220,0.25);
+}
+#subtitle {
+  margin-top: 6px;
+  display: inline-block;
+  padding: 4px 14px;
+  font-size: 10px;
+  letter-spacing: 6px;
+  text-transform: uppercase;
+  color: rgba(220,235,255,0.85);
+  background: rgba(12,18,32,0.55);
+  border: 1px solid rgba(80,140,220,0.28);
+  border-radius: 999px;
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  box-shadow: 0 0 22px rgba(40,120,220,0.18);
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-weight: 500;
+}
+#subtitle .dot {
+  display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+  background: #5ee0a1;
+  margin-right: 8px; vertical-align: middle;
+  box-shadow: 0 0 6px rgba(94,224,161,0.7);
+  animation: subtitleDot 2.4s ease-in-out infinite;
+}
+@keyframes subtitleDot {
+  0%, 100% { opacity: 0.6; }
+  50%      { opacity: 1.0; }
+}
+
+/* -------- Agent flow HUD -------- */
+.hud {
+  position: fixed;
+  color: rgba(180,210,255,0.85);
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  pointer-events: none;
+  user-select: none;
+}
+.hud .pill {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 8px 14px;
+  background: rgba(12,18,32,0.55);
+  border: 1px solid rgba(80,140,220,0.18);
+  border-radius: 999px;
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  font-size: 12px; letter-spacing: 0.5px;
+}
+.hud .pill .sep { color: rgba(120,160,220,0.35); margin: 0 2px; }
+.hud .pill b { color: #e8f1ff; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+#hud-agg {
+  top: 20px; right: 22px;
+}
+#hud-agg.offline .pill {
+  border-color: rgba(200,120,120,0.3);
+  color: rgba(220,160,160,0.85);
+}
+
+/* -------- Agent cards (orbit the brain) -------- */
+#agent-layer {
+  position: fixed; inset: 0;
+  pointer-events: none;
+  z-index: 5;
+}
+.agent-card {
+  /* Each card sets its own --accent from the server payload. Fall back to
+     the neutral blue if missing. --accent-rgb is used in rgba() mixes. */
+  --accent: #5ee0a1;
+  --accent-rgb: 94,224,161;
+  position: absolute;
+  width: 230px;
+  padding: 11px 14px 12px 14px;
+  background: rgba(10,16,28,0.62);
+  border: 1px solid rgba(var(--accent-rgb), 0.28);
+  border-radius: 12px;
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  color: rgba(200,220,255,0.9);
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-size: 11.5px;
+  transform: translate(-50%, -50%);
+  /* Smoothly grow width + shadow as text / size changes. Height is
+     implicit (auto) — the max-height transition below animates it. */
+  transition: border-color 0.4s, box-shadow 0.4s, width 0.3s ease,
+              transform 0.6s ease-out;
+  pointer-events: auto;
+}
+/* On hover: pop forward, widen a bit, elevate above neighbours, and
+   let the task text expand fully (removes the line clamp). */
+.agent-card:hover {
+  width: 320px;
+  z-index: 9999 !important;
+  opacity: 1 !important;
+  box-shadow: 0 10px 32px rgba(0,0,0,0.55), 0 0 0 1px rgba(var(--accent-rgb), 0.5);
+  border-color: rgba(var(--accent-rgb), 0.85);
+}
+.agent-card.running {
+  border-color: rgba(var(--accent-rgb), 0.8);
+  /* Breathing glow — box-shadow + border alpha cycle, using the agent's accent */
+  animation: cardPulse 2.2s ease-in-out infinite;
+}
+.agent-card.failed {
+  border-color: rgba(220,100,100,0.55);
+  box-shadow: 0 0 22px rgba(220,100,100,0.18);
+  animation: cardPulseFail 2s ease-in-out infinite;
+}
+/* Universal "working" signal — all active cards pulse the same Jarvis green
+   regardless of accent color, so you can spot active agents at a glance.
+   Border still carries the per-agent accent so identity isn't lost. */
+@keyframes cardPulse {
+  0%, 100% {
+    box-shadow:
+      0 0 14px rgba(94, 224, 161, 0.20),
+      0 0 0 0 rgba(94, 224, 161, 0.35);
+    border-color: rgba(var(--accent-rgb), 0.55);
+  }
+  50% {
+    box-shadow:
+      0 0 36px rgba(94, 224, 161, 0.65),
+      0 0 0 5px rgba(94, 224, 161, 0.10);
+    border-color: rgba(var(--accent-rgb), 0.95);
+  }
+}
+@keyframes cardPulseFail {
+  0%, 100% { box-shadow: 0 0 14px rgba(220,100,100,0.15); border-color: rgba(220,100,100,0.45); }
+  50%      { box-shadow: 0 0 30px rgba(220,100,100,0.5);  border-color: rgba(220,100,100,0.9);  }
+}
+.agent-card .head {
+  display: flex; align-items: center; gap: 7px;
+  font-weight: 600; color: #e8f1ff;
+  letter-spacing: 0.3px;
+  font-size: 12px;
+}
+.agent-card .head .name { color: var(--accent); }
+.agent-card .dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: rgba(var(--accent-rgb), 0.45);
+  box-shadow: 0 0 0 0 rgba(var(--accent-rgb), 0);
+}
+.agent-card.running .dot {
+  /* Dot turns green while running so the "live" state is consistent across
+     agents. The card border still carries the per-agent accent for identity. */
+  background: #5ee0a1;
+  box-shadow: 0 0 8px rgba(94,224,161,0.8);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+.agent-card.failed .dot { background: #e87070; }
+@keyframes pulse {
+  0%, 100% { box-shadow: 0 0 8px rgba(94,224,161,0.8), 0 0 0 0 rgba(94,224,161,0.6); }
+  50%      { box-shadow: 0 0 8px rgba(94,224,161,0.8), 0 0 0 7px rgba(94,224,161,0); }
+}
+.agent-card .meta {
+  margin-top: 4px;
+  color: rgba(160,190,230,0.6);
+  font-size: 10.5px;
+  letter-spacing: 0.3px;
+  display: flex; gap: 8px; flex-wrap: wrap;
+}
+.agent-card .meta span b {
+  color: rgba(220,235,255,0.85);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.agent-card .task {
+  margin-top: 6px;
+  color: rgba(255,200,120,0.92);
+  font-size: 10.5px;
+  line-height: 1.35;
+  /* Wrap long text — show up to 3 lines, reveal everything on hover.
+     Break long tokens (file paths, URLs) so they fit the card width. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  max-height: 52px;  /* ~3 lines × 1.35 line-height × 10.5px */
+  transition: max-height 0.4s ease, -webkit-line-clamp 0.3s ease;
+}
+.agent-card:hover .task {
+  -webkit-line-clamp: unset;
+  line-clamp: unset;
+  max-height: 400px;
+}
+/* Also let the meta line (model · N done) wrap rather than overflow */
+.agent-card .meta {
+  flex-wrap: wrap;
+}
+
+/* -------- Mission-control panels — shared styling -------- */
+.mc-panel {
+  position: fixed;
+  background:
+    /* subtle horizontal scan-lines for mission-control CRT feel */
+    repeating-linear-gradient(
+      0deg,
+      rgba(80,140,220,0.025) 0px,
+      rgba(80,140,220,0.025) 1px,
+      transparent 1px,
+      transparent 3px
+    ),
+    rgba(8, 14, 28, 0.74);
+  border: 1px solid rgba(80,140,220,0.20);
+  border-radius: 12px;
+  backdrop-filter: blur(16px) saturate(150%);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+  color: rgba(220,235,255,0.9);
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-size: 11.5px;
+  letter-spacing: 0.3px;
+  z-index: 7;
+  user-select: none;
+  pointer-events: auto;
+  /* Subtle outer glow that responds to status changes */
+  box-shadow: 0 4px 24px rgba(0,0,0,0.4),
+              inset 0 1px 0 rgba(120,180,255,0.06);
+}
+.mc-panel-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 9px 12px;
+  font-size: 9.5px; letter-spacing: 3px; text-transform: uppercase;
+  color: rgba(150,200,240,0.75);
+  border-bottom: 1px solid rgba(80,140,220,0.12);
+  font-weight: 600;
+}
+.mc-panel-head .mc-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  box-shadow: 0 0 6px currentColor;
+}
+.mc-panel-head .mc-panel-meta {
+  margin-left: auto;
+  font-family: 'Consolas','SF Mono','Menlo',monospace;
+  font-size: 10px;
+  color: rgba(150,200,240,0.55);
+  letter-spacing: 1px;
+}
+.mc-mute {
+  margin-left: auto;
+  background: rgba(80,140,220,0.12);
+  border: 1px solid rgba(120,180,255,0.22);
+  color: rgba(180,210,240,0.7);
+  font-family: 'Consolas','SF Mono','Menlo',monospace;
+  font-size: 10px;
+  letter-spacing: 1px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.mc-mute:hover {
+  background: rgba(94,224,161,0.18);
+  border-color: rgba(94,224,161,0.5);
+  color: #b9f0d2;
+}
+.mc-mute.muted {
+  background: rgba(120,140,180,0.08);
+  color: rgba(160,180,210,0.45);
+  border-color: rgba(120,140,180,0.18);
+}
+.mc-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 6px 12px;
+  font-size: 11.5px;
+}
+.mc-row-label {
+  flex: 0 0 60px;
+  font-size: 9.5px; letter-spacing: 2.5px;
+  color: rgba(160,200,240,0.55);
+  font-weight: 600;
+}
+.mc-row-value {
+  font-family: 'Consolas','SF Mono','Menlo',monospace;
+  font-size: 12px;
+  color: #e8f1ff;
+  font-variant-numeric: tabular-nums;
+}
+.mc-row-bar {
+  flex: 1;
+  height: 4px;
+  background: rgba(80,140,220,0.12);
+  border-radius: 2px;
+  overflow: hidden;
+  position: relative;
+}
+.mc-row-bar i {
+  display: block;
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, rgba(94,224,161,0.6), rgba(94,224,161,1));
+  transition: width 0.4s ease;
+}
+.mc-row[data-key="claude"] .mc-row-bar i {
+  background: linear-gradient(90deg, rgba(180,120,255,0.6), rgba(180,120,255,1));
+}
+.mc-row[data-key="codex"] .mc-row-bar i {
+  background: linear-gradient(90deg, rgba(16,163,127,0.6), rgba(16,163,127,1));
+}
+
+/* Top-left stats panel */
+#hud-stats {
+  top: 20px; left: 22px;
+  width: 220px;
+  padding-bottom: 6px;
+}
+
+/* Mid-left networks panel — UniFi sites, sits directly below stats panel */
+#hud-networks {
+  top: 280px; left: 22px;
+  width: 260px;
+  max-height: 220px;
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+#networks-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0 6px 0;
+}
+#networks-list::-webkit-scrollbar { width: 5px; }
+#networks-list::-webkit-scrollbar-thumb { background: rgba(155,242,255,0.25); border-radius: 3px; }
+#networks-list .mc-empty {
+  padding: 14px 12px;
+  color: rgba(160,180,210,0.45);
+  font-size: 11px;
+  letter-spacing: 1.5px;
+  text-align: center;
+}
+.net-row {
+  display: grid;
+  grid-template-columns: 9px 1fr auto;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 12px;
+  border-left: 3px solid transparent;
+}
+.net-row:hover { background: rgba(155,242,255,0.05); }
+.net-row.ok       { border-left-color: rgba(94,224,161,0.7); }
+.net-row.degraded { border-left-color: rgba(255,201,90,0.7); }
+.net-row.down     { border-left-color: rgba(220,100,100,0.85); background: rgba(220,100,100,0.05); }
+.net-row .net-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: rgba(140,160,200,0.5);
+}
+.net-row.ok .net-dot {
+  background: #5ee0a1;
+  animation: pulse 2.4s ease-in-out infinite;
+}
+.net-row.degraded .net-dot { background: #ffc95a; }
+.net-row.down     .net-dot { background: #e87070;
+  box-shadow: 0 0 0 0 rgba(232,112,112,0.6);
+  animation: pulse 1s ease-in-out infinite;
+}
+.net-row .net-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.net-row .net-name {
+  font-size: 11.5px;
+  color: #e8f1ff;
+  font-weight: 600;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.net-row .net-stats {
+  font-family: 'Consolas','SF Mono','Menlo',monospace;
+  font-size: 10px;
+  color: rgba(155,242,255,0.7);
+  letter-spacing: 0.5px;
+}
+.net-row .net-alert {
+  background: rgba(220,100,100,0.18);
+  border: 1px solid rgba(220,100,100,0.45);
+  color: #ffb0b0;
+  font-size: 9.5px; font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 999px;
+}
+
+/* Mid-left schedule panel — sits below the networks panel */
+#hud-schedule {
+  top: 520px; left: 22px;
+  width: 260px;
+  max-height: 240px;
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+#schedule-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0 6px 0;
+}
+#schedule-list::-webkit-scrollbar { width: 5px; }
+#schedule-list::-webkit-scrollbar-thumb { background: rgba(255,201,90,0.25); border-radius: 3px; }
+#schedule-list .mc-empty {
+  padding: 14px 12px;
+  color: rgba(160,180,210,0.45);
+  font-size: 11px;
+  letter-spacing: 1.5px;
+  text-align: center;
+}
+.sched-row {
+  display: grid;
+  grid-template-columns: 9px 1fr auto;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 12px;
+  border-left: 3px solid transparent;
+  cursor: default;
+}
+.sched-row:hover { background: rgba(80,140,220,0.06); }
+.sched-row.pending  { border-left-color: rgba(255,201,90,0.7); }
+.sched-row.fired    { border-left-color: rgba(120,160,200,0.45); opacity: 0.65; }
+.sched-row.due-soon { border-left-color: rgba(94,224,161,0.85); background: rgba(94,224,161,0.05); }
+.sched-row.overdue  { border-left-color: rgba(255,140,90,0.85); }
+
+.sched-row .sched-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: rgba(255,201,90,0.85);
+}
+.sched-row.fired .sched-dot { background: rgba(140,160,200,0.5); }
+.sched-row.due-soon .sched-dot {
+  background: #5ee0a1;
+  animation: pulse 1.4s ease-in-out infinite;
+}
+.sched-row.overdue .sched-dot { background: #ff8c5a; }
+
+.sched-row .sched-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.sched-row .sched-name {
+  font-size: 11.5px;
+  color: #e8f1ff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sched-row .sched-name .sched-agent {
+  font-family: 'Consolas','SF Mono','Menlo',monospace;
+  font-size: 10px;
+  color: rgba(180,210,240,0.6);
+  margin-right: 6px;
+}
+.sched-row .sched-when {
+  font-family: 'Consolas','SF Mono','Menlo',monospace;
+  font-size: 10px;
+  color: rgba(255,201,90,0.85);
+  letter-spacing: 0.5px;
+}
+.sched-row.fired .sched-when { color: rgba(150,180,210,0.55); }
+.sched-row.due-soon .sched-when { color: #b9f0d2; }
+.sched-row.overdue .sched-when { color: #ffb088; }
+
+.sched-row .sched-cancel {
+  background: transparent;
+  border: 1px solid rgba(220,120,120,0.25);
+  color: rgba(255,180,180,0.55);
+  font-size: 11px;
+  width: 20px; height: 20px;
+  border-radius: 5px;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0;
+  opacity: 0;
+  transition: opacity 0.15s, background 0.15s, color 0.15s;
+}
+.sched-row:hover .sched-cancel { opacity: 1; }
+.sched-row .sched-cancel:hover {
+  background: rgba(220,100,100,0.25);
+  color: #ffe6e6;
+}
+.sched-row.fired .sched-cancel { display: none; }
+
+/* Bottom-right live tasks panel — only visible while something is running.
+   Sits above the menu/mic so it never blocks vault-graph labels in the
+   centre of the canvas. */
+#hud-live {
+  bottom: calc(env(safe-area-inset-bottom, 20px) + 110px);
+  right: 22px;
+  width: 220px;
+  max-height: 160px;
+  display: none;                  /* hidden until updateLiveTasksPanel sees a running task */
+  flex-direction: column;
+  overflow: hidden;
+  /* Slightly reduced opacity so even when shown, vault labels remain
+     legible if they happen to peek past the panel edges. */
+  background: rgba(8, 14, 28, 0.62);
+}
+#hud-live.active { display: flex; }
+#live-tasks {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+#live-tasks .mc-empty {
+  padding: 14px 12px;
+  color: rgba(160,180,210,0.45);
+  font-size: 11px;
+  letter-spacing: 1.5px;
+  text-align: center;
+}
+.live-task {
+  padding: 7px 12px;
+  border-left: 3px solid var(--accent, #5ee0a1);
+  display: flex; flex-direction: column; gap: 2px;
+  background: rgba(94,224,161,0.04);
+}
+.live-task .lt-head {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 11.5px;
+  color: #e8f1ff;
+}
+.live-task .lt-head .lt-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--accent, #5ee0a1);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+.live-task .lt-meta {
+  font-family: 'Consolas','SF Mono','Menlo',monospace;
+  font-size: 10px;
+  color: rgba(160,200,240,0.6);
+  letter-spacing: 0.5px;
+}
+
+/* Bottom-left activity log — scrolls. Lifted above the composer so the
+   two never overlap on narrower laptop screens (the composer is centred
+   max-720px wide, which can cross the log's right edge below ~1500px). */
+#hud-log {
+  bottom: calc(env(safe-area-inset-bottom, 20px) + 170px);
+  left: 22px;
+  width: 340px;
+  max-height: 240px;
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+#log-feed {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0;
+  font-family: 'Consolas','SF Mono','Menlo',monospace;
+  font-size: 10.5px;
+}
+#log-feed::-webkit-scrollbar { width: 5px; }
+#log-feed::-webkit-scrollbar-thumb { background: rgba(120,180,255,0.25); border-radius: 3px; }
+.log-row {
+  display: grid;
+  grid-template-columns: 60px 16px 1fr;
+  align-items: baseline;
+  gap: 6px;
+  padding: 3px 12px;
+  border-left: 2px solid transparent;
+  color: rgba(220,235,255,0.85);
+}
+.log-row:hover { background: rgba(80,140,220,0.06); }
+.log-row.fresh { animation: logFlash 1.4s ease-out; }
+@keyframes logFlash {
+  0%   { background: rgba(94,224,161,0.18); }
+  100% { background: transparent; }
+}
+.log-row .log-time {
+  color: rgba(150,180,210,0.55);
+  font-size: 10px;
+}
+.log-row .log-icon {
+  text-align: center;
+}
+.log-row .log-msg {
+  color: rgba(220,235,255,0.92);
+  white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+}
+.log-row .log-msg b {
+  color: var(--accent, rgba(150,200,240,0.95));
+  font-weight: 600;
+  margin-right: 4px;
+}
+/* Source-driven left edge color — set inline via --accent so each row picks its own */
+.log-row { --accent: #5ecfff; }
+
+/* Mobile — stack panels below the brain, keep them readable */
+@media (max-width: 720px) {
+  #hud-stats {
+    top: auto; bottom: auto;
+    position: relative;
+    margin: 8px 12px 0 12px;
+    width: auto;
+    left: auto; right: auto;
+  }
+  #hud-live, #hud-log {
+    position: relative;
+    left: auto; right: auto; bottom: auto;
+    margin: 8px 12px 0 12px;
+    width: auto;
+    max-height: 220px;
+  }
+}
+
+/* -------- Task ticker (bottom-left) — kept for backward compat / hidden -------- */
+#hud-tasks { display: none; }
+#hud-tasks-disabled {
+  position: fixed;
+  bottom: 60px; left: 22px;
+  max-width: 320px;
+  color: rgba(180,210,255,0.85);
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  pointer-events: none;
+  font-size: 11.5px;
+}
+#hud-tasks .label {
+  color: rgba(100,140,200,0.55);
+  font-size: 10px; letter-spacing: 3px; text-transform: uppercase;
+  margin-bottom: 6px;
+}
+.task-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 10px;
+  margin: 3px 4px 3px 0;
+  background: rgba(12,18,32,0.55);
+  border: 1px solid rgba(80,140,220,0.18);
+  border-radius: 999px;
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  font-size: 11px;
+  max-width: 300px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.task-chip.todo      { color: rgba(180,200,230,0.75); }
+.task-chip.running   { color: #b9f0d2; border-color: rgba(80,200,140,0.45); }
+.task-chip.done      { color: rgba(140,180,220,0.55); text-decoration: line-through; }
+.task-chip.failed    { color: #e8b0b0; border-color: rgba(220,100,100,0.45); }
+.task-chip .dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: rgba(140,160,200,0.6);
+}
+.task-chip.running .dot { background: #5ee0a1; }
+.task-chip.failed  .dot { background: #e87070; }
+.task-chip.done    .dot { background: rgba(140,180,220,0.4); }
+
+/* -------- Mission control: transcript + push-to-talk -------- */
+#conversation {
+  position: fixed; top: 56px; left: 50%; transform: translateX(-50%);
+  width: min(680px, 80vw);
+  text-align: center;
+  pointer-events: none;
+  z-index: 4;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+}
+#transcript {
+  color: rgba(180,210,255,0.85);
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0.3px;
+  min-height: 18px;
+  text-shadow: 0 0 14px rgba(0,0,0,0.7);
+  opacity: 0; transition: opacity 0.3s;
+}
+#transcript.visible { opacity: 1; }
+#response {
+  margin-top: 8px;
+  color: rgba(240,250,255,0.95);
+  font-size: 16px; font-weight: 400; line-height: 1.45;
+  text-shadow: 0 0 14px rgba(0,0,0,0.8);
+  opacity: 0; transition: opacity 0.3s;
+  max-height: 30vh; overflow-y: auto;
+  pointer-events: auto;
+}
+#response.visible { opacity: 1; }
+
+#composer-wrap {
+  position: fixed;
+  left: 50%; transform: translateX(-50%);
+  bottom: calc(env(safe-area-inset-bottom, 20px) + 28px);
+  width: min(720px, 86vw);
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  z-index: 6;
+  pointer-events: none;
+}
+#composer {
+  width: 100%;
+  display: flex; align-items: flex-end; gap: 8px;
+  padding: 8px 8px 8px 12px;
+  background: rgba(8,14,28,0.78);
+  border: 1px solid rgba(80,140,220,0.32);
+  border-radius: 18px;
+  backdrop-filter: blur(20px) saturate(150%);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  box-shadow: 0 18px 48px rgba(0,0,0,0.55),
+              0 0 30px rgba(10,132,255,0.10);
+  pointer-events: auto;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+#composer:focus-within {
+  border-color: rgba(140,200,255,0.7);
+  box-shadow: 0 18px 48px rgba(0,0,0,0.55),
+              0 0 30px rgba(10,132,255,0.30);
+}
+#composer.dragging {
+  border-color: rgba(94,224,161,0.85);
+  background: rgba(20,40,30,0.85);
+}
+#composer-input {
+  flex: 1;
+  min-height: 38px;
+  max-height: 200px;
+  background: transparent;
+  border: 0;
+  resize: none;
+  outline: none;
+  color: #e8f1ff;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.4;
+  padding: 8px 4px;
+  letter-spacing: 0.2px;
+}
+#composer-input::placeholder { color: rgba(160,200,240,0.45); }
+#composer button {
+  flex: 0 0 auto;
+  background: rgba(80,140,220,0.18);
+  border: 1px solid rgba(120,180,255,0.32);
+  color: rgba(220,235,255,0.85);
+  width: 38px; height: 38px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s, transform 0.1s;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+#composer button:hover {
+  background: rgba(80,140,255,0.32);
+  border-color: rgba(140,200,255,0.7);
+  color: #ffffff;
+}
+#composer button:active { transform: scale(0.94); }
+#composer button:disabled { opacity: 0.4; cursor: wait; }
+#send-btn {
+  background: rgba(94,224,161,0.22) !important;
+  border-color: rgba(94,224,161,0.55) !important;
+  color: #b9f0d2 !important;
+}
+#send-btn:hover { background: rgba(94,224,161,0.4) !important; border-color: rgba(140,240,180,0.85) !important; }
+#talk-btn {
+  background: radial-gradient(circle at 30% 30%, #0a84ff 0%, #0050aa 68%, #002550 100%) !important;
+  border: 2px solid rgba(255,255,255,0.18) !important;
+  box-shadow: 0 0 18px rgba(10,132,255,0.42), inset 0 0 12px rgba(255,255,255,0.1);
+  color: white;
+}
+#talk-btn:hover { transform: scale(1.06); }
+#talk-btn.recording {
+  background: radial-gradient(circle at 30% 30%, #ff3b30 0%, #a80e08 70%, #500505 100%) !important;
+  box-shadow: 0 0 28px rgba(255,59,48,0.6), inset 0 0 14px rgba(255,255,255,0.18) !important;
+  transform: scale(1.12);
+}
+#talk-btn.processing {
+  background: radial-gradient(circle at 30% 30%, #ffa500 0%, #a36800 70%, #513300 100%) !important;
+  box-shadow: 0 0 22px rgba(255,165,0,0.55) !important;
+  animation: talkPulse 1s ease-in-out infinite;
+}
+@keyframes talkPulse {
+  0%,100% { transform: scale(1.06); }
+  50%     { transform: scale(1.18); }
+}
+#mic-icon { pointer-events: none; }
+
+/* File chips shown above the composer when files are attached */
+#composer-attachments {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  width: 100%;
+  pointer-events: auto;
+}
+.attach-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 9px;
+  font-size: 11px;
+  font-family: 'Consolas','SF Mono','Menlo',monospace;
+  color: rgba(220,235,255,0.85);
+  background: rgba(10,20,38,0.85);
+  border: 1px solid rgba(120,180,255,0.32);
+  border-radius: 999px;
+  letter-spacing: 0.3px;
+  max-width: 280px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.attach-chip .remove {
+  cursor: pointer;
+  color: rgba(255,150,150,0.7);
+  font-weight: 600;
+  margin-left: 2px;
+  user-select: none;
+}
+.attach-chip .remove:hover { color: #ff6b6b; }
+.attach-chip .size {
+  color: rgba(150,180,210,0.55);
+  font-size: 10px;
+}
+
+#talk-hint {
+  font-size: 9.5px; letter-spacing: 3px; text-transform: uppercase;
+  color: rgba(160,200,240,0.45);
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  pointer-events: auto;
+}
+
+/* -------- Commands menu (ported from pygame UI) -------- */
+#menu-toggle {
+  position: fixed;
+  bottom: calc(env(safe-area-inset-bottom, 20px) + 32px);
+  right: 22px;
+  width: 52px; height: 52px; border-radius: 50%;
+  background: rgba(12,18,32,0.65);
+  border: 1px solid rgba(80,140,220,0.22);
+  color: rgba(200,220,255,0.9);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; z-index: 6;
+  transition: transform 0.15s, background 0.2s, border-color 0.2s;
+  user-select: none;
+}
+#menu-toggle:hover { transform: scale(1.06); border-color: rgba(120,180,240,0.4); }
+#menu-toggle svg { pointer-events: none; }
+
+#menu-panel {
+  position: fixed;
+  bottom: calc(env(safe-area-inset-bottom, 20px) + 96px);
+  right: 22px;
+  width: 340px;
+  max-height: 60vh;
+  background: rgba(10,16,28,0.78);
+  border: 1px solid rgba(80,140,220,0.22);
+  border-radius: 16px;
+  backdrop-filter: blur(22px) saturate(150%);
+  -webkit-backdrop-filter: blur(22px) saturate(150%);
+  box-shadow: 0 18px 48px rgba(0,0,0,0.5);
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  color: rgba(220,235,255,0.92);
+  padding: 14px 14px 10px 14px;
+  display: flex; flex-direction: column;
+  opacity: 0; transform: translateY(10px) scale(0.98);
+  transition: opacity 0.2s, transform 0.2s;
+  pointer-events: none;
+  z-index: 6;
+  overflow: hidden;
+}
+#menu-panel.open {
+  opacity: 1; transform: translateY(0) scale(1);
+  pointer-events: auto;
+}
+#menu-cats {
+  display: flex; flex-wrap: wrap; gap: 4px;
+  padding-bottom: 10px; margin-bottom: 8px;
+  border-bottom: 1px solid rgba(80,140,220,0.15);
+}
+.menu-cat {
+  padding: 5px 11px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  letter-spacing: 0.3px;
+  cursor: pointer;
+  background: transparent;
+  color: rgba(160,200,240,0.75);
+  border: 1px solid rgba(80,140,220,0.12);
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  user-select: none;
+}
+.menu-cat:hover { color: #e8f1ff; }
+.menu-cat.active {
+  background: rgba(80,140,255,0.22);
+  color: #ffffff;
+  border-color: rgba(120,180,255,0.55);
+}
+#menu-cmds {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  overflow-y: auto;
+  padding: 2px;
+}
+.menu-cmd {
+  padding: 8px 10px;
+  border-radius: 10px;
+  font-size: 12px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(80,140,220,0.14);
+  color: rgba(220,235,255,0.92);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s, border-color 0.15s, transform 0.1s;
+  user-select: none;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.menu-cmd:hover {
+  background: rgba(80,140,255,0.18);
+  border-color: rgba(120,180,255,0.45);
+}
+.menu-cmd:active { transform: scale(0.97); }
+.menu-cmd.running {
+  background: rgba(255,165,0,0.18);
+  border-color: rgba(255,180,60,0.5);
+  color: #ffd890;
+}
+#menu-cmds::-webkit-scrollbar { width: 6px; }
+#menu-cmds::-webkit-scrollbar-thumb { background: rgba(120,180,255,0.25); border-radius: 3px; }
+
+/* -------- Agents roster panel -------- */
+#agents-toggle {
+  position: fixed;
+  bottom: calc(env(safe-area-inset-bottom, 20px) + 32px);
+  right: 86px;                        /* left of the hamburger (which is at right:22 + 52 = 74) */
+  width: 52px; height: 52px; border-radius: 50%;
+  background: rgba(12,18,32,0.65);
+  border: 1px solid rgba(80,140,220,0.22);
+  color: rgba(200,220,255,0.9);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; z-index: 6;
+  transition: transform 0.15s, background 0.2s, border-color 0.2s;
+  user-select: none;
+}
+#agents-toggle:hover { transform: scale(1.06); border-color: rgba(120,180,240,0.4); }
+#agents-toggle.has-running {
+  border-color: rgba(94,224,161,0.55);
+  box-shadow: 0 0 18px rgba(94,224,161,0.25);
+}
+#agents-panel {
+  position: fixed;
+  bottom: calc(env(safe-area-inset-bottom, 20px) + 96px);
+  right: 86px;
+  width: 360px;
+  max-height: 70vh;
+  background: rgba(10,16,28,0.86);
+  border: 1px solid rgba(80,140,220,0.22);
+  border-radius: 16px;
+  backdrop-filter: blur(22px) saturate(150%);
+  -webkit-backdrop-filter: blur(22px) saturate(150%);
+  box-shadow: 0 18px 48px rgba(0,0,0,0.5);
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  color: rgba(220,235,255,0.92);
+  padding: 0;
+  display: flex; flex-direction: column;
+  opacity: 0; transform: translateY(10px) scale(0.98);
+  transition: opacity 0.2s, transform 0.2s;
+  pointer-events: none;
+  z-index: 7;
+  overflow: hidden;
+}
+#agents-panel.open {
+  opacity: 1; transform: translateY(0) scale(1);
+  pointer-events: auto;
+}
+#agents-head {
+  padding: 12px 14px 10px 14px;
+  border-bottom: 1px solid rgba(80,140,220,0.15);
+  display: flex; align-items: baseline; gap: 8px;
+}
+#agents-head .ap-title {
+  font-size: 10px; letter-spacing: 4px; text-transform: uppercase;
+  color: rgba(150,200,240,0.85);
+  font-weight: 600;
+}
+#agents-head .ap-meta {
+  margin-left: auto;
+  font-family: 'Consolas','SF Mono','Menlo',monospace;
+  font-size: 10.5px;
+  color: rgba(150,200,240,0.65);
+  letter-spacing: 1px;
+}
+.ap-bulk {
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-size: 9.5px; letter-spacing: 1.5px; font-weight: 600;
+  padding: 4px 9px;
+  margin-left: 6px;
+  background: rgba(80,140,255,0.14);
+  border: 1px solid rgba(120,180,255,0.32);
+  color: rgba(220,235,255,0.85);
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.ap-bulk:hover {
+  background: rgba(80,140,255,0.28);
+  border-color: rgba(140,200,255,0.6);
+  color: #ffffff;
+}
+.ap-bulk:disabled { opacity: 0.4; cursor: not-allowed; }
+.ap-bulk-danger {
+  background: rgba(220,100,100,0.12);
+  border-color: rgba(220,120,120,0.32);
+  color: rgba(255,200,200,0.85);
+}
+.ap-bulk-danger:hover {
+  background: rgba(220,100,100,0.28);
+  border-color: rgba(255,140,140,0.6);
+  color: #ffe6e6;
+}
+.ap-bulk.confirming {
+  background: rgba(220,100,100,0.45);
+  color: #fff;
+  border-color: rgba(255,180,180,0.9);
+  animation: confirmPulse 1.2s ease-in-out infinite;
+}
+@keyframes confirmPulse {
+  0%,100% { box-shadow: 0 0 0 0 rgba(255,140,140,0.6); }
+  50%     { box-shadow: 0 0 0 4px rgba(255,140,140,0); }
+}
+#agents-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px 0 8px 0;
+}
+#agents-list::-webkit-scrollbar { width: 6px; }
+#agents-list::-webkit-scrollbar-thumb { background: rgba(120,180,255,0.25); border-radius: 3px; }
+
+.ap-row {
+  display: grid;
+  grid-template-columns: 14px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  border-left: 3px solid transparent;
+  cursor: default;
+}
+.ap-row:hover { background: rgba(80,140,220,0.06); }
+.ap-row.running { border-left-color: rgba(94,224,161,0.7); background: rgba(94,224,161,0.04); }
+.ap-row.failed  { border-left-color: rgba(220,100,100,0.7); }
+.ap-row .ap-dot {
+  width: 9px; height: 9px; border-radius: 50%;
+  background: rgba(140,160,200,0.5);
+  margin-left: 2px;
+}
+.ap-row.running .ap-dot {
+  background: #5ee0a1;
+  box-shadow: 0 0 0 0 rgba(94,224,161,0.6);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+.ap-row.failed  .ap-dot { background: #e87070; }
+.ap-row .ap-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ap-row .ap-name {
+  font-size: 12px; font-weight: 600; color: var(--accent, #e8f1ff);
+  display: flex; align-items: center; gap: 8px;
+}
+.ap-row .ap-name .ap-prov {
+  font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(80,140,220,0.18);
+  color: rgba(180,210,240,0.85);
+  font-weight: 500;
+}
+.ap-row .ap-name .ap-prov.codex   { background: rgba(16,163,127,0.22); color: #aaf2dd; }
+.ap-row .ap-name .ap-prov.claude  { background: rgba(180,120,255,0.22); color: #e1ccff; }
+.ap-row .ap-name .ap-prov.session { background: rgba(125,211,255,0.22); color: #d2f0ff; }
+.ap-row .ap-name .ap-prov.subagent{ background: rgba(180,120,255,0.18); color: #e1ccff; }
+.ap-row .ap-meta {
+  font-size: 10.5px;
+  color: rgba(170,200,235,0.62);
+  font-family: 'Consolas','SF Mono','Menlo',monospace;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ap-row .ap-task {
+  font-size: 11px;
+  color: rgba(255,200,120,0.9);
+  font-style: italic;
+  margin-top: 2px;
+  overflow: hidden; text-overflow: ellipsis;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+}
+.ap-row .ap-spawn-btn {
+  background: rgba(80,140,255,0.18);
+  border: 1px solid rgba(120,180,255,0.4);
+  color: #e8f1ff;
+  font-size: 10.5px; font-weight: 600;
+  padding: 5px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  letter-spacing: 0.5px;
+  transition: background 0.15s, border-color 0.15s;
+}
+.ap-row .ap-spawn-btn:hover {
+  background: rgba(80,140,255,0.32);
+  border-color: rgba(140,200,255,0.7);
+}
+.ap-row.running .ap-spawn-btn {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+/* Inline spawn dialog at the bottom of the panel */
+#agents-spawn {
+  border-top: 1px solid rgba(80,140,220,0.18);
+  padding: 12px 14px;
+  background: rgba(8,14,28,0.5);
+  display: flex; flex-direction: column; gap: 8px;
+}
+#agents-spawn.ap-hidden { display: none; }
+#agents-spawn .ap-spawn-head {
+  font-size: 11px;
+  color: rgba(180,210,240,0.85);
+  letter-spacing: 0.5px;
+}
+#agents-spawn .ap-spawn-head b {
+  font-family: 'Consolas','SF Mono','Menlo',monospace;
+  color: var(--spawn-accent, #5ee0a1);
+  font-weight: 600;
+}
+#agents-spawn input {
+  width: 100%;
+  background: rgba(10,16,28,0.7);
+  border: 1px solid rgba(120,180,255,0.3);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-size: 12px;
+  color: #e8f1ff;
+  outline: none;
+}
+#agents-spawn input:focus {
+  border-color: rgba(140,200,255,0.7);
+  box-shadow: 0 0 0 2px rgba(80,140,255,0.18);
+}
+#agents-spawn .ap-spawn-actions {
+  display: flex; gap: 8px; justify-content: flex-end;
+}
+#agents-spawn button {
+  font-size: 11px; font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  letter-spacing: 0.5px;
+}
+#agents-spawn-cancel {
+  background: transparent;
+  border: 1px solid rgba(120,180,255,0.18);
+  color: rgba(180,210,240,0.7);
+}
+#agents-spawn-cancel:hover { background: rgba(80,140,220,0.08); }
+#agents-spawn-go {
+  background: rgba(94,224,161,0.22);
+  border: 1px solid rgba(94,224,161,0.55);
+  color: #b9f0d2;
+}
+#agents-spawn-go:hover { background: rgba(94,224,161,0.35); }
+
+/* Mobile — agents panel becomes wider, button stays small */
+@media (max-width: 720px) {
+  #agents-toggle {
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 38px);
+    right: 76px;                  /* hamburger is at right:14 + 48 + 14 gap = ~76 */
+    width: 48px; height: 48px;
+  }
+  #agents-panel {
+    right: 12px; left: 12px;
+    width: auto;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 96px);
+    max-height: 60vh;
+  }
+}
+
+/* ==================================================================
+   Mobile / phone layout (iPhone, narrow Android)
+   On small screens the orbiting brain layout is too tight. We collapse
+   to: brain at top (smaller), agent cards as a vertical scrollable list
+   below, mic + menu at the bottom, transcript overlay at the very top.
+   ================================================================== */
+@media (max-width: 720px) {
+  body { overflow-y: auto; }
+
+  /* Title pulled into the safe area */
+  #title-wrap { top: calc(env(safe-area-inset-top, 0px) + 14px); max-width: calc(100vw - 24px); }
+  #title    { font-size: 12px; letter-spacing: 5px; }
+  #subtitle { font-size: 9px;  letter-spacing: 4px; padding: 3px 10px; }
+
+  /* Top-right HUD becomes a smaller centered pill below the title */
+  #hud-agg {
+    top: calc(env(safe-area-inset-top, 0px) + 78px);
+    right: 50%; transform: translateX(50%);
+  }
+  #hud-agg .pill { font-size: 11px; padding: 6px 11px; }
+
+  /* Brain canvas stays full-bleed (and is shifted to the upper third of the
+     viewport via JS — see resize()) so the agent list can flow naturally
+     below it without forcing the user to scroll past empty space. */
+  #agent-layer {
+    position: relative;
+    inset: auto;
+    margin: 50vh 12px 200px 12px;
+    pointer-events: auto;
+    z-index: 5;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .agent-card {
+    position: relative !important;
+    transform: none !important;
+    width: 100% !important;
+    left: auto !important; top: auto !important;
+  }
+  .agent-card:hover { width: 100% !important; }
+
+  /* Conversation overlay: smaller, narrower, higher contrast */
+  #conversation { top: calc(env(safe-area-inset-top, 0px) + 124px); width: 92vw; }
+  #transcript { font-size: 13px; }
+  #response   { font-size: 14px; max-height: 22vh; }
+
+  /* Task ticker — slim it down so it doesn't dominate */
+  #hud-tasks { bottom: 152px; left: 12px; right: 12px; max-width: none; }
+  #hud-tasks .label { font-size: 9px; letter-spacing: 2px; }
+
+  /* Mic button — bigger thumb target, sits above the phone safe area */
+  #talk-wrap {
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 18px);
+  }
+  #talk-btn { width: 88px; height: 88px; }
+  #talk-hint { font-size: 9px; letter-spacing: 3px; }
+
+  /* Menu becomes a bottom sheet style modal — not a side popover */
+  #menu-toggle {
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 38px);
+    right: 14px; width: 48px; height: 48px;
+  }
+  #menu-panel {
+    right: 12px; left: 12px;
+    width: auto;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 96px);
+    max-height: 55vh;
+  }
+  #menu-cmds { grid-template-columns: 1fr; }
+}
+
+/* Even smaller phones (e.g. iPhone SE 1st-gen) */
+@media (max-width: 380px) {
+  #title    { font-size: 10px; letter-spacing: 3.5px; }
+  #subtitle { font-size: 8px;  letter-spacing: 3px; padding: 2px 8px; }
+  .agent-card { font-size: 11px; }
+}
+</style>
+</head>
+<body>
+
+<!-- Login gate — shown when the server requires a PIN and we don't have a session -->
+<div id="auth-gate" style="display:none">
+  <div class="auth-card">
+    <div class="auth-brand">J . A . R . V . I . S .</div>
+    <div class="auth-sub">Mission Control · Authentication required</div>
+    <input id="auth-pin" type="password" inputmode="numeric" autocomplete="off"
+           placeholder="Enter PIN" maxlength="64" />
+    <div id="auth-error" class="auth-error"></div>
+    <button id="auth-submit">Unlock</button>
+    <div class="auth-foot">Session valid for 30 days on this device.</div>
+  </div>
+</div>
+
+<div id="title-wrap">
+  <div id="title">J . A . R . V . I . S .</div>
+  <div id="subtitle"><span class="dot"></span>Mission Control</div>
+</div>
+<canvas id="c"></canvas>
+<canvas id="flow"></canvas>
+<div id="status">INITIALIZING</div>
+
+<!-- Top-right aggregate HUD -->
+<div id="hud-agg" class="hud offline">
+  <div class="pill">
+    <span><b id="agg-active">0</b>/<b id="agg-total">0</b> agents</span>
+    <span class="sep">·</span>
+    <span><b id="agg-done">0</b> done</span>
+    <span class="sep">·</span>
+    <span id="agg-runtime">0s</span>
+    <span class="sep">·</span>
+    <span id="agg-state" style="color:rgba(220,160,160,0.9)">orch offline</span>
+  </div>
+</div>
+
+<!-- Orbiting agent cards (positioned dynamically) -->
+<div id="agent-layer"></div>
+
+<!-- Top-left: provider stats panel -->
+<div id="hud-stats" class="mc-panel">
+  <div class="mc-panel-head">
+    <span class="mc-dot" style="background:#5ee0a1"></span>
+    SYSTEM · ACTIVITY
+    <button id="mute-btn" class="mc-mute" title="Toggle audio cues">♪ off</button>
+  </div>
+  <div class="mc-row" data-key="claude">
+    <span class="mc-row-label">CLAUDE</span>
+    <span class="mc-row-value" id="stat-claude">0/6</span>
+    <span class="mc-row-bar"><i id="bar-claude"></i></span>
+  </div>
+  <div class="mc-row" data-key="codex">
+    <span class="mc-row-label">CODEX</span>
+    <span class="mc-row-value" id="stat-codex">0/4</span>
+    <span class="mc-row-bar"><i id="bar-codex"></i></span>
+  </div>
+  <div class="mc-row" data-key="chatgpt">
+    <span class="mc-row-label">CHATGPT</span>
+    <span class="mc-row-value" id="stat-gpt">0 calls</span>
+  </div>
+  <div class="mc-row" data-key="vault">
+    <span class="mc-row-label">VAULT</span>
+    <span class="mc-row-value" id="stat-vault">0R / 0W</span>
+  </div>
+  <div class="mc-row" data-key="voice">
+    <span class="mc-row-label">VOICE</span>
+    <span class="mc-row-value" id="stat-voice">0 turns</span>
+  </div>
+  <div class="mc-row" data-key="uptime">
+    <span class="mc-row-label">UPTIME</span>
+    <span class="mc-row-value" id="stat-uptime">0s</span>
+  </div>
+</div>
+
+<!-- Mid-left: networks (UniFi) — sits between stats and schedule -->
+<div id="hud-networks" class="mc-panel">
+  <div class="mc-panel-head">
+    <span class="mc-dot" style="background:#9bf2ff"></span>
+    NETWORKS
+    <span class="mc-panel-meta" id="networks-meta">offline</span>
+  </div>
+  <div id="networks-list">
+    <div class="mc-empty">— UniFi key not set —</div>
+  </div>
+</div>
+
+<!-- Mid-left: scheduled tasks (sits below the stats panel) -->
+<div id="hud-schedule" class="mc-panel">
+  <div class="mc-panel-head">
+    <span class="mc-dot" style="background:#ffcf6a"></span>
+    SCHEDULED
+    <span class="mc-panel-meta" id="schedule-count">0</span>
+  </div>
+  <div id="schedule-list">
+    <div class="mc-empty">— nothing scheduled —</div>
+  </div>
+</div>
+
+<!-- Bottom-right: live task feed (sits above the menu button) -->
+<div id="hud-live" class="mc-panel">
+  <div class="mc-panel-head">
+    <span class="mc-dot" style="background:#ffb84d"></span>
+    LIVE TASKS
+  </div>
+  <div id="live-tasks">
+    <div class="mc-empty">— idle —</div>
+  </div>
+</div>
+
+<!-- Bottom-left: activity log — scrollable, persists last ~100 events -->
+<div id="hud-log" class="mc-panel">
+  <div class="mc-panel-head">
+    <span class="mc-dot" style="background:#5ecfff"></span>
+    ACTIVITY LOG
+    <span id="log-count" class="mc-panel-meta">0</span>
+  </div>
+  <div id="log-feed"></div>
+</div>
+
+<!-- Transcript / response (top-center overlay) -->
+<div id="conversation">
+  <div id="transcript"></div>
+  <div id="response"></div>
+</div>
+
+<!-- Agents roster panel (bottom-right, sits left of the menu hamburger) -->
+<div id="agents-toggle" title="Agents">
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="9" cy="8" r="3"/>
+    <circle cx="17" cy="8" r="3"/>
+    <path d="M2 21v-1a5 5 0 0 1 10 0v1"/>
+    <path d="M14 21v-1a5 5 0 0 1 8-4"/>
+  </svg>
+</div>
+<div id="agents-panel">
+  <div id="agents-head">
+    <span class="ap-title">AGENTS</span>
+    <span class="ap-meta" id="agents-meta">0 online</span>
+    <button id="agents-wake-all" class="ap-bulk" title="Queue an introduction task on every idle agent">WAKE ALL</button>
+    <button id="agents-cancel-all" class="ap-bulk ap-bulk-danger" title="Cancel every running and queued task">CANCEL ALL</button>
+  </div>
+  <div id="agents-list"></div>
+  <div id="agents-spawn" class="ap-hidden">
+    <div class="ap-spawn-head">
+      Spawn task on <b id="agents-spawn-target">—</b>
+    </div>
+    <input id="agents-spawn-input" type="text" placeholder="Describe the task…" maxlength="240"/>
+    <div class="ap-spawn-actions">
+      <button id="agents-spawn-cancel">Cancel</button>
+      <button id="agents-spawn-go">Dispatch</button>
+    </div>
+  </div>
+</div>
+
+<!-- Commands menu (bottom-right, collapsible) -->
+<div id="menu-toggle" title="Commands">
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+    <line x1="3" y1="6" x2="21" y2="6"/>
+    <line x1="3" y1="12" x2="21" y2="12"/>
+    <line x1="3" y1="18" x2="21" y2="18"/>
+  </svg>
+</div>
+<div id="menu-panel">
+  <div id="menu-cats"></div>
+  <div id="menu-cmds"></div>
+</div>
+
+<!-- Chat composer — text input + attachments + mic, all-in-one -->
+<div id="composer-wrap">
+  <div id="composer">
+    <button id="attach-btn" title="Attach file" type="button">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66L9.41 17.41a2 2 0 0 1-2.83-2.83l8.49-8.49"/>
+      </svg>
+    </button>
+    <input id="attach-input" type="file" multiple style="display:none"/>
+    <textarea id="composer-input" rows="1"
+              placeholder="Type a message to Jarvis…  (Enter to send · Shift+Enter for newline · drop files)"></textarea>
+    <button id="send-btn" title="Send (Enter)" type="button">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="22" y1="2" x2="11" y2="13"/>
+        <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+      </svg>
+    </button>
+    <button id="talk-btn" title="Hold to talk (Space)" type="button">
+      <svg id="mic-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round">
+        <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/>
+        <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+        <line x1="12" y1="19" x2="12" y2="23"/>
+        <line x1="8" y1="23" x2="16" y2="23"/>
+      </svg>
+    </button>
+  </div>
+  <div id="composer-attachments"></div>
+  <div id="talk-hint">HOLD SPACE / CLICK MIC · or just type</div>
+</div>
+
+<script>
+// =====================================================================
+// Auth gate — runs FIRST. If the server requires a PIN and we don't have
+// a session cookie, show the login modal and pause everything else until
+// the user authenticates. Once authed (or if no PIN configured), proceed
+// to load the full Mission Control.
+// =====================================================================
+(async function authBoot() {
+  const gate = document.getElementById('auth-gate');
+  const pinInput = document.getElementById('auth-pin');
+  const submitBtn = document.getElementById('auth-submit');
+  const errEl = document.getElementById('auth-error');
+
+  function host() {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('host') || window.location.host || 'localhost:7710';
+  }
+  const proto = window.location.protocol === 'https:' ? 'https' : 'http';
+  const base = `${proto}://${host()}`;
+
+  async function checkAuth() {
+    try {
+      const r = await fetch(`${base}/auth/check`, { credentials: 'include' });
+      const d = await r.json().catch(() => ({}));
+      if (!d.auth_required) return true;     // server has no PIN — wide open
+      return !!d.authenticated;
+    } catch (_) {
+      return true;  // network error — let the page load and surface the failure
+    }
+  }
+
+  async function submitPin() {
+    const pin = (pinInput.value || '').trim();
+    if (!pin) return;
+    submitBtn.disabled = true;
+    errEl.textContent = '';
+    pinInput.classList.remove('error');
+    try {
+      const r = await fetch(`${base}/auth`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin }),
+        credentials: 'include',
+      });
+      if (r.ok) {
+        gate.style.display = 'none';
+        // Reload so all the SSE / fetch initialisation runs with the cookie
+        location.reload();
+        return;
+      }
+      const d = await r.json().catch(() => ({}));
+      pinInput.classList.add('error');
+      pinInput.value = '';
+      pinInput.focus();
+      errEl.textContent = d.error || 'Wrong PIN.';
+    } catch (e) {
+      errEl.textContent = 'Network error — try again.';
+    } finally {
+      submitBtn.disabled = false;
+    }
+  }
+
+  submitBtn.addEventListener('click', submitPin);
+  pinInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); submitPin(); }
+  });
+
+  const ok = await checkAuth();
+  if (!ok) {
+    gate.style.display = 'flex';
+    setTimeout(() => pinInput.focus(), 100);
+    // Block the rest of the script — Mission Control init runs only
+    // after the page reloads following a successful PIN submit.
+    return;
+  }
+  // Already authed (or no PIN required) — fall through to normal init
+})();
+
+// =====================================================================
+// 3D Neural Network Brain Visualization
+// =====================================================================
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const flowCanvas = document.getElementById('flow');
+const flowCtx = flowCanvas.getContext('2d');
+// Flow canvas sits above the brain canvas, below the HTML overlays
+flowCanvas.style.position = 'fixed';
+flowCanvas.style.inset = '0';
+flowCanvas.style.pointerEvents = 'none';
+flowCanvas.style.zIndex = '3';
+
+const statusEl = document.getElementById('status');
+
+let W, H, cx, cy;
+let isMobile = false;
+let brainScale = 1.0;   // multiplier applied in project() to shrink brain on phones
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+  flowCanvas.width = W; flowCanvas.height = H;
+  isMobile = window.innerWidth <= 720;
+  cx = W / 2;
+  if (isMobile) {
+    // Brain sits clearly below the title bar. With brainScale=0.55 the
+    // visual radius is ~120px, so cy=240 puts the brain top at y~120 —
+    // just below the Mission Control pill / HUD line.
+    cy = Math.max(220, Math.min(H * 0.36, 270));
+    brainScale = 0.55;
+  } else {
+    cy = H / 2;
+    brainScale = 1.0;
+  }
+  layoutAgents();
+}
+window.addEventListener('resize', resize);
+
+// --- State from server ---
+let state = 'idle';
+let energy = 0;
+let smoothEnergy = 0;
+
+// --- Neurons ---
+const NEURON_COUNT = 180;
+const CONNECTION_DIST = 160;
+const neurons = [];
+
+class Neuron {
+  constructor() {
+    // Distribute in a rough ellipsoid (brain shape)
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(2 * Math.random() - 1);
+    const r = 120 + Math.random() * 140;
+    // Wider on x, narrower on y (brain proportions)
+    this.baseX = r * 1.4 * Math.sin(phi) * Math.cos(theta);
+    this.baseY = r * 0.85 * Math.sin(phi) * Math.sin(theta);
+    this.baseZ = r * Math.cos(phi);
+    this.x = this.baseX; this.y = this.baseY; this.z = this.baseZ;
+    // Projected screen coords
+    this.sx = 0; this.sy = 0; this.sd = 0;
+    // Animation
+    this.phase = Math.random() * Math.PI * 2;
+    this.fireLevel = 0;       // 0-1, how "activated" this neuron is
+    this.fireDecay = 0.92 + Math.random() * 0.06;
+    this.driftSpeed = 0.2 + Math.random() * 0.4;
+    this.size = 1.5 + Math.random() * 2.5;
+  }
+}
+
+for (let i = 0; i < NEURON_COUNT; i++) neurons.push(new Neuron());
+
+// --- Pre-compute connections (static topology) ---
+const connections = [];
+for (let i = 0; i < neurons.length; i++) {
+  for (let j = i + 1; j < neurons.length; j++) {
+    const dx = neurons[i].baseX - neurons[j].baseX;
+    const dy = neurons[i].baseY - neurons[j].baseY;
+    const dz = neurons[i].baseZ - neurons[j].baseZ;
+    const d = Math.sqrt(dx*dx + dy*dy + dz*dz);
+    if (d < CONNECTION_DIST) {
+      connections.push({ a: i, b: j, dist: d, pulse: 0, pulseDir: 1 });
+    }
+  }
+}
+console.log(`${neurons.length} neurons, ${connections.length} connections`);
+
+// --- 3D camera + projection ---
+// Galaxy mode: user can rotate / zoom the system. Auto-rotate kicks in
+// when the user has been idle for a few seconds, so the brain still
+// feels alive when no one is touching it.
+let rotY = 0, rotX = 0.15;       // legacy aliases — kept so other code reading them still works
+let cameraRotY = 0;
+let cameraRotX = 0.18;
+let cameraZoom = 1.0;            // 0.4 (zoomed out) … 2.5 (zoomed in)
+let lastInteractAt = -1e9;       // -infinity so auto-rotate runs from boot
+const PERSPECTIVE = 600;
+
+function project(n) {
+  rotY = cameraRotY; rotX = cameraRotX;  // sync so any legacy reads still work
+  // Rotate around Y
+  const cosY = Math.cos(cameraRotY), sinY = Math.sin(cameraRotY);
+  let x1 = n.x * cosY - n.z * sinY;
+  let z1 = n.x * sinY + n.z * cosY;
+  let y1 = n.y;
+  // Tilt around X
+  const cosX = Math.cos(cameraRotX), sinX = Math.sin(cameraRotX);
+  let y2 = y1 * cosX - z1 * sinX;
+  let z2 = y1 * sinX + z1 * cosX;
+  // Perspective divide (cameraZoom shrinks the apparent depth offset)
+  const persp = PERSPECTIVE * cameraZoom;
+  const scale = persp / (PERSPECTIVE + z2 + 300);
+  n.sx = cx + x1 * scale * brainScale;
+  n.sy = cy + y2 * scale * brainScale;
+  n.sd = scale;          // depth scale for size/alpha
+  n.sz = z2;             // raw rotated-z so callers can do depth ordering / behind detection
+}
+
+// --- Colour palettes per state ---
+// Brighter palette — each colour raised ~40% toward white so neurons read
+// clearly against the near-black background
+const PALETTES = {
+  idle:      { r: 110, g: 170, b: 255, glow: 'rgba(110,170,255,' },
+  listening: { r: 60,  g: 220, b: 255, glow: 'rgba(60,220,255,'  },
+  thinking:  { r: 255, g: 180, b: 80,  glow: 'rgba(255,180,80,'  },
+  speaking:  { r: 140, g: 200, b: 255, glow: 'rgba(140,200,255,' },
+};
+const STATUS_TEXT = { idle: 'READY', listening: 'LISTENING', thinking: 'PROCESSING', speaking: 'TRANSMITTING' };
+const STATUS_COLOR = { idle: 'rgba(80,160,255,0.5)', listening: 'rgba(0,220,255,0.8)', thinking: 'rgba(255,180,60,0.8)', speaking: 'rgba(80,200,255,0.8)' };
+
+// --- Main animation loop ---
+let t = 0;
+const FPS = 60;
+
+function animate() {
+  t += 1 / FPS;
+  smoothEnergy += (energy - smoothEnergy) * 0.2;
+
+  const pal = PALETTES[state] || PALETTES.idle;
+
+  // Auto-rotate — only when the user hasn't been interacting recently.
+  // The user's drag persists on whatever rotation they left, then we ease
+  // back into auto-spin once they've been hands-off for ~3 seconds.
+  // Speeds halved (was 0.08 / 0.25 / 0.15 / 0.12+0.15) for a calmer drift.
+  let rotSpeed = 0.04;
+  if (state === 'thinking') rotSpeed = 0.125;
+  else if (state === 'speaking') rotSpeed = 0.075;
+  else if (state === 'listening') rotSpeed = 0.06 + smoothEnergy * 0.075;
+
+  const idleMs = performance.now() - lastInteractAt;
+  if (!isInteracting && idleMs > 3000) {
+    // Smooth ease-in over 1s so resumption isn't a jolt
+    const ease = Math.min(1, (idleMs - 3000) / 1000);
+    cameraRotY += rotSpeed * ease / FPS;
+  }
+
+  // --- Background ---
+  ctx.fillStyle = '#020208';
+  ctx.fillRect(0, 0, W, H);
+
+  // Central ambient glow — brighter so the brain is clearly lit.
+  // Scaled down on mobile so the halo doesn't reach the title area.
+  const glowR = (260 + smoothEnergy * 120) * brainScale;
+  const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, glowR);
+  grad.addColorStop(0, `rgba(${pal.r},${pal.g},${pal.b},0.14)`);
+  grad.addColorStop(0.5, `rgba(${pal.r},${pal.g},${pal.b},0.05)`);
+  grad.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+
+  // --- Fire neurons based on state ---
+  if (state === 'idle') {
+    // More frequent, brighter ambient firing so the brain always looks "alive"
+    if (Math.random() < 0.08) {
+      const idx = Math.floor(Math.random() * neurons.length);
+      neurons[idx].fireLevel = 0.55 + Math.random() * 0.4;
+    }
+  } else if (state === 'listening') {
+    // Energy-driven: fire neurons proportional to mic energy
+    const fireCount = Math.floor(smoothEnergy * 12) + 1;
+    for (let k = 0; k < fireCount; k++) {
+      const idx = Math.floor(Math.random() * neurons.length);
+      neurons[idx].fireLevel = Math.min(1, neurons[idx].fireLevel + smoothEnergy * 0.5);
+    }
+  } else if (state === 'thinking') {
+    // Rapid wave firing across the brain
+    const wave = Math.sin(t * 6) * 0.5 + 0.5;
+    for (const n of neurons) {
+      const normZ = (n.baseZ + 300) / 600;
+      if (Math.abs(normZ - wave) < 0.12) {
+        n.fireLevel = Math.min(1, n.fireLevel + 0.15);
+      }
+    }
+  } else if (state === 'speaking') {
+    // Rhythmic bursts from center
+    const burst = (Math.sin(t * 8) * 0.5 + 0.5) * smoothEnergy;
+    for (const n of neurons) {
+      const dist = Math.sqrt(n.baseX*n.baseX + n.baseY*n.baseY + n.baseZ*n.baseZ);
+      const wave = Math.sin(t * 5 - dist * 0.015);
+      if (wave > 0.6) {
+        n.fireLevel = Math.min(1, n.fireLevel + burst * 0.2);
+      }
+    }
+  }
+
+  // --- Update neurons ---
+  for (const n of neurons) {
+    // Gentle breathing motion
+    const breathe = Math.sin(t * 0.8 + n.phase) * 3;
+    n.x = n.baseX + breathe;
+    n.y = n.baseY + Math.cos(t * 0.6 + n.phase * 1.3) * 2;
+    n.z = n.baseZ + Math.sin(t * 0.5 + n.phase * 0.7) * 2;
+
+    // Decay fire
+    n.fireLevel *= n.fireDecay;
+
+    // Project to screen
+    project(n);
+  }
+
+  // --- Pulse connections ---
+  for (const c of connections) {
+    const fire = Math.max(neurons[c.a].fireLevel, neurons[c.b].fireLevel);
+    c.pulse += (fire - c.pulse) * 0.15;
+  }
+
+  // --- Sort neurons by depth for proper layering ---
+  const sorted = neurons.map((n, i) => ({ n, i })).sort((a, b) => a.n.sd - b.n.sd);
+
+  // --- Draw connections ---
+  // Draw every connection at a faint base alpha so the neural web is
+  // always visible, with active ones pulsing brighter on top.
+  for (const c of connections) {
+    const a = neurons[c.a], b = neurons[c.b];
+    const depth = Math.min(a.sd, b.sd);
+    // Base web (always on) + pulse highlight (state-driven)
+    const baseAlpha = 0.09 * depth;
+    const pulseAlpha = c.pulse * depth * 0.9;
+    const alpha = baseAlpha + pulseAlpha;
+    if (alpha < 0.02) continue;
+    ctx.beginPath();
+    ctx.moveTo(a.sx, a.sy);
+    ctx.lineTo(b.sx, b.sy);
+    ctx.strokeStyle = pal.glow + alpha.toFixed(3) + ')';
+    ctx.lineWidth = 0.6 + c.pulse * 1.8;
+    ctx.stroke();
+  }
+
+  // --- Draw neurons ---
+  for (const { n } of sorted) {
+    // Raised idle floor (0.35 vs 0.15) and slightly bigger sizes — neurons
+    // always visible, not just when they fire.
+    const baseAlpha = 0.38 + n.fireLevel * 0.6;
+    const alpha = baseAlpha * n.sd;
+    const size = (n.size + n.fireLevel * 3) * n.sd;
+
+    // Outer glow
+    if (n.fireLevel > 0.1) {
+      const glowSize = size * (2 + n.fireLevel * 3);
+      const g = ctx.createRadialGradient(n.sx, n.sy, 0, n.sx, n.sy, glowSize);
+      g.addColorStop(0, pal.glow + (alpha * 0.3).toFixed(3) + ')');
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(n.sx - glowSize, n.sy - glowSize, glowSize * 2, glowSize * 2);
+    }
+
+    // Core dot
+    ctx.beginPath();
+    ctx.arc(n.sx, n.sy, Math.max(0.5, size), 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(${pal.r + Math.floor(n.fireLevel * (255-pal.r) * 0.5)}, ${pal.g + Math.floor(n.fireLevel * (255-pal.g) * 0.3)}, ${pal.b + Math.floor(n.fireLevel * (255-pal.b) * 0.2)}, ${alpha.toFixed(3)})`;
+    ctx.fill();
+
+    // Bright center for fired neurons
+    if (n.fireLevel > 0.3) {
+      ctx.beginPath();
+      ctx.arc(n.sx, n.sy, Math.max(0.3, size * 0.4), 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255,255,255,${(n.fireLevel * alpha * 0.6).toFixed(3)})`;
+      ctx.fill();
+    }
+  }
+
+  // --- Agent stars (galaxy mode) ---
+  drawAgentStars();
+  updateAgentStars();
+
+  // --- Second brain (Obsidian memory crystal) ---
+  drawVault(1 / FPS);
+
+  // --- Third brain (ChatGPT) ---
+  drawGpt(1 / FPS);
+
+  // --- Fourth brain (UniFi networks) ---
+  drawUnifi(1 / FPS);
+
+  // --- Status ---
+  statusEl.textContent = STATUS_TEXT[state] || state.toUpperCase();
+  statusEl.style.color = STATUS_COLOR[state] || STATUS_COLOR.idle;
+
+  requestAnimationFrame(animate);
+}
+
+// --- SSE connection ---
+function connectSSE() {
+  const params = new URLSearchParams(window.location.search);
+  const host = params.get('host') || window.location.host || 'localhost:7710';
+  const proto = window.location.protocol === 'https:' ? 'https' : 'http';
+  const url = `${proto}://${host}/events`;
+
+  const es = new EventSource(url);
+  es.onmessage = (event) => {
+    try {
+      const data = JSON.parse(event.data);
+      if (data.state) state = data.state;
+      if (data.energy !== undefined) energy = data.energy;
+    } catch(e) {}
+  };
+  es.onerror = () => {
+    es.close();
+    setTimeout(connectSSE, 3000);
+  };
+}
+
+// =====================================================================
+// Fourth brain — UniFi (network status across all sites)
+// =====================================================================
+const UNIFI_POS = { x: 560, y: -90, z: -120 };  // mirror of vault crystal across origin
+const UNIFI_PAL = {
+  base: '155,242,255',     // ice cyan — distinct from vault amber + GPT teal
+  ok:    '94,224,161',
+  warn:  '255,201,90',
+  down:  '232,112,112',
+};
+let unifiProj = { sx: 0, sy: 0, sd: 1, sz: 0 };
+let unifiPulse = 0;
+let unifiPulseColor = UNIFI_PAL.base;
+let unifiState = { online: false, sites: [], totals: {} };
+
+function projectUnifi() {
+  const probe = { x: UNIFI_POS.x, y: UNIFI_POS.y, z: UNIFI_POS.z, sx: 0, sy: 0, sd: 1, sz: 0 };
+  project(probe);
+  unifiProj = probe;
+}
+
+function drawUnifi(dt) {
+  if (isMobile) {
+    unifiProj = { sx: cx + 80, sy: cy - 80, sd: 1, sz: -50 };
+  } else {
+    projectUnifi();
+  }
+  const sp = unifiProj;
+  const behind = sp.sz > 0;
+  const visScale = (isMobile ? 0.6 : 1) * (sp.sd || 1);
+
+  // Tether to main brain
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.lineTo(sp.sx, sp.sy);
+  const lineAlpha = behind ? 0.05 : 0.10;
+  ctx.strokeStyle = 'rgba(' + UNIFI_PAL.base + ',' + lineAlpha.toFixed(3) + ')';
+  ctx.lineWidth = 0.6;
+  ctx.stroke();
+
+  // Pulse halo
+  const pulseAlpha = unifiPulse * (behind ? 0.4 : 1);
+  const haloR = (38 + unifiPulse * 36) * visScale;
+  if (pulseAlpha > 0.02) {
+    const grad = ctx.createRadialGradient(sp.sx, sp.sy, 0, sp.sx, sp.sy, haloR);
+    grad.addColorStop(0, 'rgba(' + unifiPulseColor + ',' + (0.55 * pulseAlpha).toFixed(3) + ')');
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(sp.sx - haloR, sp.sy - haloR, haloR * 2, haloR * 2);
+  }
+  unifiPulse *= 0.96;
+
+  // The router glyph — concentric rings + radiating "broadcast" arcs
+  const r0 = 18 * visScale;
+  const tNow = performance.now() / 1000;
+  // Overall colour = worst site status
+  const totals = unifiState.totals || {};
+  const anyDown = (unifiState.sites || []).some(s => s.status === 'down');
+  const anyDegraded = (unifiState.sites || []).some(s => s.status === 'degraded');
+  const stateRgb = !unifiState.online ? '120,140,180'
+                  : anyDown          ? UNIFI_PAL.down
+                  : anyDegraded      ? UNIFI_PAL.warn
+                  : UNIFI_PAL.ok;
+  const baseRgba = 'rgba(' + UNIFI_PAL.base + ',' + (behind ? 0.5 : 1) + ')';
+
+  // Three concentric rings
+  for (let k = 0; k < 3; k++) {
+    const r = r0 * (0.4 + 0.3 * k);
+    ctx.beginPath();
+    ctx.arc(sp.sx, sp.sy, r, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(' + UNIFI_PAL.base + ',' +
+      ((behind ? 0.25 : 0.55) - k * 0.12).toFixed(3) + ')';
+    ctx.lineWidth = 0.9;
+    ctx.stroke();
+  }
+  // Broadcast arcs — three rotating quarter-circle ticks suggesting wifi
+  for (let k = 0; k < 3; k++) {
+    const phase = tNow * 0.5 + k * (Math.PI * 2 / 3);
+    const r = r0 * 1.05;
+    ctx.beginPath();
+    ctx.arc(sp.sx, sp.sy, r, phase, phase + Math.PI / 4);
+    ctx.strokeStyle = 'rgba(' + stateRgb + ',' + (behind ? 0.5 : 0.85) + ')';
+    ctx.lineWidth = 1.4;
+    ctx.stroke();
+  }
+  // Centre dot
+  ctx.beginPath();
+  ctx.arc(sp.sx, sp.sy, 2.5 * visScale, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(' + stateRgb + ',1)';
+  ctx.fill();
+
+  // Label
+  ctx.fillStyle = 'rgba(220,235,255,' + (behind ? 0.35 : 0.78) + ')';
+  ctx.font = (10 * Math.max(0.6, visScale)).toFixed(0) + 'px "Segoe UI", system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  const label = unifiState.online
+    ? 'NETWORKS · ' + (totals.devices_online || 0) + '/' + (totals.devices || 0)
+    : 'NETWORKS';
+  ctx.fillText(label, sp.sx, sp.sy + r0 + 14 * visScale);
+}
+
+// =====================================================================
+// Third brain — ChatGPT (OpenAI) — visible when ChatGPT calls the vault
+// =====================================================================
+// Mirror-image position to the Obsidian crystal so the galaxy is balanced.
+const GPT_POS = { x: 560, y: 80, z: 120 };
+const GPT_PAL = {
+  base:  '16,163,127',     // OpenAI green-teal
+  read:  '90,210,180',     // outbound from GPT
+  write: '120,230,200',    // inbound to GPT
+};
+let gptProj = { sx: 0, sy: 0, sd: 1, sz: 0 };
+let gptPulse = 0;
+let gptPulseColor = GPT_PAL.base;
+const gptParticles = [];   // particles between GPT and either main brain or vault crystal
+let gptLastSeenAt = 0;     // timestamp of most recent ChatGPT activity
+
+// =====================================================================
+// Second brain — Obsidian "memory crystal" rendered in the same 3D space
+// =====================================================================
+// Sits as a fixed companion to the main brain. Read/write events from the
+// vault stream in via /vault_events SSE and trigger particle bursts.
+const VAULT_POS = { x: -560, y: -90, z: -120 };   // 3D coords (world space, rotates with camera)
+const VAULT_PAL = {
+  base:  '255,201,90',     // amber — the crystal itself
+  read:  '255,210,120',    // amber particles flow OUT (recall)
+  write: '94,224,161',     // green particles flow IN (remember / append)
+};
+let vaultProj = { sx: 0, sy: 0, sd: 1, sz: 0 };
+let vaultPulse = 0;        // 0..1, decays each frame; spikes on each event
+let vaultPulseColor = VAULT_PAL.base;
+const vaultParticles = [];
+const vaultLog = [];       // last few events for the toast / label
+const VAULT_LOG_MAX = 5;
+
+// --- Vault graph (Obsidian notes) ----------------------------------------
+const FOLDER_COLORS = {
+  Knowledge:  '94,207,255',    // cyan       — facts / how-tos
+  Projects:   '180,120,255',   // violet     — long-running project briefs
+  Sessions:   '255,140,90',    // orange     — completed agent task records (was sky-blue, clashed with cyan family)
+  Daily:      '255,201,90',    // amber      — daily voice journal
+  People:     '255,107,197',   // magenta    — people / contacts
+  Decisions:  '94,224,161',    // green      — architectural choices
+  ChatGPT:    '16,163,127',    // OpenAI teal — imported ChatGPT conversations
+  Trends:     '255,107,157',   // hot pink   — content-pipeline trend mines
+  Scripts:    '255,133,179',   // rose       — TikTok scripts
+  Drafts:     '192,163,255',   // lilac      — assembled video drafts
+  Published:  '255,215,106',   // gold       — published videos (post-go-live)
+  Vault:      '180,200,230',   // pale fallback
+};
+const VAULT_NODE_RADIUS = 110;        // sphere radius around the crystal
+const vaultNodes = new Map();         // id -> {x,y,z, folder, title, age, mtime}
+let   vaultLinks = [];                // [{source, target}]
+let   vaultLastFetch = 0;
+let   vaultGraphSlot = 0;             // monotonic slot counter for stable Fib positions
+let   hoveredVaultNode = null;        // currently hovered node (for tooltip)
+let   mouseScreenX = -9999, mouseScreenY = -9999;
+
+function _vaultNodePos(slot) {
+  // Spherical Fibonacci scaled to a small sphere centred on VAULT_POS
+  const golden = Math.PI * (3 - Math.sqrt(5));
+  const N = 96;
+  const i = slot % N;
+  const y = 1 - (i / Math.max(1, N - 1)) * 2;
+  const r = Math.sqrt(Math.max(0, 1 - y * y));
+  const theta = golden * i;
+  return {
+    x: VAULT_POS.x + Math.cos(theta) * r * VAULT_NODE_RADIUS,
+    y: VAULT_POS.y + y * VAULT_NODE_RADIUS * 0.7,
+    z: VAULT_POS.z + Math.sin(theta) * r * VAULT_NODE_RADIUS,
+  };
+}
+
+// Tiny label rendering — pill-shaped, low-key, matches HUD glass style
+function _drawLabel(x, y, text, rgb, alpha) {
+  const txt = (text || '').slice(0, 40);
+  ctx.font = '11px "Segoe UI", system-ui, sans-serif';
+  const w = ctx.measureText(txt).width;
+  const padX = 6, h = 16;
+  // Subtle dark backdrop so text reads against any neuron colour
+  ctx.fillStyle = 'rgba(8,12,22,' + (0.6 * alpha).toFixed(3) + ')';
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(x, y - h / 2, w + padX * 2, h, 7);
+  else ctx.rect(x, y - h / 2, w + padX * 2, h);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(' + rgb + ',' + alpha.toFixed(3) + ')';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(txt, x + padX, y);
+  ctx.textBaseline = 'alphabetic';
+}
+
+// Two-line tooltip used on hover — slightly larger, more contrast
+function _drawTooltip(x, y, lines, rgb) {
+  ctx.font = '12px "Segoe UI", system-ui, sans-serif';
+  let w = 0;
+  for (const l of lines) w = Math.max(w, ctx.measureText(l).width);
+  const padX = 10, padY = 6, lineH = 16;
+  const totalH = lineH * lines.length + padY * 2;
+  // Keep tooltip on-screen
+  let bx = x, by = y - totalH - 4;
+  if (bx + w + padX * 2 > W) bx = W - w - padX * 2 - 4;
+  if (by < 4) by = y + 16;
+  ctx.fillStyle = 'rgba(8,14,30,0.92)';
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(bx, by, w + padX * 2, totalH, 8);
+  else ctx.rect(bx, by, w + padX * 2, totalH);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(' + rgb + ',0.55)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  // Title line full color
+  ctx.fillStyle = 'rgba(' + rgb + ',1)';
+  ctx.fillText(lines[0], bx + padX, by + padY);
+  // Subline (folder) muted
+  if (lines[1]) {
+    ctx.fillStyle = 'rgba(160,180,210,0.75)';
+    ctx.font = '10px "Segoe UI", system-ui, sans-serif';
+    ctx.fillText(lines[1], bx + padX, by + padY + lineH);
+  }
+  ctx.textBaseline = 'alphabetic';
+}
+
+// Folder color legend — small, bottom-right of the canvas
+function _drawVaultLegend() {
+  if (vaultNodes.size === 0) return;
+  // Build a list of folders that are actually present, in display order
+  const present = new Set();
+  for (const rec of vaultNodes.values()) present.add(rec.folder);
+  const order = ['Knowledge', 'Projects', 'Daily', 'Sessions', 'People', 'Decisions'];
+  const items = order.filter(f => present.has(f));
+  if (!items.length) return;
+  const lh = 16, padX = 10, padY = 8;
+  ctx.font = '11px "Segoe UI", system-ui, sans-serif';
+  let w = 0;
+  for (const f of items) w = Math.max(w, ctx.measureText(f).width);
+  const totalW = w + padX * 2 + 18;
+  const totalH = lh * items.length + padY * 2;
+  // Position bottom-right, but above the talk hint
+  const bx = W - totalW - 18;
+  const by = H - totalH - 130;
+  ctx.fillStyle = 'rgba(8,14,30,0.55)';
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(bx, by, totalW, totalH, 10);
+  else ctx.rect(bx, by, totalW, totalH);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(80,140,220,0.18)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  for (let i = 0; i < items.length; i++) {
+    const f = items[i];
+    const yi = by + padY + lh * i + lh / 2;
+    const rgb = FOLDER_COLORS[f] || FOLDER_COLORS.Vault;
+    ctx.fillStyle = 'rgba(' + rgb + ',1)';
+    ctx.beginPath();
+    ctx.arc(bx + padX, yi, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(220,235,255,0.85)';
+    ctx.fillText(f, bx + padX + 10, yi);
+  }
+  ctx.textBaseline = 'alphabetic';
+}
+
+async function refreshVaultGraph() {
+  // Debounce — don't hammer on bursts of writes
+  const now = performance.now();
+  if (now - vaultLastFetch < 800) return;
+  vaultLastFetch = now;
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const host = params.get('host') || window.location.host || 'localhost:7710';
+    const proto = window.location.protocol === 'https:' ? 'https' : 'http';
+    const r = await fetch(`${proto}://${host}/vault_graph`);
+    if (!r.ok) return;
+    const g = await r.json();
+    const incoming = new Set();
+    for (const n of (g.nodes || [])) {
+      incoming.add(n.id);
+      let rec = vaultNodes.get(n.id);
+      if (!rec) {
+        const pos = _vaultNodePos(vaultGraphSlot++);
+        rec = {
+          ...pos,
+          folder: n.folder,
+          title: n.title,
+          mtime: n.mtime,
+          age: 0,        // 0..1 fade-in age
+          isNew: true,
+        };
+        vaultNodes.set(n.id, rec);
+      } else {
+        rec.title = n.title;
+        rec.folder = n.folder;
+        rec.mtime = n.mtime;
+        rec.isNew = false;
+      }
+    }
+    // Drop nodes that disappeared
+    for (const id of [...vaultNodes.keys()]) {
+      if (!incoming.has(id)) vaultNodes.delete(id);
+    }
+    vaultLinks = (g.links || []).filter(l =>
+      vaultNodes.has(l.source) && vaultNodes.has(l.target));
+  } catch (_) { /* network noise — try again next event */ }
+}
+
+function projectVault() {
+  const probe = { x: VAULT_POS.x, y: VAULT_POS.y, z: VAULT_POS.z, sx: 0, sy: 0, sd: 1, sz: 0 };
+  project(probe);
+  vaultProj = probe;
+}
+
+function projectGpt() {
+  const probe = { x: GPT_POS.x, y: GPT_POS.y, z: GPT_POS.z, sx: 0, sy: 0, sd: 1, sz: 0 };
+  project(probe);
+  gptProj = probe;
+}
+
+// Render the ChatGPT brain — knotted/orbital ring shape that's distinct
+// from the hexagonal Obsidian crystal so they're never confused.
+function drawGpt(dt) {
+  if (isMobile) {
+    gptProj = { sx: cx - 120, sy: cy + 60, sd: 1, sz: -50 };
+  } else {
+    projectGpt();
+  }
+  const sp = gptProj;
+  const behind = sp.sz > 0;
+  const visScale = (isMobile ? 0.7 : 1) * (sp.sd || 1);
+
+  // Tether to main brain — only renders bright when GPT was active recently
+  const recency = Math.max(0, 1 - (performance.now() - gptLastSeenAt) / 8000);
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.lineTo(sp.sx, sp.sy);
+  const lineAlpha = (behind ? 0.05 : 0.10) + recency * 0.25;
+  ctx.strokeStyle = 'rgba(' + GPT_PAL.base + ',' + lineAlpha.toFixed(3) + ')';
+  ctx.lineWidth = 0.7 + recency * 0.8;
+  ctx.stroke();
+
+  // Pulse halo
+  const pulseAlpha = gptPulse * (behind ? 0.4 : 1);
+  const haloR = (40 + gptPulse * 38) * visScale;
+  if (pulseAlpha > 0.02) {
+    const grad = ctx.createRadialGradient(sp.sx, sp.sy, 0, sp.sx, sp.sy, haloR);
+    grad.addColorStop(0, 'rgba(' + gptPulseColor + ',' + (0.55 * pulseAlpha).toFixed(3) + ')');
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(sp.sx - haloR, sp.sy - haloR, haloR * 2, haloR * 2);
+  }
+  gptPulse *= 0.96;
+
+  // The GPT glyph — three rotated ellipses (like an OpenAI-ish atom)
+  const r0 = 18 * visScale;
+  const baseRgba = 'rgba(' + GPT_PAL.base + ',' + (behind ? 0.5 : 1) + ')';
+  const angles = [0, Math.PI / 3, -Math.PI / 3];
+  for (const a of angles) {
+    ctx.save();
+    ctx.translate(sp.sx, sp.sy);
+    ctx.rotate(a);
+    ctx.beginPath();
+    ctx.ellipse(0, 0, r0, r0 * 0.45, 0, 0, Math.PI * 2);
+    ctx.strokeStyle = baseRgba;
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+    ctx.restore();
+  }
+  // Centre dot
+  ctx.beginPath();
+  ctx.arc(sp.sx, sp.sy, 3 * visScale, 0, Math.PI * 2);
+  ctx.fillStyle = baseRgba;
+  ctx.fill();
+
+  // Label
+  ctx.fillStyle = 'rgba(220,235,225,' + (behind ? 0.35 : 0.78) + ')';
+  ctx.font = (10 * Math.max(0.6, visScale)).toFixed(0) + 'px "Segoe UI", system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('CHATGPT', sp.sx, sp.sy + r0 + 14 * visScale);
+
+  // Animate + draw GPT particles
+  for (let i = gptParticles.length - 1; i >= 0; i--) {
+    const p = gptParticles[i];
+    p.t += dt * 0.85 / p.life;
+    if (p.t < 0) continue;
+    if (p.t >= 1) { gptParticles.splice(i, 1); continue; }
+    const tt = p.t;
+    const e = tt < 0.5 ? 4 * tt * tt * tt : 1 - Math.pow(-2 * tt + 2, 3) / 2;
+    const x = p.sx + (p.tx - p.sx) * e;
+    const y = p.sy + (p.ty - p.sy) * e;
+    const alpha = (1 - Math.abs(p.t - 0.5) * 2) * 0.95;
+    ctx.beginPath();
+    ctx.arc(x, y, p.size, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(' + p.rgb + ',' + Math.max(0, alpha).toFixed(3) + ')';
+    ctx.shadowColor = 'rgba(' + p.rgb + ',0.6)';
+    ctx.shadowBlur = 8;
+    ctx.fill();
+  }
+  ctx.shadowBlur = 0;
+}
+
+function _spawnBetween(particles, fromXY, toXY, rgb, n = 16) {
+  // Helper — emit a burst of particles travelling fromXY -> toXY along a
+  // smooth eased path. Used for vault↔brain and gpt↔vault flows.
+  for (let i = 0; i < n; i++) {
+    particles.push({
+      sx: fromXY.x + (Math.random()-0.5)*10,
+      sy: fromXY.y + (Math.random()-0.5)*10,
+      tx: toXY.x,  ty: toXY.y,
+      t: -i * 0.045,
+      life: 1.0 + Math.random() * 0.35,
+      size: 1.7 + Math.random() * 1.5,
+      rgb: rgb,
+    });
+  }
+}
+
+function spawnVaultParticles(op, source) {
+  // op = 'read' | 'write' | 'append'
+  // source = 'voice' | 'chatgpt' | 'agent' (default voice)
+  const reading = (op === 'read');
+  const n = 14 + Math.floor(Math.random() * 8);
+
+  if (source === 'chatgpt') {
+    // ChatGPT is the actor. Particles flow between the GPT brain and the
+    // Obsidian crystal — and we light up the GPT brain with a pulse.
+    const colorRgb = reading ? GPT_PAL.read : GPT_PAL.write;
+    const from = reading ? { x: vaultProj.sx, y: vaultProj.sy } : { x: gptProj.sx, y: gptProj.sy };
+    const to   = reading ? { x: gptProj.sx, y: gptProj.sy }   : { x: vaultProj.sx, y: vaultProj.sy };
+    _spawnBetween(gptParticles, from, to, colorRgb, n);
+    gptPulse = 1.0;
+    gptPulseColor = colorRgb;
+    gptLastSeenAt = performance.now();
+    // Also pulse the crystal (it's the data source/target)
+    vaultPulse = 0.7;
+    vaultPulseColor = reading ? VAULT_PAL.read : VAULT_PAL.write;
+    return;
+  }
+
+  // Default: Jarvis voice / agents acting through the main brain
+  const colorRgb = reading ? VAULT_PAL.read : VAULT_PAL.write;
+  const from = reading ? { x: vaultProj.sx, y: vaultProj.sy } : { x: cx, y: cy };
+  const to   = reading ? { x: cx, y: cy } : { x: vaultProj.sx, y: vaultProj.sy };
+  _spawnBetween(vaultParticles, from, to, colorRgb, n);
+  vaultPulse = 1.0;
+  vaultPulseColor = colorRgb;
+}
+
+function drawVault(dt) {
+  if (isMobile) {
+    // On mobile we're already cramped. Still project so events feel alive,
+    // but render the crystal at a fixed 2D anchor below the brain so the
+    // tether line and pulse remain visible.
+    vaultProj = { sx: cx + 120, sy: cy + 60, sd: 1, sz: -50 };
+  } else {
+    projectVault();
+  }
+  const sp = vaultProj;
+  const behind = sp.sz > 0;
+  const visScale = (isMobile ? 0.7 : 1) * (sp.sd || 1);
+
+  // Persistent tether line from main brain to vault
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.lineTo(sp.sx, sp.sy);
+  const lineAlpha = behind ? 0.06 : 0.12;
+  ctx.strokeStyle = 'rgba(' + VAULT_PAL.base + ',' + lineAlpha.toFixed(3) + ')';
+  ctx.lineWidth = 0.7;
+  ctx.stroke();
+
+  // Pulse halo around the crystal — fades each frame, refreshed on events
+  const pulseAlpha = vaultPulse * (behind ? 0.4 : 1);
+  const haloR = (38 + vaultPulse * 36) * visScale;
+  if (pulseAlpha > 0.02) {
+    const grad = ctx.createRadialGradient(sp.sx, sp.sy, 0, sp.sx, sp.sy, haloR);
+    grad.addColorStop(0, 'rgba(' + vaultPulseColor + ',' + (0.55 * pulseAlpha).toFixed(3) + ')');
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(sp.sx - haloR, sp.sy - haloR, haloR * 2, haloR * 2);
+  }
+  vaultPulse *= 0.96;       // fade
+
+  // The crystal itself — hexagonal lattice (memory icon).
+  // Animated: outer hex spins slowly clockwise, inner hex slowly
+  // counter-clockwise + faster, giving a calm "two gears in resonance"
+  // feel that emphasises this is an *active* memory store.
+  const r0 = 18 * visScale;
+  const baseRgba = 'rgba(' + VAULT_PAL.base + ',' + (behind ? 0.5 : 1) + ')';
+  const tNow = performance.now() / 1000;
+  const outerAngle =  tNow * 0.18;      // rad/sec — ~1 full rotation every 35s
+  const innerAngle = -tNow * 0.42;      // counter-rotating, faster, ~15s/rev
+
+  // Outer hexagon ring
+  ctx.beginPath();
+  for (let k = 0; k < 6; k++) {
+    const a = k * Math.PI / 3 + Math.PI / 6 + outerAngle;
+    const x = sp.sx + Math.cos(a) * r0;
+    const y = sp.sy + Math.sin(a) * r0;
+    if (k === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+  ctx.strokeStyle = baseRgba;
+  ctx.lineWidth = 1.2;
+  ctx.stroke();
+
+  // Inner hexagon ring (smaller, counter-rotating)
+  ctx.beginPath();
+  for (let k = 0; k < 6; k++) {
+    const a = k * Math.PI / 3 + innerAngle;
+    const x = sp.sx + Math.cos(a) * r0 * 0.55;
+    const y = sp.sy + Math.sin(a) * r0 * 0.55;
+    if (k === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+  ctx.strokeStyle = 'rgba(' + VAULT_PAL.base + ',' + (behind ? 0.35 : 0.7) + ')';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // Six tick-mark spokes between inner & outer rings, fixed (no rotation)
+  // — gives the moving hexes something to register against visually
+  ctx.strokeStyle = 'rgba(' + VAULT_PAL.base + ',' + (behind ? 0.18 : 0.32) + ')';
+  ctx.lineWidth = 0.6;
+  for (let k = 0; k < 6; k++) {
+    const a = k * Math.PI / 3 + Math.PI / 6;
+    const x1 = sp.sx + Math.cos(a) * r0 * 0.62;
+    const y1 = sp.sy + Math.sin(a) * r0 * 0.62;
+    const x2 = sp.sx + Math.cos(a) * r0 * 0.92;
+    const y2 = sp.sy + Math.sin(a) * r0 * 0.92;
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+  }
+
+  // Centre dot — gently breathes
+  const breathe = 1 + Math.sin(tNow * 1.3) * 0.18;
+  ctx.beginPath();
+  ctx.arc(sp.sx, sp.sy, 2.5 * visScale * breathe, 0, Math.PI * 2);
+  ctx.fillStyle = baseRgba;
+  ctx.fill();
+
+  // Label below
+  ctx.fillStyle = 'rgba(220,220,200,' + (behind ? 0.35 : 0.75) + ')';
+  ctx.font = (10 * Math.max(0.6, visScale)).toFixed(0) + 'px "Segoe UI", system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('SECOND BRAIN', sp.sx, sp.sy + r0 + 14 * visScale);
+
+  // --- Draw the vault graph (notes + wikilinks) around the crystal ---
+  if (!isMobile && vaultNodes.size > 0) {
+    const probe = { x: 0, y: 0, z: 0, sx: 0, sy: 0, sd: 1, sz: 0 };
+    // First pass: project every node into screen coords + advance fade-in age
+    for (const rec of vaultNodes.values()) {
+      probe.x = rec.x; probe.y = rec.y; probe.z = rec.z;
+      project(probe);
+      rec.proj = { sx: probe.sx, sy: probe.sy, sd: probe.sd, sz: probe.sz };
+      if (rec.age < 1) rec.age = Math.min(1, rec.age + 0.04);
+    }
+
+    // Hover detection — find the visible node nearest the mouse pointer
+    let nearest = null;
+    let nearestDist = 18;   // px tolerance
+    for (const rec of vaultNodes.values()) {
+      const p = rec.proj;
+      if (!p || p.sz > 0) continue;   // skip behind-the-brain nodes
+      const dx = p.sx - mouseScreenX;
+      const dy = p.sy - mouseScreenY;
+      const d = Math.hypot(dx, dy);
+      if (d < nearestDist) { nearestDist = d; nearest = rec; }
+    }
+    hoveredVaultNode = nearest;
+
+    // Edges (wikilinks) — drawn before nodes so they sit underneath
+    for (const link of vaultLinks) {
+      const a = vaultNodes.get(link.source);
+      const b = vaultNodes.get(link.target);
+      if (!a || !b || !a.proj || !b.proj) continue;
+      const depth = Math.min(a.proj.sd, b.proj.sd);
+      const behind = (a.proj.sz > 0 && b.proj.sz > 0);
+      const isHover = (hoveredVaultNode && (a === hoveredVaultNode || b === hoveredVaultNode));
+      const alpha = isHover
+        ? 0.85 * depth
+        : (behind ? 0.06 : 0.18) * depth * Math.min(a.age, b.age);
+      if (alpha < 0.02) continue;
+      ctx.beginPath();
+      ctx.moveTo(a.proj.sx, a.proj.sy);
+      ctx.lineTo(b.proj.sx, b.proj.sy);
+      ctx.strokeStyle = 'rgba(' + (FOLDER_COLORS[a.folder] || FOLDER_COLORS.Vault) + ',' + alpha.toFixed(3) + ')';
+      ctx.lineWidth = isHover ? 1.6 : 0.5;
+      ctx.stroke();
+    }
+
+    // Nodes — coloured by folder, sized by depth
+    const now = Date.now() / 1000;
+    for (const rec of vaultNodes.values()) {
+      const p = rec.proj;
+      if (!p) continue;
+      const rgb = FOLDER_COLORS[rec.folder] || FOLDER_COLORS.Vault;
+      const behind = p.sz > 0;
+      const baseAlpha = (behind ? 0.45 : 1) * p.sd * rec.age;
+      const isHover = (rec === hoveredVaultNode);
+      const sz = (isHover ? 4.5 : 1.8) + p.sd * 1.6;
+      // Halo for newer nodes (just been added) OR currently hovered
+      if (rec.age < 1 || isHover) {
+        const haloR = sz * (isHover ? 4.5 : 8);
+        const haloAlpha = isHover ? 0.7 : 0.6 * (1 - rec.age);
+        const grad = ctx.createRadialGradient(p.sx, p.sy, 0, p.sx, p.sy, haloR);
+        grad.addColorStop(0, 'rgba(' + rgb + ',' + haloAlpha.toFixed(3) + ')');
+        grad.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = grad;
+        ctx.fillRect(p.sx - haloR, p.sy - haloR, haloR * 2, haloR * 2);
+      }
+      ctx.beginPath();
+      ctx.arc(p.sx, p.sy, sz, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(' + rgb + ',' + baseAlpha.toFixed(3) + ')';
+      ctx.fill();
+    }
+
+    // Labels only on hover now — the always-on labels for fresh/recent
+    // nodes were too cluttered. Newly-added nodes still announce themselves
+    // via the activity log + the brief halo fade-in on the node itself.
+
+    // Hover tooltip — full title, folder, tags
+    if (hoveredVaultNode) {
+      const p = hoveredVaultNode.proj;
+      const rgb = FOLDER_COLORS[hoveredVaultNode.folder] || FOLDER_COLORS.Vault;
+      const lines = [
+        hoveredVaultNode.title,
+        hoveredVaultNode.folder.toUpperCase(),
+      ];
+      _drawTooltip(p.sx + 12, p.sy - 14, lines, rgb);
+    }
+  }
+
+  // --- Folder legend (top-left of the second-brain area) ---
+  if (!isMobile) {
+    _drawVaultLegend();
+  }
+
+  // Animate + draw vault particles
+  for (let i = vaultParticles.length - 1; i >= 0; i--) {
+    const p = vaultParticles[i];
+    p.t += dt * 0.8 / p.life;
+    if (p.t < 0) continue;                       // not started yet (stagger)
+    if (p.t >= 1) { vaultParticles.splice(i, 1); continue; }
+    // ease-in-out cubic so particles accelerate then decelerate
+    const tt = p.t;
+    const e = tt < 0.5 ? 4 * tt * tt * tt : 1 - Math.pow(-2 * tt + 2, 3) / 2;
+    const x = p.sx + (p.tx - p.sx) * e;
+    const y = p.sy + (p.ty - p.sy) * e;
+    const alpha = (1 - Math.abs(p.t - 0.5) * 2) * 0.95;
+    ctx.beginPath();
+    ctx.arc(x, y, p.size, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(' + p.rgb + ',' + Math.max(0, alpha).toFixed(3) + ')';
+    ctx.shadowColor = 'rgba(' + p.rgb + ',0.6)';
+    ctx.shadowBlur = 8;
+    ctx.fill();
+  }
+  ctx.shadowBlur = 0;
+}
+
+// =====================================================================
+// Galaxy-mode interaction — drag to orbit, pinch / wheel to zoom
+// =====================================================================
+let isInteracting = false;
+const activePointers = new Map();          // pointerId -> {x, y}
+let dragMode = 'idle';                      // 'idle' | 'rotate' | 'pinch'
+let dragStart = null;
+const ROT_SENSITIVITY = 0.0055;             // rad per pixel
+const ZOOM_MIN = 0.45, ZOOM_MAX = 2.4;
+const ROT_X_LIMIT = 1.25;                   // ~72°; prevents flipping upside down
+
+function noteInteract() {
+  isInteracting = true;
+  lastInteractAt = performance.now();
+}
+
+// Use the flow canvas (which sits on top of the brain canvas and inset:0)
+// as the input surface so we don't fight z-order. agent-layer has
+// pointer-events: none on its container (cards opt back in individually),
+// so dragging across the brain area never accidentally lands on a card.
+const interactSurface = flowCanvas;
+interactSurface.style.pointerEvents = 'auto';
+interactSurface.style.touchAction = 'none';   // we handle gestures ourselves
+interactSurface.style.cursor = 'grab';
+
+function ptrFromEvent(e) { return { x: e.clientX, y: e.clientY }; }
+
+interactSurface.addEventListener('pointerdown', (e) => {
+  // Don't capture clicks on UI elements stacked above the canvas
+  const tgt = document.elementFromPoint(e.clientX, e.clientY);
+  if (tgt && tgt !== interactSurface && tgt !== canvas) {
+    // If the topmost element is a card / button / menu, let it handle the event
+    if (tgt.closest('.agent-card, #menu-toggle, #menu-panel, #talk-btn, .task-chip, #conversation')) return;
+  }
+  e.preventDefault();
+  activePointers.set(e.pointerId, ptrFromEvent(e));
+  try { interactSurface.setPointerCapture(e.pointerId); } catch (_) {}
+  if (activePointers.size === 1) {
+    const p = [...activePointers.values()][0];
+    dragMode = 'rotate';
+    dragStart = { x: p.x, y: p.y, rotY: cameraRotY, rotX: cameraRotX };
+    interactSurface.style.cursor = 'grabbing';
+    noteInteract();
+  } else if (activePointers.size === 2) {
+    const pts = [...activePointers.values()];
+    dragMode = 'pinch';
+    dragStart = {
+      dist: Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) || 1,
+      zoom: cameraZoom,
+    };
+    noteInteract();
+  }
+});
+
+interactSurface.addEventListener('pointermove', (e) => {
+  if (!activePointers.has(e.pointerId)) return;
+  activePointers.set(e.pointerId, ptrFromEvent(e));
+  if (dragMode === 'rotate') {
+    const p = [...activePointers.values()][0];
+    cameraRotY = dragStart.rotY + (p.x - dragStart.x) * ROT_SENSITIVITY;
+    cameraRotX = Math.max(-ROT_X_LIMIT, Math.min(ROT_X_LIMIT,
+      dragStart.rotX + (p.y - dragStart.y) * ROT_SENSITIVITY));
+    noteInteract();
+  } else if (dragMode === 'pinch' && dragStart) {
+    const pts = [...activePointers.values()];
+    if (pts.length >= 2) {
+      const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) || 1;
+      cameraZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX,
+        dragStart.zoom * (dist / dragStart.dist)));
+      noteInteract();
+    }
+  }
+});
+
+function endPointer(e) {
+  if (!activePointers.has(e.pointerId)) return;
+  activePointers.delete(e.pointerId);
+  if (activePointers.size === 0) {
+    dragMode = 'idle';
+    isInteracting = false;
+    interactSurface.style.cursor = 'grab';
+  } else if (activePointers.size === 1) {
+    // Pinch ended, switch back to single-finger rotate from the remaining point
+    const p = [...activePointers.values()][0];
+    dragMode = 'rotate';
+    dragStart = { x: p.x, y: p.y, rotY: cameraRotY, rotX: cameraRotX };
+  }
+}
+interactSurface.addEventListener('pointerup', endPointer);
+interactSurface.addEventListener('pointercancel', endPointer);
+interactSurface.addEventListener('pointerleave', endPointer);
+
+// Mouse wheel zoom (desktop)
+interactSurface.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const factor = Math.exp(-e.deltaY * 0.0015);
+  cameraZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, cameraZoom * factor));
+  noteInteract();
+}, { passive: false });
+
+// Double-click / double-tap to reset the camera
+let lastTapAt = 0;
+interactSurface.addEventListener('pointerdown', (e) => {
+  const now = performance.now();
+  if (now - lastTapAt < 300) {
+    cameraRotY = 0; cameraRotX = 0.18; cameraZoom = 1.0;
+    lastInteractAt = now;
+  }
+  lastTapAt = now;
+});
+
+// =====================================================================
+// Agent stars — fixed 3D positions on a Fibonacci sphere outside the brain
+// =====================================================================
+// Three concentric "shells" so different kinds of agent never collide:
+//   - builtin    inner shell, 6 points on a slightly-tilted equator
+//   - subagent   middle shell, golden-angle distributed
+//   - session    outer shell (Claude Code sessions live the furthest out)
+const STAR_RADII = { builtin: 420, subagent: 510, session: 600 };
+const STAR_SLOTS = 64;                       // spread across this many Fibonacci points
+const agentStarCache = new Map();            // id -> {x, y, z, kind}
+// Per-kind monotonic slot counters so new agents land at the *next* point
+// on the Fibonacci sequence (golden-angle rotated from the previous one)
+// rather than always landing at the south pole, which is what happens when
+// you compute slot=n-1 with denom=n-1.
+const _starSlotByKind = { builtin: 0, subagent: 0, session: 0, default: 0 };
+
+function fibSphere(i, n, radius, yCompress = 0.55) {
+  const golden = Math.PI * (3 - Math.sqrt(5));
+  const denom = Math.max(1, n - 1);
+  const y = 1 - (i / denom) * 2;
+  const r = Math.sqrt(Math.max(0, 1 - y * y));
+  const theta = golden * i;
+  return {
+    x: Math.cos(theta) * r * radius,
+    y: y * radius * yCompress,
+    z: Math.sin(theta) * r * radius,
+  };
+}
+
+function _allocateStar(id, kind) {
+  const radius = STAR_RADII[kind] || STAR_RADII.subagent;
+  // Builtins: 6 fixed equatorial slots so they always look orderly
+  if (kind === 'builtin') {
+    const slot = _starSlotByKind.builtin++;
+    const angle = (slot % 6) * (Math.PI * 2 / 6);
+    return {
+      x: Math.cos(angle) * radius,
+      y: Math.sin(slot * 0.7) * radius * 0.18,    // tiny y wobble — keeps them off a flat plane
+      z: Math.sin(angle) * radius,
+    };
+  }
+  // Sessions / subagents: golden-angle slots so each new one is far from
+  // the previous (no piling at the south pole).
+  const ctrKey = kind in _starSlotByKind ? kind : 'default';
+  const slot = _starSlotByKind[ctrKey]++ % STAR_SLOTS;
+  const compress = kind === 'session' ? 0.65 : 0.55;
+  return fibSphere(slot, STAR_SLOTS, radius, compress);
+}
+
+function ensureAgentStarPositions(records) {
+  // records: array of {id, kind} for currently-known agents
+  const liveIds = new Set(records.map(r => r.id));
+  for (const r of records) {
+    const cached = agentStarCache.get(r.id);
+    if (!cached || cached.kind !== r.kind) {
+      const pos = _allocateStar(r.id, r.kind);
+      agentStarCache.set(r.id, { ...pos, kind: r.kind });
+    }
+  }
+  for (const id of [...agentStarCache.keys()]) {
+    if (!liveIds.has(id)) agentStarCache.delete(id);
+  }
+}
+
+// =====================================================================
+// Agent Flow panel — orbit cards, HUD, task chips, flow particles
+// =====================================================================
+const agentLayer = document.getElementById('agent-layer');
+const taskChipsEl = document.getElementById('task-chips');
+const hudAgg = document.getElementById('hud-agg');
+const aggActive = document.getElementById('agg-active');
+const aggTotal = document.getElementById('agg-total');
+const aggDone = document.getElementById('agg-done');
+const aggRuntime = document.getElementById('agg-runtime');
+const aggState = document.getElementById('agg-state');
+
+// Map of agent-id → { el, data, angle, anchor:{x,y} }
+const agentCards = new Map();
+let orchOnline = false;
+let lastTasks = [];
+
+function fmtRuntime(ms) {
+  if (!ms || ms < 1000) return '0s';
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return s + 's';
+  const m = Math.floor(s / 60);
+  if (m < 60) return m + 'm ' + (s % 60) + 's';
+  return Math.floor(m / 60) + 'h ' + (m % 60) + 'm';
+}
+
+function layoutAgents() {
+  // (Re)assigns 3D star positions when the agent set changes. The actual
+  // screen positions are recomputed every frame in updateAgentStars()
+  // because they depend on camera rotation/zoom. Mobile keeps the flat
+  // stacked list (CSS-driven) and is handled in drawFlow().
+  const records = [];
+  for (const [id, rec] of agentCards) {
+    records.push({ id, kind: (rec.data && rec.data.kind) || 'default' });
+  }
+  if (records.length === 0) return;
+  ensureAgentStarPositions(records);
+}
+
+// Per-frame: project each agent's fixed 3D star position to screen and
+// move/show its HTML card accordingly.
+function updateAgentStars() {
+  if (isMobile) return;
+  const probe = { x: 0, y: 0, z: 0, sx: 0, sy: 0, sd: 1, sz: 0 };
+  for (const [id, rec] of agentCards) {
+    const star = agentStarCache.get(id);
+    if (!star) continue;
+    probe.x = star.x; probe.y = star.y; probe.z = star.z;
+    project(probe);
+    rec.anchor = { x: probe.sx, y: probe.sy };
+    rec.starPos = {
+      x: probe.sx, y: probe.sy, depth: probe.sd, z: probe.sz,
+      rgb: hexToRgb(rec.data.color || '#5ee0a1'),
+    };
+    const behind = probe.sz > 0;
+    rec.el.style.left = probe.sx + 'px';
+    rec.el.style.top  = probe.sy + 'px';
+    rec.el.style.opacity = behind ? '0.32' : '1';
+    rec.el.style.zIndex  = String(Math.max(1, 200 - Math.round(probe.sz)));
+  }
+}
+
+// Render glowing star nodes on the brain canvas — one per agent at its
+// 3D position. Drawn as part of the main animate() pass, after neurons
+// so the brightest stars sit above the neuron cloud.
+function drawAgentStars() {
+  if (isMobile) return;
+  // Faint spokes from brain core to each star
+  for (const rec of agentCards.values()) {
+    const sp = rec.starPos;
+    if (!sp) continue;
+    const alpha = (sp.z > 0 ? 0.04 : 0.16) * sp.depth;
+    if (alpha < 0.02) continue;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(sp.x, sp.y);
+    ctx.strokeStyle = 'rgba(' + sp.rgb + ',' + alpha.toFixed(3) + ')';
+    ctx.lineWidth = 0.6;
+    ctx.stroke();
+  }
+  // Then the stars themselves
+  for (const rec of agentCards.values()) {
+    const sp = rec.starPos;
+    if (!sp) continue;
+    const running = rec.data.status === 'running';
+    const baseSize = (running ? 7 : 4) * sp.depth;
+    const alpha = sp.z > 0 ? 0.45 : 1.0;
+    const haloR = baseSize * (running ? 6 : 3.5);
+    const grad = ctx.createRadialGradient(sp.x, sp.y, 0, sp.x, sp.y, haloR);
+    grad.addColorStop(0, 'rgba(' + sp.rgb + ',' + (0.55 * alpha).toFixed(3) + ')');
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(sp.x - haloR, sp.y - haloR, haloR * 2, haloR * 2);
+    ctx.beginPath();
+    ctx.arc(sp.x, sp.y, baseSize, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(' + sp.rgb + ',' + alpha.toFixed(3) + ')';
+    ctx.fill();
+    if (running) {
+      ctx.beginPath();
+      ctx.arc(sp.x, sp.y, baseSize * 0.45, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255,255,255,' + (0.85 * alpha).toFixed(3) + ')';
+      ctx.fill();
+    }
+  }
+}
+
+// Tiny escapers so arbitrary tool text can't inject HTML into the card
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function escapeAttr(s) { return escapeHtml(s); }
+
+// #rrggbb → "r,g,b" for use in rgba()
+function hexToRgb(hex) {
+  const m = /^#?([a-f0-9]{2})([a-f0-9]{2})([a-f0-9]{2})$/i.exec(hex || '');
+  if (!m) return '94,224,161';  // neutral green fallback
+  return parseInt(m[1],16) + ',' + parseInt(m[2],16) + ',' + parseInt(m[3],16);
+}
+
+function renderAgentCard(rec) {
+  const a = rec.data;
+  const el = rec.el;
+  el.className = 'agent-card ' + (a.status || 'idle');
+  // Push the per-agent accent into CSS custom properties so border/dot/glow
+  // all pick it up automatically
+  const accent = a.color || '#5ee0a1';
+  el.style.setProperty('--accent', accent);
+  el.style.setProperty('--accent-rgb', hexToRgb(accent));
+  el.innerHTML = `
+    <div class="head"><span class="dot"></span><span class="name">${a.name || a.id}</span></div>
+    <div class="meta">
+      <span>${a.model}</span>
+      <span>·</span>
+      <span><b>${a.tasks_completed}</b> done</span>
+      ${a.tasks_failed ? `<span>·</span><span style="color:#e8b0b0"><b>${a.tasks_failed}</b> fail</span>` : ''}
+    </div>
+    ${a.current_task ? `<div class="task" title="${escapeAttr(a.current_task)}">▸ ${escapeHtml(String(a.current_task))}</div>` : ''}
+  `;
+}
+
+function updateAgents(agents) {
+  const incoming = new Set(agents.map(a => a.id));
+  // Remove cards for agents that disappeared
+  for (const [id, rec] of agentCards) {
+    if (!incoming.has(id)) {
+      rec.el.remove();
+      agentCards.delete(id);
+    }
+  }
+  // Upsert
+  for (const a of agents) {
+    let rec = agentCards.get(a.id);
+    if (!rec) {
+      const el = document.createElement('div');
+      el.className = 'agent-card idle';
+      el.style.opacity = '0';
+      agentLayer.appendChild(el);
+      rec = { el, data: a, angle: 0, anchor: { x: 0, y: 0 } };
+      agentCards.set(a.id, rec);
+      // fade in
+      requestAnimationFrame(() => { el.style.transition = 'opacity 0.5s'; el.style.opacity = '1'; });
+    } else {
+      rec.data = a;
+    }
+    renderAgentCard(rec);
+  }
+  layoutAgents();
+}
+
+function updateTasks(tasks) {
+  lastTasks = tasks || [];
+  taskChipsEl.innerHTML = '';
+  if (lastTasks.length === 0) {
+    const chip = document.createElement('div');
+    chip.className = 'task-chip todo';
+    chip.innerHTML = `<span class="dot"></span>pool empty`;
+    taskChipsEl.appendChild(chip);
+    return;
+  }
+  for (const t of lastTasks.slice(0, 8)) {
+    const chip = document.createElement('div');
+    const cls = ['todo','queued','pending'].includes(t.status) ? 'todo'
+              : ['running','in_progress','working'].includes(t.status) ? 'running'
+              : ['done','completed','success'].includes(t.status) ? 'done'
+              : ['failed','error'].includes(t.status) ? 'failed' : 'todo';
+    chip.className = 'task-chip ' + cls;
+    chip.innerHTML = `<span class="dot"></span>${String(t.title || t.id).slice(0, 40)}`;
+    chip.title = `${t.status} · ${t.id}`;
+    taskChipsEl.appendChild(chip);
+  }
+}
+
+function updateAggregate(agg) {
+  if (!agg) return;
+  aggActive.textContent = agg.active || 0;
+  aggTotal.textContent = agg.total_agents || 0;
+  aggDone.textContent = agg.tasks_completed || 0;
+  aggRuntime.textContent = fmtRuntime(agg.total_runtime_ms || 0);
+  if (orchOnline) {
+    aggState.textContent = (agg.active > 0) ? 'working' : 'ready';
+    aggState.style.color = (agg.active > 0) ? '#b9f0d2' : 'rgba(140,200,255,0.85)';
+    hudAgg.classList.remove('offline');
+  }
+}
+
+// --- Flow particles: stream from brain centre to active agent cards ---
+// Each particle carries the RGB of its target agent so different agents
+// produce visually distinct streams.
+const flowParticles = [];
+function spawnFlow(targetX, targetY, rgb) {
+  flowParticles.push({
+    x: cx, y: cy,
+    tx: targetX, ty: targetY,
+    t: 0,
+    life: 1.0 + Math.random() * 0.4,
+    size: 1.6 + Math.random() * 1.4,
+    rgb: rgb || '94,224,161',
+  });
+}
+function drawFlow(dt) {
+  flowCtx.clearRect(0, 0, W, H);
+  // Spawn particles for each running agent, colored by that agent.
+  // On mobile, the cards are in normal document flow — read the live
+  // bounding rect so particles aim at where the card actually is now
+  // (handles scrolling, layout shifts, dynamic cards added/removed).
+  for (const rec of agentCards.values()) {
+    if (isMobile) {
+      const r = rec.el.getBoundingClientRect();
+      if (r.width > 0) {
+        rec.anchor = { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+      }
+    }
+    if (rec.data.status === 'running' && rec.anchor && Math.random() < 0.35) {
+      spawnFlow(rec.anchor.x, rec.anchor.y, hexToRgb(rec.data.color || '#5ee0a1'));
+    }
+  }
+  // Step & draw
+  for (let i = flowParticles.length - 1; i >= 0; i--) {
+    const p = flowParticles[i];
+    p.t += dt * 0.9 / p.life;
+    if (p.t >= 1) { flowParticles.splice(i, 1); continue; }
+    // ease-out cubic
+    const e = 1 - Math.pow(1 - p.t, 3);
+    p.x = cx + (p.tx - cx) * e;
+    p.y = cy + (p.ty - cy) * e;
+    const alpha = (1 - p.t) * 0.9;
+    flowCtx.beginPath();
+    flowCtx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+    flowCtx.fillStyle = `rgba(${p.rgb},${alpha.toFixed(3)})`;
+    flowCtx.shadowColor = `rgba(${p.rgb},0.6)`;
+    flowCtx.shadowBlur = 8;
+    flowCtx.fill();
+  }
+  flowCtx.shadowBlur = 0;
+}
+let lastFlowT = performance.now();
+function flowLoop() {
+  const now = performance.now();
+  const dt = Math.min(0.05, (now - lastFlowT) / 1000);
+  lastFlowT = now;
+  drawFlow(dt);
+  requestAnimationFrame(flowLoop);
+}
+
+// --- UniFi SSE ---
+const elNetList = document.getElementById('networks-list');
+const elNetMeta = document.getElementById('networks-meta');
+
+function renderNetworksPanel(snap) {
+  if (!elNetList) return;
+  unifiState = snap || unifiState;
+  if (!snap || !snap.online) {
+    const reason = (snap && snap.reason) || 'no key set';
+    elNetList.innerHTML = '<div class="mc-empty">— ' + escapeHtml(reason) + ' —</div>';
+    if (elNetMeta) elNetMeta.textContent = 'offline';
+    return;
+  }
+  const sites = snap.sites || [];
+  const totals = snap.totals || {};
+  if (sites.length === 0) {
+    elNetList.innerHTML = '<div class="mc-empty">no sites returned</div>';
+  } else {
+    elNetList.innerHTML = sites.slice(0, 12).map(s => {
+      return '<div class="net-row ' + (s.status || 'ok') + '">' +
+        '<span class="net-dot"></span>' +
+        '<div class="net-body">' +
+          '<div class="net-name">' + escapeHtml(s.name) + '</div>' +
+          '<div class="net-stats">' +
+            (s.devices_online || 0) + '/' + (s.devices_total || 0) + ' dev · ' +
+            (s.clients || 0) + ' clients' +
+          '</div>' +
+        '</div>' +
+        ((s.alerts || 0) > 0
+          ? '<span class="net-alert">' + s.alerts + '</span>'
+          : '<span></span>') +
+      '</div>';
+    }).join('');
+  }
+  if (elNetMeta) {
+    elNetMeta.textContent = (totals.sites || 0) + ' sites · ' +
+                            (totals.devices_online || 0) + '/' + (totals.devices || 0) + ' dev';
+  }
+}
+
+function connectUnifiSSE() {
+  const params = new URLSearchParams(window.location.search);
+  const host = params.get('host') || window.location.host || 'localhost:7710';
+  const proto = window.location.protocol === 'https:' ? 'https' : 'http';
+  const es = new EventSource(`${proto}://${host}/unifi_events`);
+  es.onmessage = (ev) => {
+    try {
+      const d = JSON.parse(ev.data);
+      renderNetworksPanel(d);
+      // Pulse the 4th brain on each update
+      if (d.online) {
+        const anyDown = (d.sites || []).some(s => s.status === 'down');
+        const anyDeg  = (d.sites || []).some(s => s.status === 'degraded');
+        unifiPulse = 0.85;
+        unifiPulseColor = anyDown ? UNIFI_PAL.down :
+                          anyDeg  ? UNIFI_PAL.warn :
+                                    UNIFI_PAL.ok;
+      }
+    } catch (_) {}
+  };
+  es.onerror = () => { es.close(); setTimeout(connectUnifiSSE, 3000); };
+}
+
+// --- Vault (second-brain) SSE ---
+function connectVaultSSE() {
+  const params = new URLSearchParams(window.location.search);
+  const host = params.get('host') || window.location.host || 'localhost:7710';
+  const proto = window.location.protocol === 'https:' ? 'https' : 'http';
+  const url = `${proto}://${host}/vault_events`;
+  const es = new EventSource(url);
+  es.onmessage = (ev) => {
+    try {
+      const e = JSON.parse(ev.data);
+      spawnVaultParticles(e.op || 'write', e.source || 'voice');
+      vaultLog.push(e);
+      while (vaultLog.length > VAULT_LOG_MAX) vaultLog.shift();
+      if (e.op === 'write' || e.op === 'append') {
+        refreshVaultGraph();
+        sessionStats.vaultWrites++;
+      } else if (e.op === 'read') {
+        sessionStats.vaultReads++;
+      }
+      if (e.source === 'chatgpt') sessionStats.gptCalls++;
+      // Activity log row: route by source
+      const sourceKey = (e.source === 'chatgpt') ? 'chatgpt' : 'vault';
+      logEvent(sourceKey, ' ' + (e.op || 'write') + ': ' + (e.label || ''));
+      updateStatsPanel({ agents: [...agentCards.values()].map(r => r.data) });
+    } catch (_) {}
+  };
+  es.onerror = () => { es.close(); setTimeout(connectVaultSSE, 3000); };
+}
+
+// --- Orch SSE ---
+function connectOrchSSE() {
+  const params = new URLSearchParams(window.location.search);
+  const host = params.get('host') || window.location.host || 'localhost:7710';
+  const proto = window.location.protocol === 'https:' ? 'https' : 'http';
+  const url = `${proto}://${host}/orch_events`;
+
+  const es = new EventSource(url);
+  es.onmessage = (ev) => {
+    try {
+      const d = JSON.parse(ev.data);
+      orchOnline = !!d.online;
+      if (!orchOnline) {
+        hudAgg.classList.add('offline');
+        aggState.textContent = 'orch offline';
+        aggState.style.color = 'rgba(220,160,160,0.9)';
+        updateAgents([]);
+        updateTasks([]);
+        return;
+      }
+      // Detect status transitions for the activity log + stats counters
+      const incoming = d.agents || [];
+      // Build set of codex agents (we only need to do this once per snapshot)
+      for (const a of incoming) {
+        if (String(a.id || '').startsWith('gpt-') || a.adapter === 'codex') {
+          agentColorsCodex.add(a.id);
+        }
+      }
+      // Compare against last snapshot to detect just-became-running and just-finished
+      for (const a of incoming) {
+        const prev = (window._prevAgentSnap || {})[a.id];
+        if (a.status === 'running' && (!prev || prev.status !== 'running')) {
+          const isCodex = agentColorsCodex.has(a.id);
+          const src = isCodex ? 'codex' : (a.kind === 'claude-session' ? 'claude' : (a.kind === 'subagent' ? 'agent' : 'claude'));
+          logEvent(src, ' ' + a.name + ' started · ' + (a.current_task || '').slice(0, 60));
+          if (isCodex) sessionStats.codexTasks++;
+          else if (a.kind === 'builtin') sessionStats.claudeTasks++;
+        } else if (a.status === 'idle' && prev && prev.status === 'running') {
+          const isCodex = agentColorsCodex.has(a.id);
+          const src = isCodex ? 'codex' : (a.kind === 'claude-session' ? 'claude' : (a.kind === 'subagent' ? 'agent' : 'claude'));
+          logEvent(src, ' ' + a.name + ' finished');
+        }
+      }
+      window._prevAgentSnap = Object.fromEntries(incoming.map(a => [a.id, { status: a.status }]));
+
+      updateAgents(incoming);
+      updateTasks(d.tasks || []);
+      updateAggregate(d.aggregate || {});
+      updateStatsPanel(d);
+      updateLiveTasksPanel(d);
+    } catch (e) { /* ignore */ }
+  };
+  es.onerror = () => { es.close(); setTimeout(connectOrchSSE, 3000); };
+}
+
+// =====================================================================
+// Mission control: push-to-talk (hold space or click-hold the button)
+// =====================================================================
+const talkBtn = document.getElementById('talk-btn');
+const transcriptEl = document.getElementById('transcript');
+const responseEl = document.getElementById('response');
+const talkHint = document.getElementById('talk-hint');
+
+let mediaRecorder = null;
+let chunks = [];
+let micStream = null;
+let isRecording = false;
+
+// iOS Safari (and stricter desktop browsers) block autoplay unless a sound
+// has already been played within a user gesture. We "unlock" by playing a
+// tiny silent clip on the very first mic press — this lets Jarvis's reply
+// audio play immediately when it arrives later, without needing another
+// tap. Idempotent: only fires once per page lifetime.
+let audioUnlocked = false;
+function unlockAudio() {
+  if (audioUnlocked) return;
+  audioUnlocked = true;
+  try {
+    // 0.05s of silence as a base64 WAV — small, valid, plays instantly
+    const silence = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=';
+    const a = new Audio(silence);
+    a.volume = 0;
+    a.play().catch(() => { /* if it fails, we'll retry on the next gesture */ });
+  } catch (_) {}
+  // Also resume any AudioContext, in case future code uses Web Audio
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (Ctx) {
+      const ctx = new Ctx();
+      if (ctx.state === 'suspended') ctx.resume();
+    }
+  } catch (_) {}
+}
+
+async function ensureMic() {
+  // If we already have a stream but its tracks have ended (browser reclaimed
+  // the mic, or OS revoked permission), acquire a new one.
+  if (micStream) {
+    const alive = micStream.getAudioTracks().some(t => t.readyState === 'live' && t.enabled);
+    if (alive) return micStream;
+    console.log('[jarvis] mic stream went dead, re-acquiring');
+    try { micStream.getTracks().forEach(t => t.stop()); } catch (_) {}
+    micStream = null;
+  }
+  micStream = await navigator.mediaDevices.getUserMedia({
+    audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+  });
+  return micStream;
+}
+
+async function startTalk() {
+  if (isRecording) {
+    console.log('[jarvis] startTalk ignored: already recording');
+    return;
+  }
+  // If the server response is still playing audio from the previous turn,
+  // cut it short — user is starting a new turn.
+  if (currentAudio) {
+    try { currentAudio.pause(); currentAudio.src = ''; } catch (_) {}
+    currentAudio = null;
+  }
+  try {
+    await ensureMic();
+    chunks = [];
+    let options = {};
+    if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+      options = { mimeType: 'audio/webm;codecs=opus' };
+    } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+      options = { mimeType: 'audio/mp4' };
+    }
+    mediaRecorder = new MediaRecorder(micStream, options);
+    mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
+    mediaRecorder.onstop = handleTalkEnd;
+    mediaRecorder.onerror = (e) => console.error('[jarvis] MediaRecorder error:', e);
+    mediaRecorder.start();
+    isRecording = true;
+    state = 'listening';  // the brain picks this up via its own state var
+    talkBtn.classList.add('recording');
+    talkBtn.classList.remove('processing');
+    talkHint.textContent = 'LISTENING\u2026';
+    transcriptEl.classList.remove('visible');
+    responseEl.classList.remove('visible');
+    console.log('[jarvis] recording started mime=%s', mediaRecorder.mimeType);
+  } catch (e) {
+    console.error('[jarvis] startTalk failed:', e);
+    isRecording = false;
+    resetTalkUI('MIC ERROR \u2014 CHECK PERMISSIONS');
+  }
+}
+
+function stopTalk() {
+  if (!isRecording) {
+    console.log('[jarvis] stopTalk ignored: not recording');
+    return;
+  }
+  isRecording = false;  // flip this FIRST so a double-stop is harmless
+  try {
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+      mediaRecorder.stop();  // triggers onstop → handleTalkEnd
+    } else {
+      console.warn('[jarvis] stopTalk: recorder already inactive, forcing reset');
+      resetTalkUI();
+      return;
+    }
+  } catch (e) {
+    console.error('[jarvis] mediaRecorder.stop() threw:', e);
+    resetTalkUI('ERROR');
+    return;
+  }
+  talkBtn.classList.remove('recording');
+  talkBtn.classList.add('processing');
+  talkHint.textContent = 'THINKING\u2026';
+  state = 'thinking';
+}
+
+// Central UI reset — always returns the button to a clean "ready" state.
+// Called from every exit path (success, error, timeout) so we can never
+// get stuck in processing/speaking with no way back to recording.
+let currentAudio = null;
+function resetTalkUI(hint) {
+  talkBtn.classList.remove('recording');
+  talkBtn.classList.remove('processing');
+  state = 'idle';
+  talkHint.textContent = hint || 'HOLD SPACE or CLICK';
+  // Force-stop any still-playing audio from a prior turn
+  if (currentAudio) {
+    try { currentAudio.pause(); currentAudio.src = ''; } catch (_) {}
+    currentAudio = null;
+  }
+}
+
+async function handleTalkEnd() {
+  const mime = (mediaRecorder && mediaRecorder.mimeType) || 'audio/webm';
+  const blob = new Blob(chunks, { type: mime });
+  chunks = [];  // free memory + avoid re-sending on a buggy re-trigger
+  console.log('[jarvis] talk end, blob=%d bytes, mime=%s', blob.size, mime);
+
+  if (blob.size < 1000) {
+    console.log('[jarvis] blob too small, ignoring');
+    resetTalkUI();
+    return;
+  }
+
+  // 60s hard timeout so a hung server can't freeze the UI forever
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort('client-timeout'), 60000);
+
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const host = params.get('host') || window.location.host || 'localhost:7710';
+    const proto = window.location.protocol === 'https:' ? 'https' : 'http';
+    console.log('[jarvis] POST /voice_turn');
+    const resp = await fetch(`${proto}://${host}/voice_turn`, {
+      method: 'POST',
+      headers: { 'Content-Type': mime },
+      body: blob,
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    console.log('[jarvis] /voice_turn status=%d', resp.status);
+    if (!resp.ok) {
+      throw new Error('HTTP ' + resp.status);
+    }
+    const data = await resp.json();
+    console.log('[jarvis] response: transcript=%s audio=%d chars',
+      (data.transcript || '').slice(0, 40), (data.audio_b64 || '').length);
+
+    if (data.transcript) {
+      transcriptEl.textContent = '\u201C' + data.transcript + '\u201D';
+      transcriptEl.classList.add('visible');
+    }
+    if (data.response) {
+      responseEl.textContent = data.response;
+      responseEl.classList.add('visible');
+    }
+
+    if (data.audio_b64) {
+      state = 'speaking';
+      talkBtn.classList.remove('processing');
+      talkHint.textContent = 'SPEAKING\u2026';
+      const audio = new Audio('data:audio/mpeg;base64,' + data.audio_b64);
+      currentAudio = audio;
+      // Safety net: no matter what happens with the <audio> element, reset
+      // the UI after (duration + 3s) or 45s max.
+      const est = isFinite(audio.duration) && audio.duration > 0 ? audio.duration * 1000 + 3000 : 45000;
+      const safetyTimer = setTimeout(() => {
+        console.log('[jarvis] audio safety reset');
+        resetTalkUI();
+      }, est);
+      const clearAndReset = () => { clearTimeout(safetyTimer); resetTalkUI(); };
+      audio.onended = clearAndReset;
+      audio.onerror = clearAndReset;
+      audio.onabort = clearAndReset;
+      try {
+        await audio.play();
+      } catch (e) {
+        // Autoplay blocked or other playback failure
+        console.warn('[jarvis] audio.play() failed:', e);
+        clearAndReset();
+      }
+    } else {
+      resetTalkUI();
+    }
+  } catch (e) {
+    clearTimeout(timeoutId);
+    console.error('[jarvis] voice_turn failed:', e);
+    // Build the most useful error message we can \u2014 Abort/HTTP/etc.
+    let msg;
+    if (e && e.name === 'AbortError') {
+      msg = 'timed out after 60s \u2014 Jarvis may be busy';
+    } else if (e && e.message) {
+      msg = e.message;
+    } else if (e && e.name) {
+      msg = e.name;
+    } else if (typeof e === 'string') {
+      msg = e;
+    } else {
+      msg = 'request failed (no detail) \u2014 check the Jarvis console';
+    }
+    responseEl.textContent = 'Voice error: ' + msg;
+    responseEl.classList.add('visible');
+    resetTalkUI('ERROR \u2014 TAP TO RETRY');
+  }
+}
+
+// Click / touch / mouse handlers on the button (push-to-talk)
+// Each one calls unlockAudio() so the very first interaction primes the
+// audio context — required for iOS Safari to autoplay Jarvis's response.
+talkBtn.addEventListener('mousedown',  (e) => { e.preventDefault(); unlockAudio(); startTalk(); });
+talkBtn.addEventListener('mouseup',    (e) => { e.preventDefault(); stopTalk();  });
+talkBtn.addEventListener('mouseleave', ()  => { if (isRecording) stopTalk(); });
+talkBtn.addEventListener('touchstart', (e) => { e.preventDefault(); unlockAudio(); startTalk(); }, { passive: false });
+talkBtn.addEventListener('touchend',   (e) => { e.preventDefault(); stopTalk();  }, { passive: false });
+
+// =====================================================================
+// Chat composer — text input + file attachments + Send (calls /chat)
+// =====================================================================
+const composerEl   = document.getElementById('composer');
+const composerInp  = document.getElementById('composer-input');
+const attachInput  = document.getElementById('attach-input');
+const attachBtn    = document.getElementById('attach-btn');
+const sendBtn      = document.getElementById('send-btn');
+const attachedEl   = document.getElementById('composer-attachments');
+let composerAttachments = [];  // [{name, type, size, content_b64}]
+
+// Auto-grow the textarea up to its max-height (set in CSS)
+function autoGrow() {
+  composerInp.style.height = 'auto';
+  composerInp.style.height = Math.min(200, composerInp.scrollHeight) + 'px';
+}
+composerInp.addEventListener('input', autoGrow);
+
+function _bytesFmt(n) {
+  if (n < 1024) return n + ' B';
+  if (n < 1024*1024) return (n/1024).toFixed(1) + ' KB';
+  return (n/(1024*1024)).toFixed(1) + ' MB';
+}
+
+function renderAttachments() {
+  attachedEl.innerHTML = '';
+  composerAttachments.forEach((f, i) => {
+    const chip = document.createElement('div');
+    chip.className = 'attach-chip';
+    chip.innerHTML = '📎 ' + escapeHtml(f.name) +
+      ' <span class="size">' + _bytesFmt(f.size) + '</span>' +
+      ' <span class="remove" data-i="' + i + '">×</span>';
+    chip.querySelector('.remove').addEventListener('click', (e) => {
+      const idx = +e.target.getAttribute('data-i');
+      composerAttachments.splice(idx, 1);
+      renderAttachments();
+    });
+    attachedEl.appendChild(chip);
+  });
+}
+
+function _readAsBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      // result is "data:<type>;base64,<...>" — strip the prefix
+      const r = reader.result || '';
+      const comma = r.indexOf(',');
+      resolve(comma >= 0 ? r.slice(comma + 1) : '');
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+async function addAttachments(fileList) {
+  for (const f of fileList) {
+    if (composerAttachments.length >= 8) {
+      logEvent('hud', ' attachment limit reached (8 files)');
+      break;
+    }
+    if (f.size > 20 * 1024 * 1024) {
+      logEvent('hud', ' skipped ' + f.name + ' (over 20MB)');
+      continue;
+    }
+    try {
+      const b64 = await _readAsBase64(f);
+      composerAttachments.push({
+        name: f.name,
+        type: f.type || '',
+        size: f.size,
+        content_b64: b64,
+      });
+    } catch (e) {
+      logEvent('system', ' attachment read failed: ' + (e.message || e));
+    }
+  }
+  renderAttachments();
+}
+
+attachBtn.addEventListener('click', () => attachInput.click());
+attachInput.addEventListener('change', async (e) => {
+  await addAttachments(e.target.files);
+  attachInput.value = '';   // allow re-selecting same file
+});
+
+// Drag-drop support — drop files anywhere on the composer
+composerEl.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  composerEl.classList.add('dragging');
+});
+composerEl.addEventListener('dragleave', () => composerEl.classList.remove('dragging'));
+composerEl.addEventListener('drop', async (e) => {
+  e.preventDefault();
+  composerEl.classList.remove('dragging');
+  if (e.dataTransfer && e.dataTransfer.files) {
+    await addAttachments(e.dataTransfer.files);
+  }
+});
+
+async function sendChat() {
+  const text = composerInp.value.trim();
+  if (!text && composerAttachments.length === 0) return;
+  unlockAudio();
+  sendBtn.disabled = true;
+  state = 'thinking';
+  talkHint.textContent = 'SENDING…';
+  // Show what we're sending in the transcript area, dismiss any prior response
+  transcriptEl.textContent = text || '(' + composerAttachments.length + ' file' +
+    (composerAttachments.length !== 1 ? 's' : '') + ')';
+  transcriptEl.classList.add('visible');
+  responseEl.classList.remove('visible');
+
+  const payload = {
+    text: text,
+    files: composerAttachments,
+  };
+  // Snapshot + clear UI immediately so the operator can keep typing
+  composerInp.value = '';
+  composerAttachments = [];
+  renderAttachments();
+  autoGrow();
+
+  // Activity log + stats
+  sessionStats.voiceTurns++;
+  logEvent('voice', ' chat: ' + (text.slice(0, 80) || '[' + payload.files.length + ' files]'));
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort('client-timeout'), 90000);
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const host = params.get('host') || window.location.host || 'localhost:7710';
+    const proto = window.location.protocol === 'https:' ? 'https' : 'http';
+    const r = await fetch(`${proto}://${host}/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      credentials: 'include',
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const data = await r.json();
+    if (data.response) {
+      responseEl.textContent = data.response;
+      responseEl.classList.add('visible');
+    }
+    if (data.audio_b64) {
+      state = 'speaking';
+      talkHint.textContent = 'SPEAKING…';
+      const audio = new Audio('data:audio/mpeg;base64,' + data.audio_b64);
+      currentAudio = audio;
+      const est = isFinite(audio.duration) && audio.duration > 0
+        ? audio.duration * 1000 + 3000 : 45000;
+      const safety = setTimeout(() => resetTalkUI(), est);
+      const clearAndReset = () => { clearTimeout(safety); resetTalkUI(); };
+      audio.onended = clearAndReset;
+      audio.onerror = clearAndReset;
+      try { await audio.play(); } catch (_) { clearAndReset(); }
+    } else {
+      resetTalkUI();
+    }
+  } catch (e) {
+    clearTimeout(timeoutId);
+    console.error('[jarvis] /chat failed:', e);
+    responseEl.textContent = 'Error: ' + (e.message || e.name || 'unknown');
+    responseEl.classList.add('visible');
+    resetTalkUI('SEND FAILED');
+  } finally {
+    sendBtn.disabled = false;
+  }
+}
+
+sendBtn.addEventListener('click', sendChat);
+
+// Enter to send · Shift+Enter for newline
+composerInp.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+    e.preventDefault();
+    sendChat();
+  }
+});
+// Also unlock on any tap inside the page so a menu click or drag also primes
+document.addEventListener('pointerdown', unlockAudio, { once: false, capture: true });
+
+// Spacebar push-to-talk — ignore when focus is in an input/textarea
+let spaceHeld = false;
+window.addEventListener('keydown', (e) => {
+  if (e.code !== 'Space' || spaceHeld) return;
+  const tag = (e.target && e.target.tagName) || '';
+  if (/^(INPUT|TEXTAREA|SELECT)$/i.test(tag)) return;
+  e.preventDefault();
+  spaceHeld = true;
+  startTalk();
+});
+window.addEventListener('keyup', (e) => {
+  if (e.code !== 'Space') return;
+  if (!spaceHeld) return;
+  spaceHeld = false;
+  stopTalk();
+});
+
+// =====================================================================
+// Commands menu — ported from the pygame UI
+// =====================================================================
+const menuToggle = document.getElementById('menu-toggle');
+const menuPanel = document.getElementById('menu-panel');
+const menuCats = document.getElementById('menu-cats');
+const menuCmds = document.getElementById('menu-cmds');
+
+let menuCategories = {};    // { "Lights": [{label, command}, ...], ... }
+let activeCategory = null;
+let runningCommandEl = null;
+
+async function loadMenu() {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const host = params.get('host') || window.location.host || 'localhost:7710';
+    const proto = window.location.protocol === 'https:' ? 'https' : 'http';
+    const resp = await fetch(`${proto}://${host}/commands`);
+    const data = await resp.json();
+    menuCategories = data.categories || {};
+    renderCategories();
+  } catch (e) {
+    console.warn('[jarvis] menu load failed:', e);
+  }
+}
+
+function renderCategories() {
+  menuCats.innerHTML = '';
+  const names = Object.keys(menuCategories);
+  if (!names.length) return;
+  activeCategory = activeCategory && menuCategories[activeCategory] ? activeCategory : names[0];
+  for (const name of names) {
+    const el = document.createElement('div');
+    el.className = 'menu-cat' + (name === activeCategory ? ' active' : '');
+    el.textContent = name;
+    el.addEventListener('click', () => {
+      activeCategory = name;
+      renderCategories();
+      renderCommands();
+    });
+    menuCats.appendChild(el);
+  }
+  renderCommands();
+}
+
+function renderCommands() {
+  menuCmds.innerHTML = '';
+  const items = menuCategories[activeCategory] || [];
+  for (const it of items) {
+    const el = document.createElement('div');
+    el.className = 'menu-cmd';
+    el.textContent = it.label;
+    el.title = it.command;
+    el.addEventListener('click', () => runMenuCommand(it.command, el));
+    menuCmds.appendChild(el);
+  }
+}
+
+async function runMenuCommand(text, el) {
+  if (runningCommandEl) return;  // one at a time
+  runningCommandEl = el;
+  el.classList.add('running');
+  state = 'thinking';
+  transcriptEl.textContent = '\u201C' + text + '\u201D';
+  transcriptEl.classList.add('visible');
+  responseEl.classList.remove('visible');
+  talkHint.textContent = 'RUNNING\u2026';
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort('client-timeout'), 60000);
+
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const host = params.get('host') || window.location.host || 'localhost:7710';
+    const proto = window.location.protocol === 'https:' ? 'https' : 'http';
+    const resp = await fetch(`${proto}://${host}/command`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+
+    if (data.response) {
+      responseEl.textContent = data.response;
+      responseEl.classList.add('visible');
+    }
+
+    if (data.audio_b64) {
+      state = 'speaking';
+      talkHint.textContent = 'SPEAKING\u2026';
+      const audio = new Audio('data:audio/mpeg;base64,' + data.audio_b64);
+      currentAudio = audio;
+      const est = isFinite(audio.duration) && audio.duration > 0 ? audio.duration * 1000 + 3000 : 45000;
+      const safety = setTimeout(() => finish(), est);
+      const finish = () => {
+        clearTimeout(safety);
+        state = 'idle';
+        talkHint.textContent = 'HOLD SPACE or CLICK';
+        if (runningCommandEl) runningCommandEl.classList.remove('running');
+        runningCommandEl = null;
+      };
+      audio.onended = finish;
+      audio.onerror = finish;
+      try { await audio.play(); } catch (_) { finish(); }
+    } else {
+      state = 'idle';
+      talkHint.textContent = 'HOLD SPACE or CLICK';
+      el.classList.remove('running');
+      runningCommandEl = null;
+    }
+  } catch (e) {
+    clearTimeout(timeoutId);
+    console.error('[jarvis] /command failed:', e);
+    responseEl.textContent = 'Error: ' + (e.message || e.name || 'unknown');
+    responseEl.classList.add('visible');
+    state = 'idle';
+    talkHint.textContent = 'HOLD SPACE or CLICK';
+    el.classList.remove('running');
+    runningCommandEl = null;
+  }
+}
+
+menuToggle.addEventListener('click', () => {
+  menuPanel.classList.toggle('open');
+});
+
+// =====================================================================
+// Agents roster panel — see who's online, dispatch tasks
+// =====================================================================
+const agentsToggle = document.getElementById('agents-toggle');
+const agentsPanel  = document.getElementById('agents-panel');
+const agentsList   = document.getElementById('agents-list');
+const agentsMeta   = document.getElementById('agents-meta');
+const spawnBox     = document.getElementById('agents-spawn');
+const spawnInput   = document.getElementById('agents-spawn-input');
+const spawnTarget  = document.getElementById('agents-spawn-target');
+const spawnGo      = document.getElementById('agents-spawn-go');
+const spawnCancel  = document.getElementById('agents-spawn-cancel');
+let spawnAgentId = null;
+
+function _agentDisplayKind(a) {
+  if (a.kind === 'claude-session') return 'session';
+  if (a.kind === 'subagent')       return 'subagent';
+  if (a.adapter === 'codex')       return 'codex';
+  return 'claude';
+}
+
+function renderAgentsPanel() {
+  if (!agentsList) return;
+  const list = [...agentCards.values()].map(rec => rec.data);
+  // Order: built-ins first (alpha), then sessions, then subagents
+  list.sort((a, b) => {
+    const ka = (a.kind === 'builtin') ? 0 : (a.kind === 'claude-session' ? 1 : 2);
+    const kb = (b.kind === 'builtin') ? 0 : (b.kind === 'claude-session' ? 1 : 2);
+    if (ka !== kb) return ka - kb;
+    return (a.name || '').localeCompare(b.name || '');
+  });
+
+  const running = list.filter(a => a.status === 'running').length;
+  const total   = list.length;
+  if (agentsMeta) agentsMeta.textContent = running + ' running · ' + total + ' total';
+  if (agentsToggle) agentsToggle.classList.toggle('has-running', running > 0);
+
+  if (list.length === 0) {
+    agentsList.innerHTML = '<div class="ap-row" style="opacity:.55"><span class="ap-dot"></span>' +
+      '<div class="ap-body"><div class="ap-name">no agents online</div>' +
+      '<div class="ap-meta">restart Jarvis to bring the team online</div></div><span></span></div>';
+    return;
+  }
+
+  const rows = list.map(a => {
+    const provKind = _agentDisplayKind(a);
+    const accent = a.color || '#5ee0a1';
+    const stats = (a.tasks_completed || 0) + ' done' +
+                  (a.tasks_failed ? ' · ' + a.tasks_failed + ' failed' : '');
+    const taskHtml = a.current_task
+      ? '<div class="ap-task">▸ ' + escapeHtml(a.current_task) + '</div>' : '';
+    const btnText = (a.status === 'running') ? 'BUSY' : 'SPAWN';
+    const cls = 'ap-row ' + (a.status === 'running' ? 'running' : (a.status === 'failed' ? 'failed' : 'idle'));
+    // Only built-ins are dispatchable directly. Sessions/subagents are
+    // already running on someone else's hook timeline — disable the button.
+    const dispatchable = (a.kind === 'builtin' && a.status !== 'running');
+    return '<div class="' + cls + '" data-id="' + escapeHtml(a.id) + '" style="--accent:' + accent + '">' +
+      '<span class="ap-dot"></span>' +
+      '<div class="ap-body">' +
+        '<div class="ap-name">' + escapeHtml(a.name) +
+          ' <span class="ap-prov ' + provKind + '">' + provKind + '</span>' +
+        '</div>' +
+        '<div class="ap-meta">' + (a.model || '—') + ' · ' + stats + '</div>' +
+        taskHtml +
+      '</div>' +
+      (a.kind === 'builtin'
+        ? '<button class="ap-spawn-btn" ' +
+            (dispatchable ? '' : 'disabled') +
+            ' data-spawn-id="' + escapeHtml(a.id) + '"' +
+            ' data-spawn-name="' + escapeHtml(a.name) + '"' +
+            ' data-spawn-color="' + escapeHtml(accent) + '">' +
+            btnText +
+          '</button>'
+        : '<span></span>') +
+    '</div>';
+  }).join('');
+
+  agentsList.innerHTML = rows;
+  // Wire spawn buttons
+  for (const btn of agentsList.querySelectorAll('.ap-spawn-btn[data-spawn-id]')) {
+    btn.addEventListener('click', () => openSpawnFor(
+      btn.getAttribute('data-spawn-id'),
+      btn.getAttribute('data-spawn-name'),
+      btn.getAttribute('data-spawn-color'),
+    ));
+  }
+}
+
+function openSpawnFor(id, name, color) {
+  spawnAgentId = id;
+  spawnTarget.textContent = name;
+  spawnTarget.parentElement.style.setProperty('--spawn-accent', color || '#5ee0a1');
+  spawnInput.value = '';
+  spawnBox.classList.remove('ap-hidden');
+  setTimeout(() => spawnInput.focus(), 50);
+}
+
+function closeSpawn() {
+  spawnAgentId = null;
+  spawnBox.classList.add('ap-hidden');
+}
+
+async function dispatchSpawn() {
+  if (!spawnAgentId) return;
+  const title = spawnInput.value.trim();
+  if (!title) { spawnInput.focus(); return; }
+  spawnGo.disabled = true;
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const host = params.get('host') || window.location.host || 'localhost:7710';
+    const proto = window.location.protocol === 'https:' ? 'https' : 'http';
+    const r = await fetch(`${proto}://${host}/agent_task`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ agent_id: spawnAgentId, title: title }),
+    });
+    const d = await r.json();
+    if (r.ok && d.ok) {
+      logEvent('agent', ' dispatched ' + spawnAgentId + ' · ' + title);
+      closeSpawn();
+    } else {
+      logEvent('system', ' dispatch failed: ' + (d.error || ('HTTP ' + r.status)));
+    }
+  } catch (e) {
+    logEvent('system', ' dispatch failed: ' + (e.message || e));
+  } finally {
+    spawnGo.disabled = false;
+  }
+}
+
+spawnGo.addEventListener('click', dispatchSpawn);
+spawnCancel.addEventListener('click', closeSpawn);
+spawnInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); dispatchSpawn(); }
+  else if (e.key === 'Escape') { e.preventDefault(); closeSpawn(); }
+});
+
+agentsToggle.addEventListener('click', () => {
+  // Closing the menu hamburger (if open) so the two panels don't overlap
+  if (menuPanel.classList.contains('open')) menuPanel.classList.remove('open');
+  agentsPanel.classList.toggle('open');
+  if (agentsPanel.classList.contains('open')) renderAgentsPanel();
+});
+
+// --- Bulk actions: WAKE ALL / CANCEL ALL ---
+const bulkWakeBtn   = document.getElementById('agents-wake-all');
+const bulkCancelBtn = document.getElementById('agents-cancel-all');
+
+async function _bulkPost(path) {
+  const params = new URLSearchParams(window.location.search);
+  const host = params.get('host') || window.location.host || 'localhost:7710';
+  const proto = window.location.protocol === 'https:' ? 'https' : 'http';
+  const r = await fetch(`${proto}://${host}${path}`, { method: 'POST' });
+  return r.json().catch(() => ({}));
+}
+
+bulkWakeBtn.addEventListener('click', async (e) => {
+  e.stopPropagation();
+  bulkWakeBtn.disabled = true;
+  const prev = bulkWakeBtn.textContent;
+  bulkWakeBtn.textContent = 'WAKING…';
+  try {
+    const d = await _bulkPost('/agents/wake_all');
+    if (d.ok) {
+      logEvent('agent', ' wake all → ' + (d.count || 0) + ' agent(s) queued');
+      bulkWakeBtn.textContent = 'QUEUED ' + (d.count || 0);
+    } else {
+      bulkWakeBtn.textContent = 'FAILED';
+      logEvent('system', ' wake all failed: ' + (d.error || 'unknown'));
+    }
+  } catch (err) {
+    bulkWakeBtn.textContent = 'ERROR';
+    logEvent('system', ' wake all error: ' + err.message);
+  }
+  setTimeout(() => {
+    bulkWakeBtn.textContent = prev;
+    bulkWakeBtn.disabled = false;
+  }, 2200);
+});
+
+// Cancel-all is destructive — require a second click within 3s to confirm.
+let _cancelArmed = false;
+let _cancelArmTimer = null;
+bulkCancelBtn.addEventListener('click', async (e) => {
+  e.stopPropagation();
+  if (!_cancelArmed) {
+    _cancelArmed = true;
+    bulkCancelBtn.classList.add('confirming');
+    bulkCancelBtn.textContent = 'CONFIRM?';
+    clearTimeout(_cancelArmTimer);
+    _cancelArmTimer = setTimeout(() => {
+      _cancelArmed = false;
+      bulkCancelBtn.classList.remove('confirming');
+      bulkCancelBtn.textContent = 'CANCEL ALL';
+    }, 3000);
+    return;
+  }
+  // Confirmed
+  clearTimeout(_cancelArmTimer);
+  _cancelArmed = false;
+  bulkCancelBtn.classList.remove('confirming');
+  bulkCancelBtn.disabled = true;
+  bulkCancelBtn.textContent = 'CANCELLING…';
+  try {
+    const d = await _bulkPost('/agents/cancel_all');
+    if (d.ok) {
+      logEvent('agent', ' cancel all → terminated ' + (d.cancelled || 0));
+      bulkCancelBtn.textContent = 'KILLED ' + (d.cancelled || 0);
+    } else {
+      bulkCancelBtn.textContent = 'FAILED';
+      logEvent('system', ' cancel all failed: ' + (d.error || 'unknown'));
+    }
+  } catch (err) {
+    bulkCancelBtn.textContent = 'ERROR';
+    logEvent('system', ' cancel all error: ' + err.message);
+  }
+  setTimeout(() => {
+    bulkCancelBtn.textContent = 'CANCEL ALL';
+    bulkCancelBtn.disabled = false;
+  }, 2200);
+});
+
+// Click outside closes the agents panel (mirrors menu behaviour)
+document.addEventListener('click', (e) => {
+  if (!agentsPanel.classList.contains('open')) return;
+  if (e.target === agentsToggle || agentsToggle.contains(e.target)) return;
+  if (agentsPanel.contains(e.target)) return;
+  agentsPanel.classList.remove('open');
+});
+
+// Re-render whenever the orch SSE updates the agent set
+const _origUpdateAgents = updateAgents;
+updateAgents = function(list) {
+  _origUpdateAgents(list);
+  if (agentsPanel && agentsPanel.classList.contains('open')) {
+    renderAgentsPanel();
+  } else if (agentsToggle) {
+    // Cheap toggle of the has-running glow even when closed
+    const running = (list || []).some(a => a.status === 'running');
+    agentsToggle.classList.toggle('has-running', running);
+  }
+};
+// Close the menu on outside click
+document.addEventListener('click', (e) => {
+  if (!menuPanel.classList.contains('open')) return;
+  if (e.target === menuToggle || menuToggle.contains(e.target)) return;
+  if (menuPanel.contains(e.target)) return;
+  menuPanel.classList.remove('open');
+});
+
+// Track the mouse so the vault-graph hover detection has live coordinates.
+// Use window listener (capture phase) so it fires even when the canvas is
+// covered by HTML overlays (cards, menu, etc.).
+window.addEventListener('mousemove', (e) => {
+  mouseScreenX = e.clientX;
+  mouseScreenY = e.clientY;
+}, { passive: true });
+window.addEventListener('mouseleave', () => {
+  mouseScreenX = -9999; mouseScreenY = -9999;
+});
+// On touch devices, use the last touch position (idle clears it)
+window.addEventListener('touchmove', (e) => {
+  if (e.touches && e.touches[0]) {
+    mouseScreenX = e.touches[0].clientX;
+    mouseScreenY = e.touches[0].clientY;
+  }
+}, { passive: true });
+
+// =====================================================================
+// Mission-control panels — stats, live tasks, activity log
+// =====================================================================
+const SESSION_START = Date.now();
+const sessionStats = {
+  claudeTasks: 0,    // counted whenever a Claude agent transitions to running
+  codexTasks: 0,
+  gptCalls: 0,       // any /vault/* hit by ChatGPT
+  vaultReads: 0,
+  vaultWrites: 0,
+  voiceTurns: 0,
+};
+const eventLog = [];
+const LOG_MAX = 200;
+
+const elStatClaude = document.getElementById('stat-claude');
+const elStatCodex  = document.getElementById('stat-codex');
+const elStatGpt    = document.getElementById('stat-gpt');
+const elStatVault  = document.getElementById('stat-vault');
+const elStatVoice  = document.getElementById('stat-voice');
+const elStatUptime = document.getElementById('stat-uptime');
+const elBarClaude  = document.getElementById('bar-claude');
+const elBarCodex   = document.getElementById('bar-codex');
+const elLiveTasks  = document.getElementById('live-tasks');
+const elLogFeed    = document.getElementById('log-feed');
+const elLogCount   = document.getElementById('log-count');
+
+// Source palette — one place, used by both log rows + stats.
+const SOURCE_META = {
+  claude:  { icon: '◆', color: '180,120,255', label: 'CLAUDE'  },
+  codex:   { icon: '◆', color: '16,163,127',  label: 'CODEX'   },
+  chatgpt: { icon: '◓', color: '16,163,127',  label: 'CHATGPT' },
+  vault:   { icon: '⬡', color: '255,201,90',  label: 'VAULT'   },
+  voice:   { icon: '🎤', color: '94,224,161', label: 'VOICE'   },
+  agent:   { icon: '⭐', color: '180,120,255', label: 'AGENT'   },
+  system:  { icon: '·', color: '160,200,240', label: 'SYSTEM'  },
+  hud:     { icon: '·', color: '160,200,240', label: 'HUD'     },
+};
+
+function _fmtClock(ts) {
+  const d = new Date(ts);
+  return d.toTimeString().slice(0, 8);
+}
+
+function logEvent(source, message) {
+  const meta = SOURCE_META[source] || SOURCE_META.system;
+  const row = { ts: Date.now(), source, message, meta };
+  eventLog.unshift(row);
+  if (eventLog.length > LOG_MAX) eventLog.pop();
+  renderLogRow(row, /*fresh=*/ true);
+  if (elLogCount) elLogCount.textContent = String(eventLog.length);
+  // Audio cue — synthesized; respects the mute toggle + iOS unlock
+  playEventSound(source, message);
+}
+
+// =====================================================================
+// Audio cues — Web Audio synthesized blips, no external files
+// =====================================================================
+let audioCtx = null;
+let audioMuted = (localStorage.getItem('mc-audio-muted') === '1');
+
+function _audioCtx() {
+  if (!audioCtx) {
+    try {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (Ctx) audioCtx = new Ctx();
+    } catch (_) {}
+  }
+  if (audioCtx && audioCtx.state === 'suspended') {
+    audioCtx.resume().catch(() => {});
+  }
+  return audioCtx;
+}
+
+// One "blip" — frequency in Hz, duration in seconds, type, volume 0..1.
+function _blip(freq, dur, type = 'sine', vol = 0.06, sweepTo = null) {
+  if (audioMuted) return;
+  const ctx = _audioCtx();
+  if (!ctx) return;
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = type;
+  osc.frequency.value = freq;
+  if (sweepTo) {
+    osc.frequency.exponentialRampToValueAtTime(sweepTo, ctx.currentTime + dur);
+  }
+  // Quick attack, exponential decay — no clicks, no harshness
+  gain.gain.setValueAtTime(0, ctx.currentTime);
+  gain.gain.linearRampToValueAtTime(vol, ctx.currentTime + 0.005);
+  gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + dur);
+  osc.connect(gain).connect(ctx.destination);
+  osc.start();
+  osc.stop(ctx.currentTime + dur + 0.02);
+}
+
+function playEventSound(source, message) {
+  if (audioMuted) return;
+  const m = (message || '').toLowerCase();
+  // Vault events: short bright blips
+  if (source === 'vault' || source === 'chatgpt') {
+    if (m.includes('write') || m.includes('append')) _blip(840, 0.12, 'sine', 0.05);
+    else _blip(620, 0.08, 'sine', 0.04);
+    return;
+  }
+  // Agent state changes
+  if (source === 'claude' || source === 'codex' || source === 'agent') {
+    if (m.includes('started') || m.includes('dispatched')) {
+      _blip(420, 0.14, 'triangle', 0.05, 540);     // upward sweep — kicking off
+    } else if (m.includes('finished')) {
+      _blip(660, 0.16, 'sine', 0.05, 880);          // success — reaching up
+    } else if (m.includes('failed') || m.includes('error')) {
+      _blip(220, 0.22, 'square', 0.05);             // alarm — low and harsh
+    } else {
+      _blip(500, 0.08, 'sine', 0.035);
+    }
+    return;
+  }
+  if (source === 'voice') {
+    _blip(720, 0.10, 'sine', 0.045);
+    return;
+  }
+  // System / hud — neutral
+  _blip(500, 0.06, 'sine', 0.03);
+}
+
+function setAudioMuted(muted) {
+  audioMuted = muted;
+  localStorage.setItem('mc-audio-muted', muted ? '1' : '0');
+  if (elMuteBtn) {
+    elMuteBtn.textContent = muted ? '♪ off' : '♪ on';
+    elMuteBtn.classList.toggle('muted', muted);
+  }
+  if (!muted) {
+    // Brief confirmation sound when un-muting
+    _blip(660, 0.10, 'sine', 0.05, 880);
+  }
+}
+
+// Mute button is rendered inside the stats panel head (added below)
+let elMuteBtn = null;
+
+function renderLogRow(row, fresh) {
+  if (!elLogFeed) return;
+  const el = document.createElement('div');
+  el.className = 'log-row' + (fresh ? ' fresh' : '');
+  el.style.setProperty('--accent', 'rgb(' + row.meta.color + ')');
+  el.style.borderLeftColor = 'rgba(' + row.meta.color + ',0.7)';
+  el.innerHTML =
+    '<span class="log-time">' + _fmtClock(row.ts) + '</span>' +
+    '<span class="log-icon" style="color:rgb(' + row.meta.color + ')">' + row.meta.icon + '</span>' +
+    '<span class="log-msg"><b>' + row.meta.label + '</b>' + escapeHtml(row.message) + '</span>';
+  elLogFeed.insertBefore(el, elLogFeed.firstChild);
+  // Cap rendered children to keep DOM small
+  while (elLogFeed.children.length > LOG_MAX) {
+    elLogFeed.removeChild(elLogFeed.lastChild);
+  }
+}
+
+function updateStatsPanel(snap) {
+  // snap is the orch snapshot object (already cached in agentCards too).
+  const counts = { claude: 0, codex: 0, runningClaude: 0, runningCodex: 0 };
+  for (const a of (snap && snap.agents) || []) {
+    const provider = (a.adapter === 'claude-code' || a.adapter === 'subagent') ? 'claude' : (a.adapter || 'claude');
+    // Built-in agents have a clean adapter; CC sessions and subagents render under claude
+    if (a.kind === 'builtin') {
+      if (provider === 'codex') counts.codex++;
+      else counts.claude++;
+    }
+    if (a.status === 'running') {
+      if ((a.adapter === 'codex') || (a.kind === 'builtin' && agentColorsCodex.has(a.id))) counts.runningCodex++;
+      else counts.runningClaude++;
+    }
+  }
+  if (elStatClaude) elStatClaude.textContent = counts.runningClaude + '/' + (counts.claude || 6);
+  if (elStatCodex)  elStatCodex.textContent  = counts.runningCodex  + '/' + (counts.codex  || 4);
+  if (elBarClaude)  elBarClaude.style.width  = (Math.min(1, counts.runningClaude / Math.max(1, counts.claude || 6)) * 100).toFixed(0) + '%';
+  if (elBarCodex)   elBarCodex.style.width   = (Math.min(1, counts.runningCodex  / Math.max(1, counts.codex  || 4)) * 100).toFixed(0) + '%';
+  if (elStatGpt)    elStatGpt.textContent    = sessionStats.gptCalls + ' calls';
+  if (elStatVault)  elStatVault.textContent  = sessionStats.vaultReads + 'R / ' + sessionStats.vaultWrites + 'W';
+  if (elStatVoice)  elStatVoice.textContent  = sessionStats.voiceTurns + ' turns';
+}
+
+// Track which agent IDs are codex (looked up on first orch snapshot)
+const agentColorsCodex = new Set();
+
+function updateLiveTasksPanel(snap) {
+  if (!elLiveTasks) return;
+  const panel = document.getElementById('hud-live');
+  const running = ((snap && snap.agents) || []).filter(a => a.status === 'running');
+  if (running.length === 0) {
+    if (panel) panel.classList.remove('active');
+    elLiveTasks.innerHTML = '';
+    elLiveTasks._lastHtml = '';
+    return;
+  }
+  if (panel) panel.classList.add('active');
+  const html = running.map(a => {
+    const accent = a.color || '#5ee0a1';
+    const task = (a.current_task || '—').slice(0, 80);
+    return '<div class="live-task" style="--accent:' + accent + '">' +
+      '<div class="lt-head"><span class="lt-dot"></span>' + escapeHtml(a.name) + '</div>' +
+      '<div class="lt-meta">' + escapeHtml(task) + '</div>' +
+      '</div>';
+  }).join('');
+  if (elLiveTasks._lastHtml !== html) {
+    elLiveTasks.innerHTML = html;
+    elLiveTasks._lastHtml = html;
+  }
+}
+
+// Tick the uptime + (cheap) re-render of live tasks even when no SSE event fires
+setInterval(() => {
+  if (elStatUptime) {
+    const s = Math.floor((Date.now() - SESSION_START) / 1000);
+    elStatUptime.textContent = s < 60 ? s + 's'
+      : s < 3600 ? Math.floor(s/60) + 'm ' + (s%60) + 's'
+      : Math.floor(s/3600) + 'h ' + Math.floor((s%3600)/60) + 'm';
+  }
+  // Re-render the schedule panel every second so relative times tick down
+  // (only re-renders rows; cheap because there are usually <20 of them)
+  renderScheduleRows();
+}, 1000);
+
+// =====================================================================
+// Schedule panel — fetched from /schedule, polled every 30s
+// =====================================================================
+const elScheduleList  = document.getElementById('schedule-list');
+const elScheduleCount = document.getElementById('schedule-count');
+let scheduleData = [];
+
+function _relTime(iso) {
+  const t = new Date(iso).getTime();
+  if (isNaN(t)) return iso;
+  const dms = t - Date.now();
+  const abs = Math.abs(dms);
+  const sec = Math.round(abs / 1000);
+  if (sec < 60)        return dms < 0 ? sec + 's ago'    : 'in ' + sec + 's';
+  if (sec < 3600)      return dms < 0 ? Math.floor(sec/60) + 'm ago'    : 'in ' + Math.floor(sec/60) + 'm';
+  if (sec < 86400)     return dms < 0 ? Math.floor(sec/3600) + 'h ago'  : 'in ' + Math.floor(sec/3600) + 'h';
+  if (sec < 7*86400)   return dms < 0 ? Math.floor(sec/86400) + 'd ago' : 'in ' + Math.floor(sec/86400) + 'd';
+  return dms < 0
+    ? Math.floor(sec/(7*86400)) + 'w ago'
+    : 'in ' + Math.floor(sec/(7*86400)) + 'w';
+}
+
+function _scheduleRowClass(row) {
+  if (row.status !== 'pending') return 'fired';
+  const ms = new Date(row.run_at).getTime() - Date.now();
+  if (ms <= 0)              return 'overdue';
+  if (ms < 5 * 60 * 1000)   return 'due-soon';
+  return 'pending';
+}
+
+function renderScheduleRows() {
+  if (!elScheduleList) return;
+  if (scheduleData.length === 0) {
+    if (elScheduleList.dataset.empty !== '1') {
+      elScheduleList.innerHTML = '<div class="mc-empty">— nothing scheduled —</div>';
+      elScheduleList.dataset.empty = '1';
+    }
+    if (elScheduleCount) elScheduleCount.textContent = '0';
+    return;
+  }
+  elScheduleList.dataset.empty = '0';
+  // Pending first (by run_at asc), then fired (by run_at desc)
+  const sorted = [...scheduleData].sort((a, b) => {
+    if (a.status !== b.status) return a.status === 'pending' ? -1 : 1;
+    const ta = new Date(a.run_at).getTime();
+    const tb = new Date(b.run_at).getTime();
+    return a.status === 'pending' ? ta - tb : tb - ta;
+  });
+  const pending = sorted.filter(r => r.status === 'pending').length;
+  if (elScheduleCount) elScheduleCount.textContent = pending + ' pending';
+
+  const html = sorted.slice(0, 12).map(r => {
+    const cls = _scheduleRowClass(r);
+    const when = (r.status === 'pending') ? _relTime(r.run_at)
+                                          : 'fired ' + _relTime(r.run_at);
+    return '<div class="sched-row ' + cls + '" data-id="' + escapeHtml(r.id || '') + '">' +
+      '<span class="sched-dot"></span>' +
+      '<div class="sched-body">' +
+        '<div class="sched-name">' +
+          '<span class="sched-agent">' + escapeHtml(r.agent_id) + '</span>' +
+          escapeHtml(r.title) +
+        '</div>' +
+        '<div class="sched-when">' + escapeHtml(when) + '</div>' +
+      '</div>' +
+      (r.status === 'pending'
+        ? '<button class="sched-cancel" data-cancel-id="' + escapeHtml(r.id || '') + '" title="Cancel">×</button>'
+        : '<span></span>') +
+    '</div>';
+  }).join('');
+  elScheduleList.innerHTML = html;
+  // Wire cancel buttons
+  for (const btn of elScheduleList.querySelectorAll('.sched-cancel[data-cancel-id]')) {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      cancelSchedule(btn.getAttribute('data-cancel-id'));
+    });
+  }
+}
+
+async function refreshSchedule() {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const host = params.get('host') || window.location.host || 'localhost:7710';
+    const proto = window.location.protocol === 'https:' ? 'https' : 'http';
+    const r = await fetch(`${proto}://${host}/schedule`);
+    if (!r.ok) return;
+    const d = await r.json();
+    scheduleData = d.schedules || [];
+    renderScheduleRows();
+  } catch (_) { /* swallow — try again next tick */ }
+}
+
+async function cancelSchedule(id) {
+  if (!id) return;
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const host = params.get('host') || window.location.host || 'localhost:7710';
+    const proto = window.location.protocol === 'https:' ? 'https' : 'http';
+    const r = await fetch(`${proto}://${host}/schedule/cancel/` + encodeURIComponent(id), {
+      method: 'POST',
+    });
+    if (r.ok) {
+      logEvent('hud', ' cancelled schedule ' + id);
+      refreshSchedule();
+    } else {
+      logEvent('system', ' could not cancel schedule ' + id);
+    }
+  } catch (e) {
+    logEvent('system', ' cancel error: ' + e.message);
+  }
+}
+
+// Audio mute toggle — wire after DOM is ready
+elMuteBtn = document.getElementById('mute-btn');
+if (elMuteBtn) {
+  // Restore persisted state on load (defaults to muted to avoid surprise)
+  setAudioMuted(audioMuted);
+  elMuteBtn.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    setAudioMuted(!audioMuted);
+  });
+}
+
+// Start
+resize();
+animate();
+connectSSE();
+connectOrchSSE();
+connectVaultSSE();
+connectUnifiSSE();
+flowLoop();
+loadMenu();
+refreshVaultGraph();
+refreshSchedule();
+setInterval(refreshSchedule, 30000);
+logEvent('hud', ' mission control online');
+// Light periodic refresh so any out-of-band edits (you editing notes in
+// Obsidian directly) show up on the HUD within ~30s without needing a
+// vault event to fire.
+setInterval(refreshVaultGraph, 30000);
+</script>
+</body>
+</html>
