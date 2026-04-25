@@ -78,6 +78,51 @@ except ImportError:
     pass
 
 try:
+    import openjarvis.tools.app_launcher  # noqa: F401
+except ImportError:
+    pass
+
+try:
+    import openjarvis.tools.music_control  # noqa: F401
+except ImportError:
+    pass
+
+try:
+    import openjarvis.tools.weather  # noqa: F401
+except ImportError:
+    pass
+
+try:
+    import openjarvis.tools.crypto  # noqa: F401
+except ImportError:
+    pass
+
+try:
+    import openjarvis.tools.macro  # noqa: F401
+except ImportError:
+    pass
+
+try:
+    import openjarvis.tools.hue_lights  # noqa: F401
+except ImportError:
+    pass
+
+try:
+    import openjarvis.tools.sonos  # noqa: F401
+except ImportError:
+    pass
+
+try:
+    import openjarvis.tools.lutron  # noqa: F401
+except ImportError:
+    pass
+
+try:
+    import openjarvis.tools.calendar_tool  # noqa: F401
+except ImportError:
+    pass
+
+try:
     import openjarvis.tools.memory_manage  # noqa: F401
 except ImportError:
     pass
