@@ -469,6 +469,21 @@ canvas { display: block; }
 }
 #networks-list::-webkit-scrollbar { width: 5px; }
 #networks-list::-webkit-scrollbar-thumb { background: rgba(155,242,255,0.25); border-radius: 3px; }
+.mc-filter {
+  margin: 4px 10px 6px 10px;
+  padding: 5px 9px;
+  background: rgba(10,18,28,0.6);
+  border: 1px solid rgba(155,242,255,0.18);
+  border-radius: 4px;
+  color: #e8f1ff;
+  font: inherit;
+  font-size: 11px;
+  letter-spacing: 0.6px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.mc-filter::placeholder { color: rgba(160,180,210,0.4); letter-spacing: 1px; }
+.mc-filter:focus { border-color: rgba(155,242,255,0.55); }
 #networks-list .mc-empty {
   padding: 14px 12px;
   color: rgba(160,180,210,0.45);
@@ -1464,6 +1479,7 @@ canvas { display: block; }
     NETWORKS
     <span class="mc-panel-meta" id="networks-meta">offline</span>
   </div>
+  <input id="networks-filter" class="mc-filter" type="text" placeholder="filter sites…" autocomplete="off" spellcheck="false">
   <div id="networks-list">
     <div class="mc-empty">— UniFi key not set —</div>
   </div>
@@ -3085,6 +3101,9 @@ function flowLoop() {
 // --- UniFi SSE ---
 const elNetList = document.getElementById('networks-list');
 const elNetMeta = document.getElementById('networks-meta');
+const elNetFilter = document.getElementById('networks-filter');
+let networksFilter = '';
+const NETWORKS_MAX_ROWS = 30;
 
 function renderNetworksPanel(snap) {
   if (!elNetList) return;
@@ -3097,10 +3116,16 @@ function renderNetworksPanel(snap) {
   }
   const sites = snap.sites || [];
   const totals = snap.totals || {};
+  const q = (networksFilter || '').trim().toLowerCase();
+  const matched = q
+    ? sites.filter(s => (s.name || '').toLowerCase().includes(q))
+    : sites;
   if (sites.length === 0) {
     elNetList.innerHTML = '<div class="mc-empty">no sites returned</div>';
+  } else if (matched.length === 0) {
+    elNetList.innerHTML = '<div class="mc-empty">no sites match "' + escapeHtml(q) + '"</div>';
   } else {
-    elNetList.innerHTML = sites.slice(0, 12).map(s => {
+    elNetList.innerHTML = matched.slice(0, NETWORKS_MAX_ROWS).map(s => {
       return '<div class="net-row ' + (s.status || 'ok') + '">' +
         '<span class="net-dot"></span>' +
         '<div class="net-body">' +
@@ -3117,9 +3142,19 @@ function renderNetworksPanel(snap) {
     }).join('');
   }
   if (elNetMeta) {
-    elNetMeta.textContent = (totals.sites || 0) + ' sites · ' +
-                            (totals.devices_online || 0) + '/' + (totals.devices || 0) + ' dev';
+    const totalSites = totals.sites || sites.length || 0;
+    const filteredLabel = q
+      ? matched.length + '/' + totalSites + ' match'
+      : totalSites + ' sites · ' + (totals.devices_online || 0) + '/' + (totals.devices || 0) + ' dev';
+    elNetMeta.textContent = filteredLabel;
   }
+}
+
+if (elNetFilter) {
+  elNetFilter.addEventListener('input', (ev) => {
+    networksFilter = ev.target.value || '';
+    renderNetworksPanel(unifiState);
+  });
 }
 
 function connectUnifiSSE() {
