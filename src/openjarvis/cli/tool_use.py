@@ -274,12 +274,54 @@ def _tool_dispatch_agent(agent: str, prompt: str, title: str,
         pid = re.sub(r"[^a-z0-9._-]+", "-", pid).strip("-") or None
     task_id = agent_runner.add_task(title=title[:80], agent_id=agent,
                                     prompt=prompt, project_id=pid)
+    # Vault: ensure every project has a home note. Future sessions can
+    # then recall "what's in the X project" naturally.
+    if pid:
+        _ensure_project_note(pid, title=title, task_id=task_id,
+                             agent=agent, prompt=prompt)
     return json.dumps({
         "ok": True,
         "task_id": task_id,
         "agent": agent,
         "project_id": pid,
     })
+
+
+def _ensure_project_note(project_id: str, *, title: str, task_id: str,
+                         agent: str, prompt: str) -> None:
+    """Create Brain/Projects/<project_id>.md on first dispatch, append a
+    task entry on every subsequent one. Best-effort — vault failures must
+    not break dispatch."""
+    try:
+        from openjarvis.tools import obsidian_brain
+        obsidian_brain._ensure_layout()
+        from datetime import datetime
+        proj_dir = obsidian_brain.BRAIN_ROOT / "Projects"
+        proj_dir.mkdir(parents=True, exist_ok=True)
+        path = proj_dir / f"{project_id}.md"
+        stamp = datetime.now().isoformat(timespec="seconds")
+        if not path.exists():
+            body = (
+                f"---\n"
+                f"type: project\n"
+                f"name: {project_id}\n"
+                f"created: {stamp}\n"
+                f"tags: [project, agent-team]\n"
+                f"---\n\n"
+                f"# {project_id}\n\n"
+                f"Project workspace at `~/.openjarvis/agents/projects/{project_id}/`.\n\n"
+                f"## Tasks dispatched\n\n"
+            )
+            path.write_text(body, encoding="utf-8")
+            obsidian_brain._emit_event("write", f"project: {project_id}",
+                                       kind="project")
+        # Append the task entry. Bounded — keep the appendix tail readable.
+        entry = (f"- {stamp} — **{agent}** · `{task_id}` — "
+                 f"{title[:120].strip()}\n")
+        with path.open("a", encoding="utf-8") as f:
+            f.write(entry)
+    except Exception:
+        logger.exception("vault: project note write failed for %s", project_id)
 
 
 # ---------------------------------------------------------------------------
@@ -337,6 +379,7 @@ def _tool_web_search(query: str, limit: int = 5) -> str:
             break
     if not hits:
         return json.dumps({"hits": [], "note": "no results (DDG may have rate-limited)"})
+    _save_web_search_to_vault(query, hits)
     return json.dumps({"hits": hits})
 
 
@@ -363,12 +406,89 @@ def _tool_fetch_url(url: str, max_chars: int = 8000) -> str:
     except Exception as exc:
         return json.dumps({"error": f"fetch failed: {exc}"})
     truncated = len(text) > cap
+    _save_fetched_page_to_vault(url, text)
     return json.dumps({
         "url": url,
         "chars": len(text),
         "truncated": truncated,
         "text": text[:cap],
     })
+
+
+def _save_web_search_to_vault(query: str, hits: List[dict]) -> None:
+    """Persist search results as a Knowledge/Web note + a daily-journal
+    line. Future sessions can then recall("trending AI tools") and find
+    the cached result instead of needing to re-search."""
+    try:
+        from openjarvis.tools import obsidian_brain
+        from datetime import datetime
+        obsidian_brain._ensure_layout()
+        web_dir = obsidian_brain.BRAIN_ROOT / "Knowledge" / "Web"
+        web_dir.mkdir(parents=True, exist_ok=True)
+        date = datetime.now().strftime("%Y-%m-%d")
+        slug = obsidian_brain._slugify(f"search - {query}")
+        path = web_dir / f"{date} - {slug}.md"
+        # Append-or-create — the same query searched multiple times in one
+        # day collects all variations in one note.
+        stamp = datetime.now().strftime("%H:%M:%S")
+        if not path.exists():
+            head = (
+                f"---\ntype: knowledge\nsource: web_search\nquery: {query}\n"
+                f"created: {datetime.now().isoformat(timespec='seconds')}\n"
+                f"tags: [web, search]\n---\n\n# Web search: {query}\n\n"
+            )
+            path.write_text(head, encoding="utf-8")
+        body_lines = [f"## {stamp}\n"]
+        for h in hits:
+            title = (h.get("title") or "").replace("\n", " ").strip()
+            url = (h.get("url") or "").strip()
+            snippet = (h.get("snippet") or "").replace("\n", " ").strip()
+            body_lines.append(f"- **[{title}]({url})** — {snippet}")
+        body_lines.append("")
+        with path.open("a", encoding="utf-8") as f:
+            f.write("\n".join(body_lines) + "\n")
+        obsidian_brain.daily_append(
+            f"web_search: '{query[:80]}' → {len(hits)} hits → [[{path.stem}]]"
+        )
+        obsidian_brain._emit_event("write", f"web search: {query[:60]}",
+                                   kind="knowledge")
+    except Exception:
+        logger.exception("vault: web_search note write failed")
+
+
+def _save_fetched_page_to_vault(url: str, text: str) -> None:
+    """Persist a fetched page's text as a Knowledge/Web note. Cap at 16KB
+    in the vault — these add up. Daily journal gets a one-liner pointer."""
+    try:
+        from openjarvis.tools import obsidian_brain
+        from datetime import datetime
+        from urllib.parse import urlparse
+        if not text or len(text) < 80:
+            return  # not worth a note
+        obsidian_brain._ensure_layout()
+        web_dir = obsidian_brain.BRAIN_ROOT / "Knowledge" / "Web"
+        web_dir.mkdir(parents=True, exist_ok=True)
+        host = urlparse(url).hostname or "page"
+        date = datetime.now().strftime("%Y-%m-%d")
+        # Slug from path tail or full url if path is empty
+        path_part = urlparse(url).path.strip("/").replace("/", "-") or host
+        slug = obsidian_brain._slugify(f"fetch - {host} - {path_part}")[:80]
+        path = web_dir / f"{date} - {slug}.md"
+        if path.exists():
+            return  # already cached today
+        snippet = text[:16000]
+        body = (
+            f"---\ntype: knowledge\nsource: fetch_url\nurl: {url}\n"
+            f"created: {datetime.now().isoformat(timespec='seconds')}\n"
+            f"tags: [web, fetch]\n---\n\n# {host}\n\n"
+            f"<{url}>\n\n{snippet}\n"
+        )
+        path.write_text(body, encoding="utf-8")
+        obsidian_brain.daily_append(f"fetch_url: {url} → [[{path.stem}]]")
+        obsidian_brain._emit_event("write", f"fetched: {host}",
+                                   kind="knowledge")
+    except Exception:
+        logger.exception("vault: fetch_url note write failed")
 
 
 _TOOL_DISPATCH = {
