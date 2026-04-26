@@ -1171,7 +1171,34 @@ def _run_task(task: Task) -> None:
             cmd += ["--model", agent_model]
         cmd.append(codex_prompt)
     else:
-        cmd = [exe, "-p", "--dangerously-skip-permissions"]
+        # System-level addendum — more authoritative than user-prompt
+        # instructions. The architect kept offering Claude Code's
+        # browser-preview feature even when the USER prompt forbade it,
+        # because the offer is suggested by Claude Code's default system
+        # prompt itself. Adding our directive at the system level via
+        # --append-system-prompt overrides that. --no-chrome also
+        # disables the Chrome integration that's the likely source of
+        # the "open this in a browser" pattern.
+        sys_addendum = (
+            "HEADLESS NON-INTERACTIVE EXECUTION RULES (highest priority):\n"
+            "- You are running via `claude -p`. Stdout is captured to a "
+            "log file the operator does not read.\n"
+            "- The ONLY way to deliver work is to use your Write/Edit "
+            "tools to create files in the current working directory "
+            "(PLAN.md, README.md, src/*, etc).\n"
+            "- NEVER offer to use a browser preview, interactive canvas, "
+            "Chrome integration, mockup viewer, or any feature that "
+            "requires the operator to click, respond, or open a URL — "
+            "they will not see the offer in time. These features are "
+            "permanently unavailable in this execution context.\n"
+            "- For visuals, write a markdown description plus an ASCII / "
+            "mermaid / PlantUML diagram in a file.\n"
+            "- Do not ask clarifying questions. Make sensible defaults "
+            "and note your assumptions in PLAN.md."
+        )
+        cmd = [exe, "-p", "--dangerously-skip-permissions",
+               "--no-chrome",
+               "--append-system-prompt", sys_addendum]
         # Per-agent model override (claude --model). Accepts friendly aliases
         # (sonnet / opus / haiku) or fully-qualified ids. 'claude-default'
         # means 'let the CLI pick' — don't pass --model in that case.
