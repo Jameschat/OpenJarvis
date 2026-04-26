@@ -577,7 +577,10 @@ class _Handler(SimpleHTTPRequestHandler):
         the configured frontend URL with a short timeout so it never
         blocks the HUD if the music app is offline. Returns the URL the
         HUD should open."""
-        url = os.environ.get("OPENJARVIS_MUSIC_URL", "http://localhost:5173")
+        # ace-step-ui actually serves its frontend on 3000 (not 5173 as the
+        # server/.env's FRONTEND_URL placeholder suggests). Override via
+        # OPENJARVIS_MUSIC_URL env var if you've reconfigured.
+        url = os.environ.get("OPENJARVIS_MUSIC_URL", "http://localhost:3000")
         try:
             import urllib.request
             with urllib.request.urlopen(url, timeout=1.5) as r:
