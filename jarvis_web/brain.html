@@ -398,6 +398,19 @@ canvas { display: block; }
   cursor: pointer;
   transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
+.mc-mute.mc-provider {
+  margin-left: 6px;
+}
+.mc-mute.mc-provider.mode-claude {
+  background: rgba(180,120,255,0.20);
+  border-color: rgba(180,120,255,0.55);
+  color: #d6b8ff;
+}
+.mc-mute.mc-provider.mode-codex {
+  background: rgba(94,224,161,0.20);
+  border-color: rgba(94,224,161,0.55);
+  color: #b6f5d0;
+}
 .mc-mute:hover {
   background: rgba(94,224,161,0.18);
   border-color: rgba(94,224,161,0.5);
@@ -1442,6 +1455,7 @@ canvas { display: block; }
   <div class="mc-panel-head">
     <span class="mc-dot" style="background:#5ee0a1"></span>
     SYSTEM · ACTIVITY
+    <button id="provider-btn" class="mc-mute mc-provider" title="Force a specific provider for every dispatched task. Cycles AUTO → CLAUDE → CODEX.">⇄ AUTO</button>
     <button id="mute-btn" class="mc-mute" title="Toggle audio cues">♪ off</button>
   </div>
   <div class="mc-row" data-key="claude">
@@ -3259,6 +3273,10 @@ function connectOrchSSE() {
       updateAggregate(d.aggregate || {});
       updateStatsPanel(d);
       updateLiveTasksPanel(d);
+      // Keep the provider toggle in sync with server-side state
+      if (d.provider_mode && d.provider_mode !== providerMode) {
+        applyProviderUI(d.provider_mode);
+      }
     } catch (e) { /* ignore */ }
   };
   es.onerror = () => { es.close(); setTimeout(connectOrchSSE, 3000); };
@@ -4447,6 +4465,59 @@ if (elMuteBtn) {
   elMuteBtn.addEventListener('click', (ev) => {
     ev.stopPropagation();
     setAudioMuted(!audioMuted);
+  });
+}
+
+// Provider toggle — cycles AUTO -> CLAUDE -> CODEX -> AUTO. Forces every
+// dispatched task to a specific provider when one team's quota is hit.
+const elProviderBtn = document.getElementById('provider-btn');
+let providerMode = 'auto';
+const PROVIDER_LABELS = { auto: '⇄ AUTO', claude: '✦ CLAUDE', codex: '◇ GPT' };
+const PROVIDER_CYCLE = { auto: 'claude', claude: 'codex', codex: 'auto' };
+
+function applyProviderUI(mode) {
+  providerMode = mode;
+  if (!elProviderBtn) return;
+  elProviderBtn.textContent = PROVIDER_LABELS[mode] || PROVIDER_LABELS.auto;
+  elProviderBtn.classList.remove('mode-claude', 'mode-codex');
+  if (mode === 'claude') elProviderBtn.classList.add('mode-claude');
+  else if (mode === 'codex') elProviderBtn.classList.add('mode-codex');
+}
+
+async function setProviderMode(mode) {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const host = params.get('host') || window.location.host || 'localhost:7710';
+    const proto = window.location.protocol === 'https:' ? 'https' : 'http';
+    const r = await fetch(`${proto}://${host}/provider`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode }),
+      credentials: 'include',
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const d = await r.json();
+    applyProviderUI(d.mode || mode);
+    logEvent('hud', ` provider mode → ${(d.mode || mode).toUpperCase()}`);
+  } catch (e) {
+    logEvent('hud', ` provider toggle failed: ${e.message || e}`);
+  }
+}
+
+if (elProviderBtn) {
+  // Initial state from server
+  (async () => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const host = params.get('host') || window.location.host || 'localhost:7710';
+      const proto = window.location.protocol === 'https:' ? 'https' : 'http';
+      const r = await fetch(`${proto}://${host}/provider`, { credentials: 'include' });
+      if (r.ok) { const d = await r.json(); applyProviderUI(d.mode || 'auto'); }
+    } catch (_) { /* leave default */ }
+  })();
+  elProviderBtn.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    setProviderMode(PROVIDER_CYCLE[providerMode] || 'auto');
   });
 }
 

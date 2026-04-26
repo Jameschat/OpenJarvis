@@ -385,6 +385,13 @@ class _Handler(SimpleHTTPRequestHandler):
             self._handle_vault_journal()
         elif self.path == "/orch":
             self._json_response(200, orch_bridge.get_snapshot())
+        elif self.path == "/provider":
+            try:
+                from openjarvis.tools import agent_runner
+                self._json_response(200, {"mode": agent_runner.get_provider_mode()})
+            except Exception as exc:
+                logger.exception("/provider get failed")
+                self._json_response(500, {"error": str(exc)})
         elif self.path == "/unifi":
             self._json_response(200, unifi_bridge.get_snapshot())
         elif self.path.startswith("/unifi_events"):
@@ -449,6 +456,8 @@ class _Handler(SimpleHTTPRequestHandler):
             self._handle_wake_all()
         elif self.path == "/agents/cancel_all":
             self._handle_cancel_all()
+        elif self.path == "/provider":
+            self._handle_provider_set()
         elif self.path == "/schedule":
             self._handle_schedule_create()
         elif self.path.startswith("/schedule/cancel/"):
@@ -457,6 +466,26 @@ class _Handler(SimpleHTTPRequestHandler):
             self._handle_content_kickoff()
         else:
             self.send_error(404, "Not Found")
+
+    def _handle_provider_set(self) -> None:
+        """POST /provider — body: {"mode": "auto"|"claude"|"codex"}.
+
+        Lets the operator force every dispatched task to a specific provider
+        when one team's usage cap has been hit. Persists across restarts.
+        """
+        try:
+            n = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(n) if n > 0 else b"{}"
+            data = json.loads(body.decode("utf-8")) if body else {}
+            mode = (data.get("mode") or "auto").lower()
+            from openjarvis.tools import agent_runner
+            new_mode = agent_runner.set_provider_mode(mode)
+            self._json_response(200, {"mode": new_mode})
+        except ValueError as exc:
+            self._json_response(400, {"error": str(exc)})
+        except Exception as exc:
+            logger.exception("/provider set failed")
+            self._json_response(500, {"error": str(exc)})
 
     def _handle_commands_list(self) -> None:
         """Return the menu structure as JSON for the browser HUD to render."""

@@ -52,7 +52,7 @@ import uuid
 from datetime import datetime
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -335,6 +335,13 @@ class _Registry:
         self.stats: Dict[str, AgentStats] = {a["id"]: AgentStats() for a in DEFAULT_AGENTS}
         self.sessions: Dict[str, ClaudeSession] = {}
         self.subagents: Dict[str, SubAgent] = {}
+        # Provider override — when the operator hits a usage cap on one
+        # provider, they can flip this to force every dispatch to the
+        # opposite team (where an equivalent agent exists).
+        #   "auto"   — respect whatever provider was requested (default)
+        #   "claude" — force Codex requests to their Claude equivalent
+        #   "codex"  — force Claude requests to their Codex equivalent
+        self.provider_mode: str = "auto"
         self._load()
 
     # ----- persistence -----
@@ -370,17 +377,61 @@ class _Registry:
                         self.stats[aid].current_task_id = None
                 except Exception:
                     pass
+        mode = (data.get("provider_mode") or "auto").lower()
+        if mode in {"auto", "claude", "codex"}:
+            self.provider_mode = mode
 
     def _save_unlocked(self) -> None:
         STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
         payload = {
             "tasks": [asdict(t) for t in self.tasks.values()],
             "stats": {aid: asdict(s) for aid, s in self.stats.items()},
+            "provider_mode": self.provider_mode,
             "saved_at": time.time(),
         }
         tmp = STATE_FILE.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         tmp.replace(STATE_FILE)
+
+    # ----- provider override -----
+
+    # Bidirectional Claude<->Codex equivalents. Agents not in this map
+    # (code-reviewer, docs-writer, content team) stay on their original
+    # provider regardless of mode.
+    _PROVIDER_SWAP_MAP: Dict[str, str] = {
+        "architect": "gpt-architect",
+        "backend-dev": "gpt-backend",
+        "frontend-dev": "gpt-frontend",
+        "qa-engineer": "gpt-tester",
+        "gpt-architect": "architect",
+        "gpt-backend": "backend-dev",
+        "gpt-frontend": "frontend-dev",
+        "gpt-tester": "qa-engineer",
+    }
+
+    def set_provider_mode(self, mode: str) -> str:
+        mode = (mode or "auto").lower()
+        if mode not in {"auto", "claude", "codex"}:
+            raise ValueError(f"unknown provider mode: {mode}")
+        with self._lock:
+            self.provider_mode = mode
+            self._save_unlocked()
+        logger.info("agent_runner: provider mode -> %s", mode)
+        return mode
+
+    def _maybe_swap_agent(self, agent_id: str) -> Tuple[str, bool]:
+        """Apply provider override. Returns (effective_agent_id, swapped)."""
+        if self.provider_mode == "auto":
+            return agent_id, False
+        spec = next((a for a in DEFAULT_AGENTS if a["id"] == agent_id), None)
+        provider = (spec or {}).get("provider")
+        target_provider = "claude" if self.provider_mode == "claude" else "codex"
+        if provider == target_provider:
+            return agent_id, False  # already the right side
+        swap = self._PROVIDER_SWAP_MAP.get(agent_id)
+        if not swap or swap not in self.stats:
+            return agent_id, False  # no equivalent — leave it alone
+        return swap, True
 
     # ----- mutators -----
 
@@ -388,14 +439,21 @@ class _Registry:
                  project_id: Optional[str] = None) -> str:
         if agent_id not in self.stats:
             raise ValueError(f"unknown agent: {agent_id}")
+        effective, swapped = self._maybe_swap_agent(agent_id)
         tid = "t_" + uuid.uuid4().hex[:10]
-        task = Task(id=tid, title=title, agent_id=agent_id, prompt=prompt,
+        task = Task(id=tid, title=title, agent_id=effective, prompt=prompt,
                     project_id=project_id)
         with self._lock:
             self.tasks[tid] = task
             self._save_unlocked()
-        logger.info("agent_runner: queued task %s for %s%s", tid, agent_id,
-                    f" (project={project_id})" if project_id else "")
+        if swapped:
+            logger.info("agent_runner: queued %s for %s (provider mode=%s, "
+                        "swapped from %s)%s", tid, effective,
+                        self.provider_mode, agent_id,
+                        f" project={project_id}" if project_id else "")
+        else:
+            logger.info("agent_runner: queued %s for %s%s", tid, effective,
+                        f" (project={project_id})" if project_id else "")
         return tid
 
     def next_ready_task(self) -> Optional[Task]:
@@ -829,6 +887,7 @@ class _Registry:
                 "ts": time.time(),
                 "agents": agents_out,
                 "tasks": tasks_out,
+                "provider_mode": self.provider_mode,
                 "aggregate": {
                     "active": active,
                     "total_agents": len(agents_out),
@@ -1282,6 +1341,14 @@ def add_task(title: str, agent_id: str, prompt: Optional[str] = None,
 
 def cancel_task(task_id: str) -> bool:
     return _reg.cancel_task(task_id)
+
+
+def get_provider_mode() -> str:
+    return _reg.provider_mode
+
+
+def set_provider_mode(mode: str) -> str:
+    return _reg.set_provider_mode(mode)
 
 
 def get_snapshot() -> Dict[str, Any]:
