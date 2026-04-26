@@ -567,9 +567,11 @@ canvas { display: block; }
   border-radius: 999px;
 }
 
-/* Mid-left schedule panel — sits below the networks panel */
+/* Mid-left schedule panel — moved up into UniFi's old slot now that
+   the networks panel has been removed. Same width/height, lifted from
+   top:520 to top:280. */
 #hud-schedule {
-  top: 520px; left: 22px;
+  top: 280px; left: 22px;
   width: 260px;
   max-height: 240px;
   display: flex; flex-direction: column;
@@ -716,8 +718,12 @@ canvas { display: block; }
 #hud-log {
   bottom: calc(env(safe-area-inset-bottom, 20px) + 170px);
   left: 22px;
-  width: 340px;
-  max-height: 240px;
+  /* Doubled width — operator wants more room for the constant
+     read/write/agent activity stream so it reads like a real
+     working terminal. */
+  width: 680px;
+  max-width: calc(100vw - 380px);
+  max-height: 280px;
   display: flex; flex-direction: column;
   overflow: hidden;
 }
@@ -1517,20 +1523,9 @@ canvas { display: block; }
   </div>
 </div>
 
-<!-- Mid-left: networks (UniFi) — sits between stats and schedule -->
-<div id="hud-networks" class="mc-panel">
-  <div class="mc-panel-head">
-    <span class="mc-dot" style="background:#9bf2ff"></span>
-    NETWORKS
-    <span class="mc-panel-meta" id="networks-meta">offline</span>
-  </div>
-  <input id="networks-filter" class="mc-filter" type="text" placeholder="filter sites…" autocomplete="off" spellcheck="false">
-  <div id="networks-list">
-    <div class="mc-empty">— UniFi key not set —</div>
-  </div>
-</div>
+<!-- NETWORKS (UniFi) panel removed 2026-04-26 — operator didn't find it useful -->
 
-<!-- Mid-left: scheduled tasks (sits below the stats panel) -->
+<!-- Mid-left: scheduled tasks (now in UniFi's old slot, directly below stats) -->
 <div id="hud-schedule" class="mc-panel">
   <div class="mc-panel-head">
     <span class="mc-dot" style="background:#ffcf6a"></span>
@@ -2010,8 +2005,7 @@ function animate() {
   // --- Third brain (ChatGPT) ---
   drawGpt(1 / FPS);
 
-  // --- Fourth brain (UniFi networks) ---
-  drawUnifi(1 / FPS);
+  // UniFi (4th brain) removed — operator didn't use it. Slot now empty.
 
   // --- Fifth brain (Graphify knowledge graph) ---
   drawGraphify(1 / FPS);
@@ -3465,9 +3459,20 @@ function connectVaultSSE() {
         sessionStats.vaultReads++;
       }
       if (e.source === 'chatgpt') sessionStats.gptCalls++;
-      // Activity log row: route by source
-      const sourceKey = (e.source === 'chatgpt') ? 'chatgpt' : 'vault';
-      logEvent(sourceKey, ' ' + (e.op || 'write') + ': ' + (e.label || ''));
+      // Activity log row: route by source + op so tool calls show with
+      // their own visual key (sky-blue 'agent' lane) instead of looking
+      // like vault writes.
+      let sourceKey;
+      if (e.source === 'chatgpt') sourceKey = 'chatgpt';
+      else if (e.op === 'tool' || e.op === 'tool-fail' || e.source === 'agent') sourceKey = 'agent';
+      else sourceKey = 'vault';
+      let line;
+      if (e.op === 'tool')      line = '⚙ ' + (e.label || '');
+      else if (e.op === 'tool-fail') line = '✗ ' + (e.label || '');
+      else if (e.op === 'read') line = '↺ ' + (e.label || '');
+      else if (e.op === 'append') line = '+ ' + (e.label || '');
+      else                      line = '✎ ' + (e.label || '');
+      logEvent(sourceKey, ' ' + line);
       updateStatsPanel({ agents: [...agentCards.values()].map(r => r.data) });
     } catch (_) {}
   };
@@ -4935,7 +4940,7 @@ animate();
 connectSSE();
 connectOrchSSE();
 connectVaultSSE();
-connectUnifiSSE();
+// connectUnifiSSE removed — UniFi panel deleted from HUD
 flowLoop();
 loadMenu();
 refreshVaultGraph();

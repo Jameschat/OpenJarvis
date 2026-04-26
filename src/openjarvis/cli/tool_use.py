@@ -983,10 +983,29 @@ def _run_agno_tool(name: str, args: dict) -> str:
     return json.dumps({"ok": success, "result": str(content) if content is not None else ""})
 
 
+def _emit_tool_event(name: str, args: dict, ok: bool) -> None:
+    """Surface tool calls in the activity log so the operator sees the
+    agent working in real time. Best-effort — never raises."""
+    try:
+        from openjarvis.tools import obsidian_brain
+        # Compact label with the first interesting arg value
+        first_val = ""
+        for k in ("query", "question", "title", "url", "agent", "node", "a", "city", "expression", "target", "action"):
+            if k in args and args[k]:
+                first_val = str(args[k])[:60]
+                break
+        op = "tool" if ok else "tool-fail"
+        label = f"{name}({first_val})" if first_val else f"{name}()"
+        obsidian_brain._emit_event(op, label, kind="tool", source="agent")
+    except Exception:
+        pass
+
+
 def _run_tool(name: str, arguments_json: str) -> str:
     try:
         args = json.loads(arguments_json or "{}")
     except json.JSONDecodeError as exc:
+        _emit_tool_event(name, {}, False)
         return json.dumps({"error": f"bad arguments json: {exc}"})
     if not isinstance(args, dict):
         return json.dumps({"error": "arguments must be a JSON object"})
@@ -994,16 +1013,23 @@ def _run_tool(name: str, arguments_json: str) -> str:
     fn = _TOOL_DISPATCH.get(name)
     if fn is not None:
         try:
-            return fn(**args)
+            result = fn(**args)
+            _emit_tool_event(name, args, True)
+            return result
         except TypeError as exc:
+            _emit_tool_event(name, args, False)
             return json.dumps({"error": f"bad arguments: {exc}"})
         except Exception as exc:
             logger.exception("tool '%s' raised", name)
+            _emit_tool_event(name, args, False)
             return json.dumps({"error": str(exc)})
 
     if name in _agno_instances:
-        return _run_agno_tool(name, args)
+        result = _run_agno_tool(name, args)
+        _emit_tool_event(name, args, True)
+        return result
 
+    _emit_tool_event(name, args, False)
     return json.dumps({"error": f"unknown tool '{name}'"})
 
 

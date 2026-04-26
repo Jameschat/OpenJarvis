@@ -18,7 +18,8 @@ from pathlib import Path
 from typing import Any, Callable, List, Optional
 
 from openjarvis.cli import orch_bridge
-from openjarvis.cli import unifi_bridge
+# UniFi bridge removed from active use 2026-04-26 — operator didn't find
+# the panel useful. unifi_bridge.py remains on disk if it's wanted back.
 
 logger = logging.getLogger(__name__)
 
@@ -392,10 +393,7 @@ class _Handler(SimpleHTTPRequestHandler):
             except Exception as exc:
                 logger.exception("/provider get failed")
                 self._json_response(500, {"error": str(exc)})
-        elif self.path == "/unifi":
-            self._json_response(200, unifi_bridge.get_snapshot())
-        elif self.path.startswith("/unifi_events"):
-            self._handle_unifi_sse()
+        # /unifi + /unifi_events removed — UniFi bridge no longer active
         elif self.path == "/schedule":
             try:
                 from openjarvis.tools import agent_runner
@@ -1397,28 +1395,7 @@ class _Handler(SimpleHTTPRequestHandler):
         finally:
             _vault_bus.unsubscribe(self.wfile)
 
-    def _handle_unifi_sse(self) -> None:
-        """SSE stream of UniFi snapshot updates for the NETWORKS panel."""
-        self.send_response(200)
-        self.send_header("Content-Type", "text/event-stream")
-        self.send_header("Cache-Control", "no-cache")
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Connection", "keep-alive")
-        self.end_headers()
-        try:
-            initial = json.dumps(unifi_bridge.get_snapshot())
-            self.wfile.write(("data: " + initial + "\n\n").encode("utf-8"))
-            self.wfile.flush()
-        except Exception:
-            return
-        unifi_bridge.subscribe(self.wfile)
-        try:
-            while True:
-                time.sleep(1)
-        except (BrokenPipeError, ConnectionResetError, OSError):
-            pass
-        finally:
-            unifi_bridge.unsubscribe(self.wfile)
+    # _handle_unifi_sse removed (UniFi bridge no longer active)
 
     def _handle_orch_sse(self) -> None:
         """SSE stream of orchestry agent/task state."""
@@ -1488,12 +1465,8 @@ def start_brain_server(open_browser: bool = True) -> None:
     except Exception:
         logger.exception("orch bridge failed to start")
 
-    # Start the UniFi bridge — read-only network status from api.ui.com.
-    # Dormant unless OPENJARVIS_UNIFI_KEY env var is set.
-    try:
-        unifi_bridge.start_unifi_bridge()
-    except Exception:
-        logger.exception("unifi bridge failed to start")
+    # UniFi bridge no longer started — operator removed it from the HUD.
+    # unifi_bridge.py remains on disk if it's wanted back.
 
     local_ip = _get_local_ip()
     url = f"http://{local_ip}:{_PORT}/brain.html?host={local_ip}:{_PORT}"
