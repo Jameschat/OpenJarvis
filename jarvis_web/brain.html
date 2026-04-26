@@ -3698,6 +3698,15 @@ composerEl.addEventListener('drop', async (e) => {
   }
 });
 
+// --- Client-side chat history ---
+// Last N=12 messages (6 turns) live in this tab's memory only. Sent with
+// each /chat request so the model can interpret short replies. Resets on
+// page reload. No server-side state — no shared mutable state, no lockup
+// risk if a request hangs. Tab-local: each browser tab has its own
+// conversation, which is fine for the operator's actual workflow.
+const CHAT_HISTORY_MAX = 12;
+let chatHistory = [];
+
 async function sendChat() {
   const text = composerInp.value.trim();
   if (!text && composerAttachments.length === 0) return;
@@ -3714,6 +3723,7 @@ async function sendChat() {
   const payload = {
     text: text,
     files: composerAttachments,
+    history: chatHistory.slice(-CHAT_HISTORY_MAX),
   };
   // Snapshot + clear UI immediately so the operator can keep typing
   composerInp.value = '';
@@ -3746,6 +3756,14 @@ async function sendChat() {
     if (data.response) {
       setResponseText(data.response);
       responseEl.classList.add('visible');
+      // Append this turn to the rolling history so the next /chat has
+      // context. We keep what the operator actually typed (not the
+      // file-augmented effective prompt).
+      if (text) chatHistory.push({ role: 'user', content: text });
+      chatHistory.push({ role: 'assistant', content: data.response });
+      if (chatHistory.length > CHAT_HISTORY_MAX * 2) {
+        chatHistory = chatHistory.slice(-CHAT_HISTORY_MAX * 2);
+      }
     }
     if (data.audio_b64) {
       state = 'speaking';

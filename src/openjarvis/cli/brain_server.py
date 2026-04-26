@@ -573,6 +573,27 @@ class _Handler(SimpleHTTPRequestHandler):
 
             # --- Compose the effective prompt ---
             prompt_parts = []
+            # Optional client-side conversation history. The browser sends
+            # the last ~6 turns it remembers; we splice them in as a context
+            # block so the model can interpret short replies like 'yes' /
+            # 'continue' that depend on the previous turn. Stateless on the
+            # server — no shared mutable state, so a stuck request can't
+            # poison anyone else's session.
+            history = data.get("history") or []
+            if isinstance(history, list) and history:
+                hist_lines = ["[Recent conversation context — use this to "
+                              "interpret short replies like 'yes' / 'continue':]"]
+                for m in history[-12:]:        # safety cap (6 turns)
+                    if not isinstance(m, dict):
+                        continue
+                    role = m.get("role")
+                    content = (m.get("content") or "")[:1200]
+                    if not content:
+                        continue
+                    label = "Operator" if role == "user" else "Jarvis"
+                    hist_lines.append(f"{label}: {content.strip()}")
+                if len(hist_lines) > 1:
+                    prompt_parts.append("\n".join(hist_lines))
             if text_excerpts:
                 prompt_parts.append("\n\n".join(text_excerpts))
             if saved and not text_excerpts:
