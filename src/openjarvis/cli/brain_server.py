@@ -405,6 +405,14 @@ class _Handler(SimpleHTTPRequestHandler):
                 self._json_response(500, {"error": str(exc)})
         elif self.path == "/commands":
             self._handle_commands_list()
+        elif self.path in ("/graphify", "/graphify/"):
+            self._serve_graphify_file("graph.html", "text/html")
+        elif self.path == "/graphify/graph.json":
+            self._serve_graphify_file("graph.json", "application/json")
+        elif self.path == "/graphify/report":
+            self._serve_graphify_file("GRAPH_REPORT.md", "text/markdown; charset=utf-8")
+        elif self.path == "/graphify/status":
+            self._handle_graphify_status()
         elif self.path in ("/", "/brain", "/brain.html"):
             self.path = "/brain.html"
             super().do_GET()
@@ -485,6 +493,62 @@ class _Handler(SimpleHTTPRequestHandler):
             self._json_response(400, {"error": str(exc)})
         except Exception as exc:
             logger.exception("/provider set failed")
+            self._json_response(500, {"error": str(exc)})
+
+    def _graphify_dir(self) -> Path:
+        """Where the graphify outputs live. Configurable via env, with a
+        sensible Windows default so the operator's existing run is found."""
+        env = os.environ.get("OPENJARVIS_GRAPHIFY_DIR", "").strip()
+        if env:
+            return Path(env)
+        return Path(r"E:\Claude\Brain-Graphs\graphify-out")
+
+    def _serve_graphify_file(self, name: str, content_type: str) -> None:
+        try:
+            target = self._graphify_dir() / name
+            if not target.exists() or not target.is_file():
+                return self._json_response(404, {
+                    "error": f"graphify file not found: {name}",
+                    "looked_in": str(self._graphify_dir()),
+                    "hint": "run `graphify <vault path>` then refresh, or set OPENJARVIS_GRAPHIFY_DIR.",
+                })
+            data = target.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+            self.wfile.write(data)
+        except Exception as exc:
+            logger.exception("/graphify serve failed: %s", name)
+            self._json_response(500, {"error": str(exc)})
+
+    def _handle_graphify_status(self) -> None:
+        """Quick liveness/summary used by the HUD to decide whether to show the
+        5th brain. Returns counts pulled from the cached graph.json."""
+        try:
+            d = self._graphify_dir()
+            graph = d / "graph.json"
+            if not graph.exists():
+                return self._json_response(200, {
+                    "online": False,
+                    "reason": "no graph.json yet",
+                    "looked_in": str(d),
+                })
+            payload = json.loads(graph.read_text(encoding="utf-8"))
+            nodes = payload.get("nodes") or []
+            links = payload.get("links") or []
+            communities = sorted({n.get("community") for n in nodes if n.get("community") is not None})
+            return self._json_response(200, {
+                "online": True,
+                "nodes": len(nodes),
+                "edges": len(links),
+                "communities": len(communities),
+                "updated_at": graph.stat().st_mtime,
+                "dir": str(d),
+            })
+        except Exception as exc:
+            logger.exception("/graphify/status failed")
             self._json_response(500, {"error": str(exc)})
 
     def _handle_commands_list(self) -> None:
