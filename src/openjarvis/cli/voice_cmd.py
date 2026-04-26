@@ -222,8 +222,47 @@ def _try_calendar(text: str, console: Console, ui=None) -> Optional[str]:
 
     lower = text.lower().strip()
 
-    _TRIGGERS = ("schedule", "calendar", "meetings", "appointments", "diary", "agenda")
-    if not any(t in lower for t in _TRIGGERS):
+    # Word-boundary match — substring matching had a sibling bug to the
+    # lights/Reddit one (e.g. "scheduling app" tripping "schedule").
+    import re
+    def _has_term(phrase: str, hay: str) -> bool:
+        return re.search(r"(?<!\w)" + re.escape(phrase) + r"(?!\w)", hay) is not None
+
+    _TRIGGERS = ("schedule", "calendar", "meetings", "appointments",
+                 "diary", "agenda")
+    if not any(_has_term(t, lower) for t in _TRIGGERS):
+        return None
+
+    # Build/make/create intents are NOT calendar queries — they're project
+    # work. "Let's build a scheduling app" / "make me a calendar tool" /
+    # "spin up a team to add appointments" should pass through to the LLM
+    # / team-task flow, not return today's events.
+    _BUILD_VERBS = (
+        "build", "make", "create", "develop", "implement", "design",
+        "code", "write", "spin up", "kick off", "start a project",
+        "start a new project", "let's build", "lets build",
+    )
+    if any(_has_term(v, lower) for v in _BUILD_VERBS):
+        return None
+
+    # Require a query intent (verb or time word) so we don't grab phrases
+    # like "the calendar is on the wall". "Login/authenticate" is handled
+    # explicitly below as its own form of intent.
+    _QUERY_VERBS = (
+        "show", "what", "what's", "whats", "any", "do i have", "list",
+        "tell me", "check", "look up", "got any", "anything on",
+        "read out", "read me", "open", "view",
+    )
+    _TIME_WORDS = (
+        "today", "tomorrow", "tonight", "this week", "next week",
+        "this morning", "this afternoon", "this evening",
+    )
+    has_query = (
+        any(_has_term(v, lower) for v in _QUERY_VERBS)
+        or any(_has_term(t, lower) for t in _TIME_WORDS)
+        or "login" in lower or "authenticate" in lower or "sign in" in lower
+    )
+    if not has_query:
         return None
 
     if "login" in lower or "authenticate" in lower or "sign in" in lower:
