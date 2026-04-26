@@ -527,11 +527,22 @@ def _try_lights(text: str, console: Console, ui=None) -> Optional[str]:
     if "sonos" in lower or "speaker" in lower or "speakers" in lower:
         return None
 
-    has_light_word = any(w in lower for w in _LIGHT_TRIGGERS)
-    has_action_word = any(w in lower for w in _ACTION_TRIGGERS)
-    has_colour_word = any(w in lower for w in _COLOUR_TRIGGERS)
+    # Word-boundary match — substring matching had a great moment where
+    # "Reddit" tripped the colour "red" trigger and set all the lights
+    # red mid-LLM-prompt. We tokenise on word boundaries and match
+    # against full words / multi-word phrases instead.
+    import re
+    def _has_term(phrase: str, hay: str) -> bool:
+        return re.search(r"(?<!\w)" + re.escape(phrase) + r"(?!\w)", hay) is not None
 
-    if not (has_light_word or has_colour_word) and not has_action_word:
+    has_light_word = any(_has_term(w, lower) for w in _LIGHT_TRIGGERS)
+    has_action_word = any(_has_term(w, lower) for w in _ACTION_TRIGGERS)
+    has_colour_word = any(_has_term(w, lower) for w in _COLOUR_TRIGGERS)
+
+    # A bare action verb ("set", "dim") with no light or colour word is
+    # not a lights command — could be "set the table", "dim view", etc.
+    # Require at least one light-domain signal alongside the action.
+    if not (has_light_word or has_colour_word):
         return None
 
     # Parse action
@@ -541,10 +552,10 @@ def _try_lights(text: str, console: Console, ui=None) -> Optional[str]:
     elif "turn on" in lower or "switch on" in lower or "lights on" in lower or "on" in lower.split()[-2:]:
         action = "on"
 
-    # Parse colour
+    # Parse colour — word-boundary match (so "Reddit" doesn't pick "red")
     colour = ""
     for c in sorted(COLOUR_PRESETS.keys(), key=len, reverse=True):
-        if c in lower:
+        if _has_term(c, lower):
             colour = c
             action = "set"
             break
