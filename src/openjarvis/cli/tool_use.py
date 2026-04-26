@@ -82,6 +82,12 @@ community discussion. Pick favourites based on GitHub stars, recent \
 commit activity, and HN/Reddit consensus — never on a vendor's own \
 blog. Only fall back to web_search when the topic isn't code-related \
 or the dedicated tools returned nothing useful.
+- For RELATIONSHIP / CONNECTION questions about the operator's own \
+work ("how is X connected to Y in my notes", "what bridges A and B", \
+"what's around X"), prefer the graph tools over recall_vault: \
+`graph_query` traverses outward, `graph_path` finds the shortest \
+chain, `graph_explain` lists every direct neighbour. Use recall_vault \
+for keyword search, the graph tools for structural relationships.
 - When the operator asks for a constraint (e.g. "use independent \
 sources only", "GitHub stars not vendor sites"), TREAT IT AS A HARD RULE. \
 If your tool calls violate the constraint, retry with corrected queries \
@@ -294,6 +300,83 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
                     },
                 },
                 "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "graph_query",
+            "description": (
+                "Traverse the operator's knowledge graph (built by graphify "
+                "from the Obsidian vault) starting from nodes that match the "
+                "question. Use for relationship questions like 'how is X "
+                "connected to Y', 'what's around the JARVIS architecture', "
+                "'what bridges OpenJarvis and TikTok work'. Returns a "
+                "ranked subgraph with nodes + edges. Complements "
+                "recall_vault: that one finds notes containing keywords; "
+                "this one traces structural connections between concepts."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "question": {
+                        "type": "string",
+                        "description": "Natural-language question. Key terms get matched to node labels.",
+                    },
+                    "mode": {
+                        "type": "string",
+                        "description": "bfs = broad neighbour exploration; dfs = follow one chain deep.",
+                        "enum": ["bfs", "dfs"],
+                        "default": "bfs",
+                    },
+                    "depth": {
+                        "type": "integer",
+                        "description": "Max traversal depth (default 3).",
+                        "default": 3,
+                    },
+                },
+                "required": ["question"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "graph_path",
+            "description": (
+                "Shortest path between two named concepts in the knowledge "
+                "graph. Returns the chain of nodes + edges connecting them, "
+                "or 'no path' if they're in disconnected components. Use "
+                "for 'how does X reach Y', 'what bridges A and B', 'is "
+                "there any connection between X and Y'."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "a": {"type": "string", "description": "Start concept name (fuzzy match against node labels)."},
+                    "b": {"type": "string", "description": "End concept name (fuzzy match against node labels)."},
+                },
+                "required": ["a", "b"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "graph_explain",
+            "description": (
+                "Dump everything connected to a single node in the knowledge "
+                "graph: degree + all neighbours with relation type and "
+                "source file. Use for 'what is X', 'tell me about X and "
+                "what it touches', 'what depends on X'."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "node": {"type": "string", "description": "Concept name to look up (fuzzy match against node labels)."},
+                },
+                "required": ["node"],
             },
         },
     },
@@ -774,6 +857,26 @@ def _save_hn_search_to_vault(query: str, hits: List[dict]) -> None:
         logger.exception("vault: hn search note write failed")
 
 
+def _tool_graph_query(question: str, mode: str = "bfs", depth: int = 3) -> str:
+    from openjarvis.cli import graphify_bridge
+    try:
+        depth_i = max(1, min(int(depth or 3), 5))
+    except Exception:
+        depth_i = 3
+    mode_s = "dfs" if str(mode).lower() == "dfs" else "bfs"
+    return json.dumps(graphify_bridge.query(question or "", mode=mode_s, depth=depth_i))
+
+
+def _tool_graph_path(a: str, b: str) -> str:
+    from openjarvis.cli import graphify_bridge
+    return json.dumps(graphify_bridge.path(a or "", b or ""))
+
+
+def _tool_graph_explain(node: str) -> str:
+    from openjarvis.cli import graphify_bridge
+    return json.dumps(graphify_bridge.explain(node or ""))
+
+
 _TOOL_DISPATCH = {
     "recall_vault": _tool_recall_vault,
     "remember_fact": _tool_remember_fact,
@@ -783,6 +886,9 @@ _TOOL_DISPATCH = {
     "github_search": _tool_github_search,
     "hackernews_search": _tool_hackernews_search,
     "fetch_url": _tool_fetch_url,
+    "graph_query": _tool_graph_query,
+    "graph_path": _tool_graph_path,
+    "graph_explain": _tool_graph_explain,
 }
 
 
