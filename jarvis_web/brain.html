@@ -414,6 +414,16 @@ canvas { display: block; }
   color: #ffd76a;
   animation: pulse 2.4s ease-in-out infinite;
 }
+.mc-mute.mc-music {
+  margin-left: 6px;
+  background: rgba(255,107,197,0.16);
+  border-color: rgba(255,107,197,0.5);
+  color: #ffb3df;
+}
+.mc-mute.mc-music:hover {
+  background: rgba(255,107,197,0.28);
+  border-color: rgba(255,107,197,0.85);
+}
 .mc-mute.mc-provider {
   margin-left: 6px;
 }
@@ -1492,6 +1502,7 @@ canvas { display: block; }
     <span class="mc-dot" style="background:#5ee0a1"></span>
     SYSTEM · ACTIVITY
     <button id="graphify-btn" class="mc-mute mc-graphify" title="Open the graphify knowledge graph of your vault" style="display:none">◉ GRAPHIFY</button>
+    <button id="music-btn" class="mc-mute mc-music" title="Open ACE-Step music UI" style="display:none">♫ MUSIC</button>
     <button id="provider-btn" class="mc-mute mc-provider" title="Force a specific provider for every dispatched task. Cycles AUTO → CLAUDE → CODEX.">⇄ AUTO</button>
     <button id="mute-btn" class="mc-mute" title="Toggle audio cues">♪ off</button>
   </div>
@@ -4881,6 +4892,41 @@ if (elGraphifyBtn) {
   });
   refreshGraphify();
   setInterval(refreshGraphify, 30000);
+}
+
+// --- Music (ACE-Step UI) button ---
+// Polls /music/status — reveals the button when the ACE-Step UI is up.
+// Click opens the URL the server reported (default localhost:5173) in a
+// new tab. No data integration — just a launcher so music is reachable
+// from inside Mission Control.
+const elMusicBtn = document.getElementById('music-btn');
+let musicUrl = '';
+async function refreshMusicStatus() {
+  if (!elMusicBtn) return;
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const host = params.get('host') || window.location.host || 'localhost:7710';
+    const proto = window.location.protocol === 'https:' ? 'https' : 'http';
+    const r = await fetch(`${proto}://${host}/music/status`, { credentials: 'include' });
+    if (!r.ok) return;
+    const d = await r.json();
+    if (d.online) {
+      elMusicBtn.style.display = '';
+      elMusicBtn.textContent = `♫ ${d.label || 'MUSIC'}`;
+      elMusicBtn.title = `${d.label || 'Music UI'} live at ${d.url}. Click to open.`;
+      musicUrl = d.url || '';
+    } else {
+      elMusicBtn.style.display = 'none';
+    }
+  } catch (_) { /* leave hidden */ }
+}
+if (elMusicBtn) {
+  elMusicBtn.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    if (musicUrl) window.open(musicUrl, '_blank', 'noopener');
+  });
+  refreshMusicStatus();
+  setInterval(refreshMusicStatus, 60000);
 }
 
 const elProviderBtn = document.getElementById('provider-btn');

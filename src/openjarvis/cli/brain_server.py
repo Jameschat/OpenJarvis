@@ -421,6 +421,8 @@ class _Handler(SimpleHTTPRequestHandler):
             self._serve_graphify_file("GRAPH_REPORT.md", "text/markdown; charset=utf-8")
         elif self.path == "/graphify/status":
             self._handle_graphify_status()
+        elif self.path == "/music/status":
+            self._handle_music_status()
         elif self.path in ("/", "/brain", "/brain.html"):
             self.path = "/brain.html"
             super().do_GET()
@@ -569,6 +571,24 @@ class _Handler(SimpleHTTPRequestHandler):
         except Exception as exc:
             logger.exception("/graphify/status failed")
             self._json_response(500, {"error": str(exc)})
+
+    def _handle_music_status(self) -> None:
+        """Check whether ACE-Step UI (Vite dev server) is reachable. Probe
+        the configured frontend URL with a short timeout so it never
+        blocks the HUD if the music app is offline. Returns the URL the
+        HUD should open."""
+        url = os.environ.get("OPENJARVIS_MUSIC_URL", "http://localhost:5173")
+        try:
+            import urllib.request
+            with urllib.request.urlopen(url, timeout=1.5) as r:
+                online = (r.status == 200)
+        except Exception:
+            online = False
+        return self._json_response(200, {
+            "online": online,
+            "url": url,
+            "label": "ACE-Step",
+        })
 
     def _handle_graphify_refresh(self) -> None:
         """POST /graphify/refresh — kick off a background rebuild from the
