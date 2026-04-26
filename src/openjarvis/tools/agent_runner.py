@@ -42,6 +42,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -69,6 +70,12 @@ TICK_INTERVAL = 2.0  # seconds between worker iterations
 # Default model used when we ask claude-code to run a task. The Claude CLI
 # picks a sensible default itself if this is unset, so we leave it blank.
 _CLAUDE_MODEL = os.environ.get("OPENJARVIS_AGENT_MODEL", "")
+# Architect uses Sonnet by default — better instruction-following than the
+# default model, which was missing 'write to file vs stdout' cues during
+# multi-agent team runs. Other Claude agents stay on the default model.
+# Override either via env vars, both accept the Claude CLI's friendly aliases
+# (sonnet / opus / haiku) or a fully-qualified model id.
+_ARCHITECT_MODEL = os.environ.get("OPENJARVIS_ARCHITECT_MODEL", "sonnet")
 
 # Hardcoded agent roster — name, role prompt, "skills" tags (cosmetic in HUD).
 DEFAULT_AGENTS: List[Dict[str, Any]] = [
@@ -77,7 +84,7 @@ DEFAULT_AGENTS: List[Dict[str, Any]] = [
         "id": "architect",
         "name": "architect",
         "role": "Senior software architect. Plans systems, picks patterns, reviews designs.",
-        "model": _CLAUDE_MODEL or "claude-default",
+        "model": _CLAUDE_MODEL or _ARCHITECT_MODEL,
         "skills": ["planning", "review"],
         "color": "#b478ff",   # violet
         "provider": "claude",
@@ -1157,10 +1164,21 @@ def _run_task(task: Task) -> None:
             exe, "exec",
             "--skip-git-repo-check",
             "--dangerously-bypass-approvals-and-sandbox",
-            codex_prompt,
         ]
+        # Per-agent model override (codex --model)
+        agent_model = (agent_spec or {}).get("model") or ""
+        if agent_model and agent_model not in ("claude-default", "codex-default", ""):
+            cmd += ["--model", agent_model]
+        cmd.append(codex_prompt)
     else:
-        cmd = [exe, "-p", "--dangerously-skip-permissions", full_prompt]
+        cmd = [exe, "-p", "--dangerously-skip-permissions"]
+        # Per-agent model override (claude --model). Accepts friendly aliases
+        # (sonnet / opus / haiku) or fully-qualified ids. 'claude-default'
+        # means 'let the CLI pick' — don't pass --model in that case.
+        agent_model = (agent_spec or {}).get("model") or ""
+        if agent_model and agent_model != "claude-default":
+            cmd += ["--model", agent_model]
+        cmd.append(full_prompt)
 
     # Compose env for the spawn — inherit our env, then export the vault
     # URL + token explicitly so curl-style helpers in the agent can find them.
@@ -1183,6 +1201,12 @@ def _run_task(task: Task) -> None:
     if sys.platform == "win32":
         popen_kwargs["creationflags"] = 0x08000000  # CREATE_NO_WINDOW
 
+    # Snapshot the workspace files BEFORE the task runs so we can detect
+    # whether the agent produced any new artifacts. Used by the salvage
+    # path below — when an agent forgot to use its Write tool and dumped
+    # the deliverable to stdout, we capture that as a fallback file.
+    pre_files = _list_project_artifacts(ws)
+
     _reg.mark_running(task.id, workspace=str(ws))
     logger.info("agent_runner: starting task %s on %s (provider=%s)",
                 task.id, task.agent_id, provider)
@@ -1194,6 +1218,13 @@ def _run_task(task: Task) -> None:
         exit_code = proc.wait()
         _reg.mark_finished(task.id, exit_code=exit_code)
         logger.info("agent_runner: finished task %s exit=%d", task.id, exit_code)
+        # Salvage path: if the agent produced no new project artifacts
+        # but its stdout has substantive content, write that as a
+        # fallback deliverable so the work isn't lost in a log file.
+        try:
+            _maybe_salvage_stdout(task, ws, stdout_log, pre_files)
+        except Exception:
+            logger.exception("salvage step failed (non-fatal)")
         # Auto-write a session note to Brain/Sessions/ summarising the task
         # so future agents (and ChatGPT, and Jarvis recall) have context.
         try:
@@ -1211,6 +1242,95 @@ def _run_task(task: Task) -> None:
             popen_kwargs["stderr"].close()
         except Exception:
             pass
+
+
+def _list_project_artifacts(ws: Path) -> set:
+    """Set of relative file paths in the workspace that count as deliverables.
+    Excludes log files, prompt scaffolding, and __pycache__."""
+    out: set = set()
+    if not ws.exists():
+        return out
+    try:
+        for p in ws.rglob("*"):
+            if not p.is_file():
+                continue
+            rel = p.relative_to(ws).as_posix()
+            if rel == "prompt.txt":
+                continue
+            if rel.endswith(".log") or rel.endswith(".stdout.log") or rel.endswith(".stderr.log"):
+                continue
+            if "__pycache__" in rel.split("/"):
+                continue
+            out.add(rel)
+    except Exception:
+        pass
+    return out
+
+
+def _maybe_salvage_stdout(task: Task, ws: Path, stdout_log: Path,
+                          pre_files: set) -> None:
+    """If the agent finished but produced no NEW project artifacts, capture
+    the stdout as a fallback deliverable so the work isn't trapped in a log
+    file. Common failure mode: architect prints PLAN content to stdout
+    instead of using its Write tool — we rescue it here.
+
+    Heuristic for the file name:
+      - if title starts with 'Plan' / 'Design' / 'Architect' → PLAN.md
+      - if title starts with 'Review' → REVIEW.md
+      - otherwise <task-title-slug>.md
+    Suffixed with -<task_id_short> if a same-named file already exists.
+    """
+    try:
+        post_files = _list_project_artifacts(ws)
+        new_files = post_files - pre_files
+        if new_files:
+            return  # agent produced something — nothing to salvage
+
+        if not stdout_log.exists():
+            return
+        try:
+            content = stdout_log.read_text(encoding="utf-8", errors="replace").strip()
+        except Exception:
+            return
+        # Strip ANSI escape codes the CLI may emit
+        content = re.sub(r"\x1b\[[0-9;?]*[A-Za-z]", "", content).strip()
+        if len(content) < 200:
+            return  # not substantial enough to be a real deliverable
+
+        title_lower = (task.title or "").lower().strip()
+        if title_lower.startswith(("plan", "design", "architect")):
+            base_name = "PLAN"
+        elif title_lower.startswith("review"):
+            base_name = "REVIEW"
+        elif title_lower.startswith(("test", "qa")):
+            base_name = "TEST_NOTES"
+        else:
+            base_name = _slug_filename(task.title or "output")
+
+        target = ws / f"{base_name}.md"
+        if target.exists():
+            target = ws / f"{base_name}-{task.id[-6:]}.md"
+
+        body = (
+            f"<!-- Auto-salvaged from {task.agent_id} stdout — "
+            f"agent did not use its Write tool. Task: {task.title!r} -->\n\n"
+            f"{content}\n"
+        )
+        target.write_text(body, encoding="utf-8")
+        logger.info(
+            "agent_runner: salvaged stdout to %s (%d chars) — agent %s "
+            "didn't write any project artifact",
+            target.name, len(content), task.agent_id,
+        )
+    except Exception:
+        logger.exception("salvage failed for task %s", task.id)
+
+
+def _slug_filename(text: str, max_len: int = 50) -> str:
+    """Lowercase + safe-chars + capped length for a fallback filename stem."""
+    s = re.sub(r"[^a-zA-Z0-9._-]+", "-", (text or "").strip().lower())
+    s = s.strip("-_") or "output"
+    return s[:max_len].rstrip("-_")
 
 
 def _write_agent_task_note(task: Task, workspace: Path, exit_code: int, provider: str) -> None:
