@@ -1100,12 +1100,13 @@ def _run_task(task: Task) -> None:
             f"Work in the current directory ({ws}). Be concise; no preamble.",
             "",
             "OUTPUT FORMAT: write all deliverables as FILES in the current directory",
-            "(PLAN.md, README.md, src/*, etc). Do NOT offer to use a browser preview,",
-            "interactive canvas, mockup viewer, or any other feature that needs the",
-            "operator to click or respond — they will not see the offer in time. If",
-            "you would normally show a visual, write a markdown description and an",
-            "ASCII/PlantUML/mermaid diagram in a file instead. Your work is judged by",
-            "what lands on disk, not by what you say you could do.",
+            "using your Write/Edit tools (PLAN.md, README.md, src/*, etc). Do NOT put",
+            "the deliverable in your text response — your stdout is captured to a log",
+            "file the operator does not read. If your task is 'plan X', the deliverable",
+            "is PLAN.md on disk, not a planning summary in chat. Do NOT offer browser",
+            "previews, interactive canvases, mockups, or follow-up questions — they",
+            "will not be answered in time. For visuals, write ASCII / mermaid / PlantUML",
+            "in a markdown file. Your work is judged by what lands on disk.",
         ]
         # Project workspace handoff — list existing non-log files so the
         # current agent knows to read what previous teammates left
