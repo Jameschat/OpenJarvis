@@ -74,13 +74,13 @@ reference with at least one INDEPENDENT source (review site, listicle from \
 a third party, GitHub stars, recent Reddit/HN discussion) before naming a \
 favourite. If you can only find vendor self-promotion, say so explicitly \
 rather than picking one anyway.
-- When researching CODE / LIBRARIES / OPEN SOURCE TOOLS, your FIRST \
-web_search calls should use site: filters to bypass marketing pages: \
-`web_search("<topic> site:github.com")`, `web_search("<topic> \
-site:reddit.com")`, `web_search("<topic> site:news.ycombinator.com")`. \
-Only fall back to generic listicles if those return nothing useful. Pick \
-favourites based on GitHub stars, recent commit activity, and \
-community consensus — never on a vendor's own blog.
+- When researching CODE / LIBRARIES / OPEN SOURCE TOOLS, prefer the \
+dedicated tools over web_search: `github_search("<topic>")` returns \
+real repos sorted by stars, `hackernews_search("<topic>")` returns \
+community discussion. Pick favourites based on GitHub stars, recent \
+commit activity, and HN/Reddit consensus — never on a vendor's own \
+blog. Only fall back to web_search when the topic isn't code-related \
+or the dedicated tools returned nothing useful.
 - When the operator asks for a constraint (e.g. "use independent \
 sources only", "GitHub stars not vendor sites"), TREAT IT AS A HARD RULE. \
 If your tool calls violate the constraint, retry with corrected queries \
@@ -222,6 +222,62 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
                     "limit": {
                         "type": "integer",
                         "description": "Max results to return (default 5, cap 10).",
+                        "default": 5,
+                    },
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "github_search",
+            "description": (
+                "Search GitHub repositories via the public REST API. "
+                "Returns up to 10 repos sorted by stars with name, owner, "
+                "URL, description, star count, and last-push date. Use "
+                "for any code/library/SDK research — far more reliable "
+                "than scraping a web search and surfaces the actual "
+                "popular repos. Example: github_search('tiktok "
+                "automation') returns the most-starred TikTok automation "
+                "repos."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "GitHub search query (supports its query syntax).",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Max results (default 5, cap 10).",
+                        "default": 5,
+                    },
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "hackernews_search",
+            "description": (
+                "Search Hacker News via the Algolia API for stories and "
+                "comments matching a query. Returns up to 10 hits with "
+                "title, URL, points, comment count, and date. Use to find "
+                "community discussion about products, libraries, "
+                "techniques — a strong independent signal vs vendor pages."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Search query."},
+                    "limit": {
+                        "type": "integer",
+                        "description": "Max hits (default 5, cap 10).",
                         "default": 5,
                     },
                 },
@@ -537,12 +593,159 @@ def _save_fetched_page_to_vault(url: str, text: str) -> None:
         logger.exception("vault: fetch_url note write failed")
 
 
+def _tool_github_search(query: str, limit: int = 5) -> str:
+    try:
+        import httpx
+    except Exception as exc:
+        return json.dumps({"error": f"httpx unavailable: {exc}"})
+    limit = max(1, min(int(limit or 5), 10))
+    try:
+        with httpx.Client(timeout=12.0, follow_redirects=True,
+                          headers={"User-Agent": _USER_AGENT,
+                                   "Accept": "application/vnd.github+json",
+                                   "X-GitHub-Api-Version": "2022-11-28"}) as client:
+            resp = client.get(
+                "https://api.github.com/search/repositories",
+                params={"q": query, "sort": "stars", "order": "desc",
+                        "per_page": str(limit)},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+    except Exception as exc:
+        return json.dumps({"error": f"github search failed: {exc}"})
+    repos = []
+    for item in (data.get("items") or [])[:limit]:
+        repos.append({
+            "name": item.get("full_name"),
+            "url": item.get("html_url"),
+            "description": (item.get("description") or "")[:200],
+            "stars": item.get("stargazers_count", 0),
+            "language": item.get("language"),
+            "pushed_at": item.get("pushed_at"),
+            "topics": (item.get("topics") or [])[:6],
+        })
+    if not repos:
+        return json.dumps({"repos": [], "note": "no matching repos"})
+    _save_github_search_to_vault(query, repos)
+    return json.dumps({"repos": repos})
+
+
+def _tool_hackernews_search(query: str, limit: int = 5) -> str:
+    try:
+        import httpx
+    except Exception as exc:
+        return json.dumps({"error": f"httpx unavailable: {exc}"})
+    limit = max(1, min(int(limit or 5), 10))
+    try:
+        with httpx.Client(timeout=12.0, follow_redirects=True,
+                          headers={"User-Agent": _USER_AGENT}) as client:
+            resp = client.get(
+                "https://hn.algolia.com/api/v1/search",
+                params={"query": query, "hitsPerPage": str(limit)},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+    except Exception as exc:
+        return json.dumps({"error": f"hn search failed: {exc}"})
+    hits = []
+    for h in (data.get("hits") or [])[:limit]:
+        title = h.get("title") or h.get("story_title") or ""
+        url = h.get("url") or h.get("story_url") or (
+            f"https://news.ycombinator.com/item?id={h.get('objectID')}"
+        )
+        hits.append({
+            "title": title[:200],
+            "url": url,
+            "points": h.get("points") or 0,
+            "comments": h.get("num_comments") or 0,
+            "created_at": (h.get("created_at") or "")[:10],
+        })
+    if not hits:
+        return json.dumps({"hits": [], "note": "no HN results"})
+    _save_hn_search_to_vault(query, hits)
+    return json.dumps({"hits": hits})
+
+
+def _save_github_search_to_vault(query: str, repos: List[dict]) -> None:
+    try:
+        from openjarvis.tools import obsidian_brain
+        from datetime import datetime
+        obsidian_brain._ensure_layout()
+        web_dir = obsidian_brain.BRAIN_ROOT / "Knowledge" / "Web"
+        web_dir.mkdir(parents=True, exist_ok=True)
+        date = datetime.now().strftime("%Y-%m-%d")
+        slug = obsidian_brain._slugify(f"github - {query}")
+        path = web_dir / f"{date} - {slug}.md"
+        stamp = datetime.now().strftime("%H:%M:%S")
+        if not path.exists():
+            head = (
+                f"---\ntype: knowledge\nsource: github_search\nquery: {query}\n"
+                f"created: {datetime.now().isoformat(timespec='seconds')}\n"
+                f"tags: [web, github, code]\n---\n\n# GitHub: {query}\n\n"
+            )
+            path.write_text(head, encoding="utf-8")
+        lines = [f"## {stamp}\n"]
+        for r in repos:
+            lines.append(
+                f"- **[{r['name']}]({r['url']})** — ⭐ {r['stars']:,} · "
+                f"{r.get('language') or '?'} · pushed {r.get('pushed_at','')[:10]}\n"
+                f"  {r.get('description') or '(no description)'}"
+            )
+        with path.open("a", encoding="utf-8") as f:
+            f.write("\n".join(lines) + "\n\n")
+        obsidian_brain.daily_append(
+            f"github_search: '{query[:80]}' -> {len(repos)} repos -> [[{path.stem}]]"
+        )
+        obsidian_brain._emit_event("write", f"github: {query[:60]}",
+                                   kind="knowledge")
+    except Exception:
+        logger.exception("vault: github search note write failed")
+
+
+def _save_hn_search_to_vault(query: str, hits: List[dict]) -> None:
+    try:
+        from openjarvis.tools import obsidian_brain
+        from datetime import datetime
+        obsidian_brain._ensure_layout()
+        web_dir = obsidian_brain.BRAIN_ROOT / "Knowledge" / "Web"
+        web_dir.mkdir(parents=True, exist_ok=True)
+        date = datetime.now().strftime("%Y-%m-%d")
+        slug = obsidian_brain._slugify(f"hn - {query}")
+        path = web_dir / f"{date} - {slug}.md"
+        stamp = datetime.now().strftime("%H:%M:%S")
+        if not path.exists():
+            head = (
+                f"---\ntype: knowledge\nsource: hackernews_search\nquery: {query}\n"
+                f"created: {datetime.now().isoformat(timespec='seconds')}\n"
+                f"tags: [web, hackernews, community]\n---\n\n"
+                f"# Hacker News: {query}\n\n"
+            )
+            path.write_text(head, encoding="utf-8")
+        lines = [f"## {stamp}\n"]
+        for h in hits:
+            lines.append(
+                f"- **[{h['title']}]({h['url']})** — ▲ {h['points']} · "
+                f"{h['comments']} comments · {h['created_at']}"
+            )
+        with path.open("a", encoding="utf-8") as f:
+            f.write("\n".join(lines) + "\n\n")
+        obsidian_brain.daily_append(
+            f"hn_search: '{query[:80]}' -> {len(hits)} hits -> [[{path.stem}]]"
+        )
+        obsidian_brain._emit_event("write", f"hn: {query[:60]}",
+                                   kind="knowledge")
+    except Exception:
+        logger.exception("vault: hn search note write failed")
+
+
 _TOOL_DISPATCH = {
     "recall_vault": _tool_recall_vault,
     "remember_fact": _tool_remember_fact,
     "list_agents": _tool_list_agents,
     "dispatch_agent": _tool_dispatch_agent,
     "web_search": _tool_web_search,
+    "github_search": _tool_github_search,
+    "hackernews_search": _tool_hackernews_search,
     "fetch_url": _tool_fetch_url,
 }
 
