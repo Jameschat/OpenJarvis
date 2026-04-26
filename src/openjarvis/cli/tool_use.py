@@ -73,7 +73,18 @@ vendor's own page ranking themselves #1 is marketing, not evidence. Cross-\
 reference with at least one INDEPENDENT source (review site, listicle from \
 a third party, GitHub stars, recent Reddit/HN discussion) before naming a \
 favourite. If you can only find vendor self-promotion, say so explicitly \
-rather than picking one anyway.\
+rather than picking one anyway.
+- When researching CODE / LIBRARIES / OPEN SOURCE TOOLS, your FIRST \
+web_search calls should use site: filters to bypass marketing pages: \
+`web_search("<topic> site:github.com")`, `web_search("<topic> \
+site:reddit.com")`, `web_search("<topic> site:news.ycombinator.com")`. \
+Only fall back to generic listicles if those return nothing useful. Pick \
+favourites based on GitHub stars, recent commit activity, and \
+community consensus — never on a vendor's own blog.
+- When the operator asks for a constraint (e.g. "use independent \
+sources only", "GitHub stars not vendor sites"), TREAT IT AS A HARD RULE. \
+If your tool calls violate the constraint, retry with corrected queries \
+before producing a final answer or dispatch.\
 """
 
 

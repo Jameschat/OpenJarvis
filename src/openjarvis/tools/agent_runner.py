@@ -1040,6 +1040,14 @@ def _run_task(task: Task) -> None:
             "second turn, no clarifying questions accepted. Make sensible defaults.",
             f"Work in the current directory ({ws}). Be concise; no preamble.",
             "",
+            "OUTPUT FORMAT: write all deliverables as FILES in the current directory",
+            "(PLAN.md, README.md, src/*, etc). Do NOT offer to use a browser preview,",
+            "interactive canvas, mockup viewer, or any other feature that needs the",
+            "operator to click or respond — they will not see the offer in time. If",
+            "you would normally show a visual, write a markdown description and an",
+            "ASCII/PlantUML/mermaid diagram in a file instead. Your work is judged by",
+            "what lands on disk, not by what you say you could do.",
+            "",
             f"You are operating as the {task.agent_id} agent ({role})",
         ]
         if brain_block:
