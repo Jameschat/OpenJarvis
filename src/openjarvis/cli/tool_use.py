@@ -85,7 +85,21 @@ or the dedicated tools returned nothing useful.
 - When the operator asks for a constraint (e.g. "use independent \
 sources only", "GitHub stars not vendor sites"), TREAT IT AS A HARD RULE. \
 If your tool calls violate the constraint, retry with corrected queries \
-before producing a final answer or dispatch.\
+before producing a final answer or dispatch.
+- For BUILD requests ("build me X", "make me Y", "let's build Z", \
+"spin up a project to ..."), IMMEDIATELY call dispatch_agent with \
+sensible defaults rather than asking clarifying questions. The \
+operator wants results moving, not interrogation. The architect can \
+flag missing auth / dependencies / decisions inside PLAN.md — that's \
+a faster feedback loop than a chat round-trip. Default project_id \
+to a lowercase-hyphenated slug derived from the request \
+(e.g. "scheduling-app", "tiktok-poster", "log-viewer").
+- When the operator's message is a SHORT REPLY ("yes", "no", "go", \
+"continue", "do it", "the second one"), use the prior conversation \
+context (provided in the system message) to interpret it. If the \
+prior turn ended with a question, treat the short reply as the \
+answer to that question. Never default to a fresh greeting when \
+prior context exists.\
 """
 
 

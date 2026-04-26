@@ -13,6 +13,7 @@ import socket
 import threading
 import time
 import webbrowser
+from collections import deque
 from http.server import HTTPServer, SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Callable, List, Optional
@@ -24,6 +25,80 @@ logger = logging.getLogger(__name__)
 
 _WEB_DIR = Path(__file__).resolve().parent.parent.parent.parent / "jarvis_web"
 _PORT = 7710
+
+# ---------------------------------------------------------------------------
+# Chat conversation memory — short rolling window per session so multi-turn
+# replies ('yes' / 'continue' / 'the second one') have prior context. Keyed
+# by session cookie so multi-tab / multi-device users get independent
+# conversations. Falls back to a single "default" key for unauthenticated
+# clients (e.g. the LAN HTTP origin without cookies).
+# ---------------------------------------------------------------------------
+
+_CHAT_HISTORY_TURNS = 6                     # most recent N turns kept
+_CHAT_HISTORY_MAX_CHARS = 1200              # budget per stored message
+_CHAT_HISTORY_IDLE_S = 60 * 60              # drop sessions idle > 1h
+_chat_history: "dict[str, deque]" = {}
+_chat_history_seen: "dict[str, float]" = {}
+_chat_history_lock = threading.Lock()
+
+
+def _chat_history_key(handler: Any) -> str:
+    """Best-effort session key from cookie; 'default' otherwise."""
+    try:
+        cookie = handler.headers.get("Cookie") or ""
+        for part in cookie.split(";"):
+            k, _, v = part.strip().partition("=")
+            if k == "mc-session" and v:
+                return v
+    except Exception:
+        pass
+    return "default"
+
+
+def _chat_history_prune_unlocked(now: float) -> None:
+    stale = [k for k, t in _chat_history_seen.items()
+             if now - t > _CHAT_HISTORY_IDLE_S]
+    for k in stale:
+        _chat_history.pop(k, None)
+        _chat_history_seen.pop(k, None)
+
+
+def get_chat_history(key: str) -> List[dict]:
+    with _chat_history_lock:
+        _chat_history_prune_unlocked(time.time())
+        d = _chat_history.get(key)
+        return list(d) if d else []
+
+
+def append_chat_turn(key: str, user_text: str, assistant_text: str) -> None:
+    with _chat_history_lock:
+        d = _chat_history.get(key)
+        if d is None:
+            d = deque(maxlen=_CHAT_HISTORY_TURNS * 2)
+            _chat_history[key] = d
+        d.append({"role": "user",
+                  "content": (user_text or "")[:_CHAT_HISTORY_MAX_CHARS]})
+        d.append({"role": "assistant",
+                  "content": (assistant_text or "")[:_CHAT_HISTORY_MAX_CHARS]})
+        _chat_history_seen[key] = time.time()
+
+
+def clear_chat_history(key: str) -> None:
+    with _chat_history_lock:
+        _chat_history.pop(key, None)
+        _chat_history_seen.pop(key, None)
+
+
+def _format_history_block(history: List[dict]) -> str:
+    """Render history as a system-prompt addendum the LLM can read."""
+    if not history:
+        return ""
+    lines = ["[Recent conversation context — use this to interpret short "
+             "replies like 'yes' / 'continue':]"]
+    for m in history:
+        role = "Operator" if m.get("role") == "user" else "Jarvis"
+        lines.append(f"{role}: {(m.get('content') or '').strip()}")
+    return "\n".join(lines)
 
 
 class VoiceTurnContext:
@@ -458,6 +533,13 @@ class _Handler(SimpleHTTPRequestHandler):
             self._handle_cancel_all()
         elif self.path == "/provider":
             self._handle_provider_set()
+        elif self.path == "/chat/clear":
+            try:
+                clear_chat_history(_chat_history_key(self))
+                self._json_response(200, {"ok": True})
+            except Exception as exc:
+                logger.exception("/chat/clear failed")
+                self._json_response(500, {"error": str(exc)})
         elif self.path == "/schedule":
             self._handle_schedule_create()
         elif self.path.startswith("/schedule/cancel/"):
@@ -572,7 +654,16 @@ class _Handler(SimpleHTTPRequestHandler):
                     logger.warning("chat attachment %s failed: %s", f.get("name"), exc)
 
             # --- Compose the effective prompt ---
+            # Recent conversation context goes FIRST so the model sees it
+            # before any new content (file excerpts, listings, etc.). The
+            # router (gpt-4o-mini in tool_use.py) treats this block as a
+            # system-level cue to interpret short replies like 'yes' / 'go'.
+            session_key = _chat_history_key(self)
+            history = get_chat_history(session_key)
+            history_block = _format_history_block(history)
             prompt_parts = []
+            if history_block:
+                prompt_parts.append(history_block)
             if text_excerpts:
                 prompt_parts.append("\n\n".join(text_excerpts))
             if saved and not text_excerpts:
@@ -612,6 +703,16 @@ class _Handler(SimpleHTTPRequestHandler):
                 log_voice_turn(turn_text, response_text)
             except Exception:
                 logger.debug("daily journal capture failed", exc_info=True)
+
+            # Append to the per-session conversation history so the next
+            # /chat turn has context. We store the operator's actual text
+            # (not the file-augmented effective prompt) to keep the model's
+            # view of the dialogue clean.
+            try:
+                append_chat_turn(session_key, text or "(files only)",
+                                 response_text)
+            except Exception:
+                logger.debug("chat history append failed", exc_info=True)
 
             self._json_response(200, {
                 "transcript":   text,
