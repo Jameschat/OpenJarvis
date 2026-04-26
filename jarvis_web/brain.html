@@ -367,7 +367,9 @@ canvas { display: block; }
               inset 0 1px 0 rgba(120,180,255,0.06);
 }
 .mc-panel-head {
-  display: flex; align-items: center; gap: 8px;
+  display: flex; align-items: center; gap: 6px;
+  flex-wrap: wrap;                    /* let buttons wrap to a 2nd row */
+  row-gap: 6px;
   padding: 9px 12px;
   font-size: 9.5px; letter-spacing: 3px; text-transform: uppercase;
   color: rgba(150,200,240,0.75);
@@ -489,7 +491,10 @@ canvas { display: block; }
 /* Top-left stats panel */
 #hud-stats {
   top: 20px; left: 22px;
-  width: 220px;
+  /* Widened from 220 to fit GRAPHIFY/MUSIC/AUTO/MUTE buttons in the
+     header without overflow. Buttons can now also wrap to a second row
+     thanks to flex-wrap on .mc-panel-head. */
+  width: 320px;
   padding-bottom: 6px;
 }
 
