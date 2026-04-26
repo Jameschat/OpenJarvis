@@ -1106,6 +1106,33 @@ def _run_task(task: Task) -> None:
             "you would normally show a visual, write a markdown description and an",
             "ASCII/PlantUML/mermaid diagram in a file instead. Your work is judged by",
             "what lands on disk, not by what you say you could do.",
+        ]
+        # Project workspace handoff — list existing non-log files so the
+        # current agent knows to read what previous teammates left
+        # (PLAN.md, source files, HANDOFF.md, etc) before starting fresh.
+        if task.project_id:
+            try:
+                existing = sorted(
+                    p.name for p in ws.iterdir()
+                    if p.is_file() and not p.name.endswith(".log")
+                    and not p.name.endswith(".stdout.log")
+                    and not p.name.endswith(".stderr.log")
+                    and p.name != "prompt.txt"
+                )
+            except Exception:
+                existing = []
+            if existing:
+                parts += [
+                    "",
+                    "PROJECT HANDOFF: this is a SHARED project workspace.",
+                    "Earlier agents on this project have left these files:",
+                    *(f"  - {name}" for name in existing[:30]),
+                    "READ them first to understand what's already done, then",
+                    "build on top — don't restart the work or duplicate effort.",
+                    "When you finish, leave a one-paragraph HANDOFF.md (or append",
+                    "to it) summarising what you did so the next agent has context.",
+                ]
+        parts += [
             "",
             f"You are operating as the {task.agent_id} agent ({role})",
         ]
