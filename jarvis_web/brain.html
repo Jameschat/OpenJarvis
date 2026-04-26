@@ -2013,6 +2013,9 @@ function animate() {
   // --- Fourth brain (UniFi networks) ---
   drawUnifi(1 / FPS);
 
+  // --- Fifth brain (Graphify knowledge graph) ---
+  drawGraphify(1 / FPS);
+
   // --- Status ---
   statusEl.textContent = STATUS_TEXT[state] || state.toUpperCase();
   statusEl.style.color = STATUS_COLOR[state] || STATUS_COLOR.idle;
@@ -2140,6 +2143,223 @@ function drawUnifi(dt) {
     ? 'NETWORKS · ' + (totals.devices_online || 0) + '/' + (totals.devices || 0)
     : 'NETWORKS';
   ctx.fillText(label, sp.sx, sp.sy + r0 + 14 * visScale);
+}
+
+// =====================================================================
+// Fifth brain — Graphify (knowledge graph of the vault)
+// =====================================================================
+// Sits in the upper-left quadrant, mirroring UniFi's lower-right.
+const GRAPHIFY_POS = { x: -560, y: 80, z: 120 };
+const GRAPHIFY_PAL = {
+  base: '180,255,140',                             // lime — distinct from all others
+  community: [                                     // cycled per-community
+    '155,242,255', '255,201,90', '232,112,112', '180,120,255',
+    '94,224,161', '255,107,157', '107,164,255', '255,180,80',
+    '90,224,200', '224,140,255', '255,140,140', '140,224,140',
+    '180,200,255', '255,220,140', '200,255,180', '180,180,255',
+    '255,180,200', '140,255,200',
+  ],
+};
+const GRAPHIFY_NODE_RADIUS = 110;
+let graphifyProj = { sx: 0, sy: 0, sd: 1, sz: 0 };
+let graphifyData = { nodes: [], links: [], online: false };
+let graphifyPositions = new Map();              // id -> {x,y,z} (Fibonacci-placed)
+let hoveredGraphifyNode = null;
+let graphifyPulse = 0;
+
+function _graphifyNodePos(slot, total) {
+  // Spherical Fibonacci placement, scaled to a small sphere around GRAPHIFY_POS
+  const golden = Math.PI * (3 - Math.sqrt(5));
+  const N = Math.max(1, total);
+  const i = slot % N;
+  const y = 1 - (i / Math.max(1, N - 1)) * 2;
+  const r = Math.sqrt(Math.max(0, 1 - y * y));
+  const theta = golden * i;
+  return {
+    x: GRAPHIFY_POS.x + Math.cos(theta) * r * GRAPHIFY_NODE_RADIUS,
+    y: GRAPHIFY_POS.y + y * GRAPHIFY_NODE_RADIUS * 0.7,
+    z: GRAPHIFY_POS.z + Math.sin(theta) * r * GRAPHIFY_NODE_RADIUS,
+  };
+}
+
+async function fetchGraphifyData() {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const host = params.get('host') || window.location.host || 'localhost:7710';
+    const proto = window.location.protocol === 'https:' ? 'https' : 'http';
+    // Status first — cheap, tells us if the graph exists
+    const sR = await fetch(`${proto}://${host}/graphify/status`, { credentials: 'include' });
+    if (!sR.ok) return;
+    const stat = await sR.json();
+    if (!stat.online) { graphifyData.online = false; return; }
+    // Then load the graph JSON. Cap node count so the galaxy doesn't get
+    // overwhelmed — 96 covers our typical vault size, more would clutter.
+    const gR = await fetch(`${proto}://${host}/graphify/graph.json`, { credentials: 'include' });
+    if (!gR.ok) return;
+    const g = await gR.json();
+    const allNodes = (g.nodes || []).slice();
+    // Sort by community then by degree (proxy: count edges) so visually the
+    // most-connected hubs sit at sphere top
+    const degree = new Map();
+    for (const l of g.links || []) {
+      const s = typeof l.source === 'object' ? l.source.id : l.source;
+      const t = typeof l.target === 'object' ? l.target.id : l.target;
+      degree.set(s, (degree.get(s) || 0) + 1);
+      degree.set(t, (degree.get(t) || 0) + 1);
+    }
+    allNodes.sort((a, b) => (degree.get(b.id) || 0) - (degree.get(a.id) || 0));
+    const visibleNodes = allNodes.slice(0, 96);
+    const visibleIds = new Set(visibleNodes.map(n => n.id));
+    // Position each node via Fibonacci sphere
+    graphifyPositions.clear();
+    visibleNodes.forEach((n, i) => {
+      graphifyPositions.set(n.id, _graphifyNodePos(i, visibleNodes.length));
+    });
+    graphifyData = {
+      online: true,
+      nodes: visibleNodes,
+      links: (g.links || []).filter(l => {
+        const s = typeof l.source === 'object' ? l.source.id : l.source;
+        const t = typeof l.target === 'object' ? l.target.id : l.target;
+        return visibleIds.has(s) && visibleIds.has(t);
+      }),
+      total_nodes: stat.nodes,
+      communities: stat.communities,
+    };
+  } catch (_) { /* leave previous state */ }
+}
+
+function drawGraphify(dt) {
+  if (!graphifyData.online || graphifyData.nodes.length === 0) {
+    // Anchor only — small idle indicator so the operator knows it's a slot
+    return;
+  }
+  // Project the brain anchor + draw a small icon
+  const probe = { x: GRAPHIFY_POS.x, y: GRAPHIFY_POS.y, z: GRAPHIFY_POS.z, sx: 0, sy: 0, sd: 1, sz: 0 };
+  project(probe);
+  graphifyProj = probe;
+  const sp = probe;
+  const visScale = sp.sd;
+  const r0 = 22 * visScale;
+  graphifyPulse *= 0.96;
+
+  // Halo
+  const haloAlpha = 0.45 + graphifyPulse * 0.4;
+  const haloR = r0 * 1.7;
+  const grad = ctx.createRadialGradient(sp.sx, sp.sy, 0, sp.sx, sp.sy, haloR);
+  grad.addColorStop(0, `rgba(${GRAPHIFY_PAL.base},${(0.3 * haloAlpha).toFixed(3)})`);
+  grad.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(sp.sx - haloR, sp.sy - haloR, haloR * 2, haloR * 2);
+
+  // Brain core — hexagonal "node hub" icon to suggest a graph
+  ctx.beginPath();
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2 - Math.PI / 6;
+    const px = sp.sx + Math.cos(a) * r0 * 0.55;
+    const py = sp.sy + Math.sin(a) * r0 * 0.55;
+    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+  ctx.fillStyle = `rgba(${GRAPHIFY_PAL.base},0.18)`;
+  ctx.fill();
+  ctx.strokeStyle = `rgba(${GRAPHIFY_PAL.base},0.85)`;
+  ctx.lineWidth = 1.4;
+  ctx.stroke();
+  // Inner dot
+  ctx.beginPath();
+  ctx.arc(sp.sx, sp.sy, 3.2 * visScale, 0, Math.PI * 2);
+  ctx.fillStyle = `rgba(${GRAPHIFY_PAL.base},0.95)`;
+  ctx.fill();
+
+  // --- Project + render constellation nodes ---
+  if (isMobile) return;   // skip the dense constellation on phones
+  const projCache = new Map();
+  for (const n of graphifyData.nodes) {
+    const pos = graphifyPositions.get(n.id);
+    if (!pos) continue;
+    const p = { x: pos.x, y: pos.y, z: pos.z, sx: 0, sy: 0, sd: 1, sz: 0 };
+    project(p);
+    projCache.set(n.id, p);
+  }
+
+  // Hover detection
+  let nearest = null;
+  let nearestDist = 18;
+  for (const n of graphifyData.nodes) {
+    const p = projCache.get(n.id);
+    if (!p || p.sz > 0) continue;
+    const d = Math.hypot(p.sx - mouseScreenX, p.sy - mouseScreenY);
+    if (d < nearestDist) { nearestDist = d; nearest = n; }
+  }
+  hoveredGraphifyNode = nearest;
+
+  // Edges first
+  for (const l of graphifyData.links) {
+    const s = typeof l.source === 'object' ? l.source.id : l.source;
+    const t = typeof l.target === 'object' ? l.target.id : l.target;
+    const a = projCache.get(s);
+    const b = projCache.get(t);
+    if (!a || !b) continue;
+    const depth = Math.min(a.sd, b.sd);
+    const behind = (a.sz > 0 && b.sz > 0);
+    const sNode = graphifyData.nodes.find(x => x.id === s);
+    const tNode = graphifyData.nodes.find(x => x.id === t);
+    const isHover = (hoveredGraphifyNode &&
+      (sNode === hoveredGraphifyNode || tNode === hoveredGraphifyNode));
+    const alpha = isHover ? 0.85 * depth : (behind ? 0.04 : 0.14) * depth;
+    if (alpha < 0.02) continue;
+    ctx.beginPath();
+    ctx.moveTo(a.sx, a.sy);
+    ctx.lineTo(b.sx, b.sy);
+    ctx.strokeStyle = `rgba(${GRAPHIFY_PAL.base},${alpha.toFixed(3)})`;
+    ctx.lineWidth = isHover ? 1.4 : 0.4;
+    ctx.stroke();
+  }
+
+  // Nodes
+  for (const n of graphifyData.nodes) {
+    const p = projCache.get(n.id);
+    if (!p) continue;
+    const cId = (n.community ?? 0) % GRAPHIFY_PAL.community.length;
+    const rgb = GRAPHIFY_PAL.community[cId];
+    const behind = p.sz > 0;
+    const isHover = (n === hoveredGraphifyNode);
+    const baseAlpha = (behind ? 0.4 : 1) * p.sd;
+    const sz = (isHover ? 4.5 : 1.6) + p.sd * 1.4;
+    if (isHover) {
+      const haloR = sz * 4.5;
+      const hg = ctx.createRadialGradient(p.sx, p.sy, 0, p.sx, p.sy, haloR);
+      hg.addColorStop(0, `rgba(${rgb},0.7)`);
+      hg.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = hg;
+      ctx.fillRect(p.sx - haloR, p.sy - haloR, haloR * 2, haloR * 2);
+    }
+    ctx.beginPath();
+    ctx.arc(p.sx, p.sy, sz, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(${rgb},${baseAlpha.toFixed(3)})`;
+    ctx.fill();
+  }
+
+  // Hover tooltip
+  if (hoveredGraphifyNode) {
+    const p = projCache.get(hoveredGraphifyNode.id);
+    if (p) {
+      const lines = [
+        hoveredGraphifyNode.label || hoveredGraphifyNode.id,
+        (hoveredGraphifyNode.source_file || '') +
+          (hoveredGraphifyNode.community != null ? `  · community ${hoveredGraphifyNode.community}` : ''),
+      ];
+      _drawTooltip(p.sx + 10, p.sy - 4, lines, GRAPHIFY_PAL.base);
+    }
+  }
+
+  // Brain label
+  ctx.fillStyle = `rgba(${GRAPHIFY_PAL.base},${(0.85 * visScale).toFixed(3)})`;
+  ctx.font = (10 * Math.max(0.6, visScale)).toFixed(0) + 'px "Segoe UI", system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  const lbl = `GRAPHIFY · ${graphifyData.total_nodes || graphifyData.nodes.length}n / ${graphifyData.communities || 0}c`;
+  ctx.fillText(lbl, sp.sx, sp.sy + r0 + 14 * visScale);
 }
 
 // =====================================================================
@@ -4721,6 +4941,10 @@ loadMenu();
 refreshVaultGraph();
 refreshSchedule();
 setInterval(refreshSchedule, 30000);
+// Fifth brain — pull the graphify knowledge graph (small payload), then
+// poll periodically. Failure is silent — the brain just stays hidden.
+fetchGraphifyData();
+setInterval(fetchGraphifyData, 90000);
 logEvent('hud', ' mission control online');
 // Light periodic refresh so any out-of-band edits (you editing notes in
 // Obsidian directly) show up on the HUD within ~30s without needing a
