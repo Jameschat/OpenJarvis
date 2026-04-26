@@ -406,6 +406,16 @@ class _Handler(SimpleHTTPRequestHandler):
         elif self.path == "/commands":
             self._handle_commands_list()
         elif self.path in ("/graphify", "/graphify/"):
+            # Our 3d-force-graph viz, served from jarvis_web/. Falls back
+            # to graphify's stock HTML if our custom file is missing.
+            our = _WEB_DIR / "graphify.html"
+            if our.exists():
+                self.path = "/graphify.html"
+                super().do_GET()
+            else:
+                self._serve_graphify_file("graph.html", "text/html")
+        elif self.path in ("/graphify/static", "/graphify/static/"):
+            # Graphify's own stock HTML viz — kept available as a fallback
             self._serve_graphify_file("graph.html", "text/html")
         elif self.path == "/graphify/graph.json":
             self._serve_graphify_file("graph.json", "application/json")
