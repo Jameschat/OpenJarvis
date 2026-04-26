@@ -376,10 +376,14 @@ def _try_time(text: str, console: Console, ui=None) -> Optional[str]:
     _TIME_TRIGGERS = (
         "what time is it", "what's the time", "whats the time",
         "what is the time", "tell me the time", "give me the time",
-        "current time", "time please", "the time",
+        "current time", "time please",
         "do you know the time", "do you have the time",
         "got the time", "time check",
     )
+    # Note: "the time" was removed from triggers — too many false-positives
+    # in normal speech ("by the time we finish", "i had the time of my life").
+    # The explicit "what's the time" / "tell me the time" variants above
+    # cover the legitimate query phrasings.
     _DATE_TRIGGERS = (
         "what's the date", "whats the date", "what is the date",
         "what's today's date", "whats todays date", "what is today's date",
@@ -393,9 +397,17 @@ def _try_time(text: str, console: Console, ui=None) -> Optional[str]:
         "time and date", "date and time",
     )
 
-    is_combined = any(t in lower for t in _COMBINED_TRIGGERS)
-    is_time = not is_combined and any(t in lower for t in _TIME_TRIGGERS)
-    is_date = not is_combined and any(t in lower for t in _DATE_TRIGGERS)
+    # Word-boundary match — substring matching here would let "the time"
+    # trip on phrases like "by the time we finish" or "i had the time of
+    # my life". Triggers are mostly already specific multi-word phrases
+    # but normalising defensively.
+    import re
+    def _has_term(phrase: str, hay: str) -> bool:
+        return re.search(r"(?<!\w)" + re.escape(phrase) + r"(?!\w)", hay) is not None
+
+    is_combined = any(_has_term(t, lower) for t in _COMBINED_TRIGGERS)
+    is_time = not is_combined and any(_has_term(t, lower) for t in _TIME_TRIGGERS)
+    is_date = not is_combined and any(_has_term(t, lower) for t in _DATE_TRIGGERS)
 
     if not (is_time or is_date or is_combined):
         return None

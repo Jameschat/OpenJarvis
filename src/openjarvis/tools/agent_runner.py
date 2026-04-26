@@ -1864,15 +1864,20 @@ def _try_content_pipeline(text: str) -> Optional[str]:
     if not text:
         return None
     low = text.lower().strip()
+    # Word-boundary match — most triggers anchor on 'tiktok' / 'content'
+    # / 'trending' so risk is low, but normalising for consistency with
+    # the other fast-paths.
     matched = None
+    matched_idx = -1
     for trig in _CONTENT_TRIGGERS:
-        if trig in low:
+        m = re.search(r"(?:^|(?<=\W))" + re.escape(trig), low)
+        if m:
             matched = trig
+            matched_idx = m.start()
             break
     if matched is None:
         return None
-    # Topic hint = whatever follows the trigger
-    idx = low.find(matched) + len(matched)
+    idx = matched_idx + len(matched)
     topic = text[idx:].strip(" ,.!?") or None
     ids = kick_off_content_pipeline(topic_hint=topic)
     msg = (

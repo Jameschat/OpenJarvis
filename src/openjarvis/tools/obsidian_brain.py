@@ -488,29 +488,49 @@ _TODAY_TRIGGERS = (
 def _strip_first_match(low: str, triggers: Tuple[str, ...]) -> Optional[Tuple[int, int]]:
     """Find the earliest trigger occurrence; return (start, end_of_trigger) or None.
 
+    Word-boundary aware so 'recall ' doesn't match 'i recalled that ...'.
     Tolerant of punctuation: matches "make a note: " by treating any of
     `: , - – —` immediately after a trigger as part of the trigger.
     """
     best_pos = -1
     best_end = -1
     for trig in triggers:
-        idx = low.find(trig)
-        if idx == -1:
-            # Try without trailing space + with a colon variant
+        # Require a word boundary BEFORE the trigger so "recall " doesn't
+        # match "i recalled that". We anchor with start-of-string or a
+        # non-word character. The trigger itself usually ends in a space
+        # so the right side is naturally bounded.
+        pat = r"(?:^|(?<=\W))" + re.escape(trig)
+        m = re.search(pat, low)
+        if m:
+            idx = m.start()
+            end = idx + len(trig)
+        else:
+            # Try without trailing space + with a colon variant ("note this:")
             alt = trig.rstrip() + ":"
-            idx = low.find(alt)
-            if idx == -1:
+            pat2 = r"(?:^|(?<=\W))" + re.escape(alt)
+            m2 = re.search(pat2, low)
+            if not m2:
                 continue
+            idx = m2.start()
             end = idx + len(alt)
             # Also strip any whitespace immediately after the colon
             while end < len(low) and low[end] in " \t":
                 end += 1
-        else:
-            end = idx + len(trig)
         if best_pos == -1 or idx < best_pos:
             best_pos = idx
             best_end = end
     return (best_pos, best_end) if best_pos >= 0 else None
+
+
+# Verbs that mean "build something", not "remember/recall something". When
+# any of these appear with a word boundary, _try_brain will pass through
+# to the LLM/team-task path instead of grabbing the prompt as a vault op.
+_BUILD_INTENT_VERBS = (
+    "build", "make", "create", "develop", "implement", "design",
+    "code", "write a", "spin up", "kick off", "let's build",
+    "lets build", "set up an app", "set up a project",
+    "start a project", "start a new project",
+)
 
 
 def _try_brain(text: str) -> Optional[str]:
@@ -518,6 +538,14 @@ def _try_brain(text: str) -> Optional[str]:
     if not text:
         return None
     low = text.lower().strip(" .!?")
+
+    # Build-intent override: phrases like "remember to build me an X" or
+    # "let's build a notes app — remember it" should NOT be hijacked by
+    # the brain fast-path. They want project work, not a note saved.
+    for verb in _BUILD_INTENT_VERBS:
+        pat = r"(?:^|(?<=\W))" + re.escape(verb) + r"(?:\W|$)"
+        if re.search(pat, low):
+            return None
 
     # Today's journal
     for trig in _TODAY_TRIGGERS:
