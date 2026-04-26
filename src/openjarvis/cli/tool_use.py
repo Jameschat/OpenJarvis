@@ -22,6 +22,7 @@ import json
 import logging
 import os
 import re
+import time
 from typing import Any, Dict, List, Optional, Sequence
 from urllib.parse import quote_plus
 
@@ -450,12 +451,25 @@ def _strip_html(text: str) -> str:
     return _WS_RE.sub(" ", text).strip()
 
 
+_DDG_BLOCKED_UNTIL: float = 0.0
+
+
 def _tool_web_search(query: str, limit: int = 5) -> str:
+    global _DDG_BLOCKED_UNTIL
     try:
         import httpx
     except Exception as exc:
         return json.dumps({"error": f"httpx unavailable: {exc}"})
     limit = max(1, min(int(limit or 5), 10))
+    if time.time() < _DDG_BLOCKED_UNTIL:
+        return json.dumps({
+            "hits": [],
+            "error": (
+                "web_search is in cooldown (DuckDuckGo rate-limited us within "
+                "the last 10 minutes). Use github_search / hackernews_search "
+                "instead. Do not retry web_search this turn."
+            ),
+        })
     try:
         with httpx.Client(timeout=12.0, follow_redirects=True,
                           headers={"User-Agent": _USER_AGENT}) as client:
@@ -480,7 +494,18 @@ def _tool_web_search(query: str, limit: int = 5) -> str:
         if len(hits) >= limit:
             break
     if not hits:
-        return json.dumps({"hits": [], "note": "no results (DDG may have rate-limited)"})
+        # DDG returns 202 + their home page when soft-blocked. Track that
+        # and fast-fail subsequent calls in the same process so the model
+        # doesn't burn iterations retrying. (`global` declared at top.)
+        _DDG_BLOCKED_UNTIL = time.time() + 600  # 10 min cooldown
+        return json.dumps({
+            "hits": [],
+            "error": (
+                "web_search is unavailable right now (DuckDuckGo rate-limit). "
+                "Use github_search / hackernews_search instead, or proceed "
+                "with what you already have. Do not retry web_search this turn."
+            ),
+        })
     _save_web_search_to_vault(query, hits)
     return json.dumps({"hits": hits})
 
