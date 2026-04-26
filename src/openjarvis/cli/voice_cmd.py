@@ -707,11 +707,17 @@ _SONOS_IMPLICIT_ACTIONS: set = {
 
 
 def _match_sonos_action(lower: str) -> Optional[str]:
-    """Find the highest-priority Sonos action matching the text, or None."""
+    """Find the highest-priority Sonos action matching the text, or None.
+
+    Word-boundary match — substring matching had a sibling bug to the
+    lights/Reddit one (e.g. 'stopover' tripping 'stop', 'background'
+    tripping 'back', 'display' tripping 'play').
+    """
+    import re
     for phrase, act in sorted(
         _SONOS_ACTION_MAP.items(), key=lambda x: len(x[0]), reverse=True
     ):
-        if phrase in lower:
+        if re.search(r"(?<!\w)" + re.escape(phrase) + r"(?!\w)", lower):
             return act
     return None
 
@@ -794,10 +800,16 @@ def _try_sonos(text: str, console: Console, ui=None) -> Optional[str]:
         implicit_action = _match_sonos_action(lower)
         if implicit_action in _SONOS_IMPLICIT_ACTIONS:
             _MUSIC_CONTEXT = (
-                "music", "song", "track", "volume", "playing",
-                "tune", "playlist", "audio", "speaker",
+                "music", "song", "songs", "track", "tracks", "volume",
+                "playing", "tune", "tunes", "playlist", "playlists",
+                "audio", "speaker", "speakers",
             )
-            has_context = any(w in lower for w in _MUSIC_CONTEXT)
+            # Word-boundary match — 'musical', 'displaying', 'racetrack'
+            # would otherwise count as music context.
+            has_context = any(
+                re.search(r"(?<!\w)" + re.escape(w) + r"(?!\w)", lower)
+                for w in _MUSIC_CONTEXT
+            )
 
             # Single unambiguous words/phrases — matched EXACTLY so that
             # "cancel my appointment" doesn't false-positive as "cancel Sonos".
