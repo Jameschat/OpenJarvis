@@ -3304,6 +3304,38 @@ const transcriptEl = document.getElementById('transcript');
 const responseEl = document.getElementById('response');
 const talkHint = document.getElementById('talk-hint');
 
+// --- Safe response renderer ---
+// gpt-4o-mini routinely emits markdown links — `[text](url)` and bare URLs
+// from web_search / github_search results. Rendering as plain textContent
+// shows the raw syntax. innerHTML is unsafe with model output. So: escape
+// everything (using the existing escapeHtml above), then re-introduce
+// ONLY anchor tags for the two link forms we accept. target=_blank +
+// rel=noopener so external pages can't reach back into the HUD.
+function renderResponseHtml(text) {
+  // Escape EVERYTHING first — anchor tags below are introduced into the
+  // already-escaped string, so they survive intact while any model-supplied
+  // <script> etc. stays neutralised.
+  let s = escapeHtml(text);
+  // Markdown links: [label](url) — only http(s) urls
+  s = s.replace(
+    /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
+    (_m, label, url) =>
+      `<a href="${url}" target="_blank" rel="noopener noreferrer">${label}</a>`,
+  );
+  // Bare http(s) URLs not already wrapped in an anchor
+  s = s.replace(
+    /(?<!href=")(?<!>)(https?:\/\/[^\s<)]+)/g,
+    (_m, url) =>
+      `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`,
+  );
+  // Preserve newlines visually
+  s = s.replace(/\n/g, '<br>');
+  return s;
+}
+function setResponseText(text) {
+  responseEl.innerHTML = renderResponseHtml(text);
+}
+
 let mediaRecorder = null;
 let chunks = [];
 let micStream = null;
@@ -3473,7 +3505,7 @@ async function handleTalkEnd() {
       transcriptEl.classList.add('visible');
     }
     if (data.response) {
-      responseEl.textContent = data.response;
+      setResponseText(data.response);
       responseEl.classList.add('visible');
     }
 
@@ -3681,7 +3713,7 @@ async function sendChat() {
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const data = await r.json();
     if (data.response) {
-      responseEl.textContent = data.response;
+      setResponseText(data.response);
       responseEl.classList.add('visible');
     }
     if (data.audio_b64) {
@@ -3825,7 +3857,7 @@ async function runMenuCommand(text, el) {
     const data = await resp.json();
 
     if (data.response) {
-      responseEl.textContent = data.response;
+      setResponseText(data.response);
       responseEl.classList.add('visible');
     }
 
