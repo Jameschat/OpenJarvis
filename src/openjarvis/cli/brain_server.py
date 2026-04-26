@@ -466,6 +466,8 @@ class _Handler(SimpleHTTPRequestHandler):
             self._handle_cancel_all()
         elif self.path == "/provider":
             self._handle_provider_set()
+        elif self.path == "/graphify/refresh":
+            self._handle_graphify_refresh()
         elif self.path == "/schedule":
             self._handle_schedule_create()
         elif self.path.startswith("/schedule/cancel/"):
@@ -525,15 +527,23 @@ class _Handler(SimpleHTTPRequestHandler):
 
     def _handle_graphify_status(self) -> None:
         """Quick liveness/summary used by the HUD to decide whether to show the
-        5th brain. Returns counts pulled from the cached graph.json."""
+        5th brain. Returns counts pulled from the cached graph.json + the
+        live staleness counter from the bridge."""
         try:
             d = self._graphify_dir()
             graph = d / "graph.json"
+            stale_info = {}
+            try:
+                from openjarvis.cli import graphify_bridge
+                stale_info = graphify_bridge.staleness()
+            except Exception:
+                pass
             if not graph.exists():
                 return self._json_response(200, {
                     "online": False,
                     "reason": "no graph.json yet",
                     "looked_in": str(d),
+                    **stale_info,
                 })
             payload = json.loads(graph.read_text(encoding="utf-8"))
             nodes = payload.get("nodes") or []
@@ -546,9 +556,22 @@ class _Handler(SimpleHTTPRequestHandler):
                 "communities": len(communities),
                 "updated_at": graph.stat().st_mtime,
                 "dir": str(d),
+                **stale_info,
             })
         except Exception as exc:
             logger.exception("/graphify/status failed")
+            self._json_response(500, {"error": str(exc)})
+
+    def _handle_graphify_refresh(self) -> None:
+        """POST /graphify/refresh — kick off a background rebuild from the
+        live vault. Non-blocking. The HUD polls /graphify/status to see
+        when the new graph lands."""
+        try:
+            from openjarvis.cli import graphify_bridge
+            res = graphify_bridge.refresh(blocking=False)
+            self._json_response(200, res)
+        except Exception as exc:
+            logger.exception("/graphify/refresh failed")
             self._json_response(500, {"error": str(exc)})
 
     def _handle_commands_list(self) -> None:

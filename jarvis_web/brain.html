@@ -408,6 +408,12 @@ canvas { display: block; }
   background: rgba(180,255,140,0.28);
   border-color: rgba(180,255,140,0.75);
 }
+.mc-mute.mc-graphify.mc-stale {
+  background: rgba(255,201,90,0.22);
+  border-color: rgba(255,201,90,0.6);
+  color: #ffd76a;
+  animation: pulse 2.4s ease-in-out infinite;
+}
 .mc-mute.mc-provider {
   margin-left: 6px;
 }
@@ -4588,6 +4594,7 @@ if (elMuteBtn) {
 // `graphify <vault path>` outside Jarvis — Jarvis just serves the cached
 // outputs from OPENJARVIS_GRAPHIFY_DIR.
 const elGraphifyBtn = document.getElementById('graphify-btn');
+const STALE_WRITES_THRESHOLD = 5;
 async function refreshGraphify() {
   if (!elGraphifyBtn) return;
   try {
@@ -4599,23 +4606,56 @@ async function refreshGraphify() {
     const d = await r.json();
     if (d.online && d.nodes) {
       elGraphifyBtn.style.display = '';
-      elGraphifyBtn.textContent = `◉ GRAPHIFY · ${d.nodes}n / ${d.communities}c`;
-      elGraphifyBtn.title = `${d.nodes} nodes, ${d.edges} edges, ${d.communities} communities. Click to open.`;
+      const stale = (d.writes_since_refresh || 0) >= STALE_WRITES_THRESHOLD;
+      const refreshing = !!d.refresh_in_progress;
+      let label = `◉ GRAPHIFY · ${d.nodes}n / ${d.communities}c`;
+      if (refreshing) label = '↻ REBUILDING…';
+      else if (stale) label = `◉ STALE · ${d.writes_since_refresh}w pending`;
+      elGraphifyBtn.textContent = label;
+      elGraphifyBtn.classList.toggle('mc-stale', stale && !refreshing);
+      elGraphifyBtn.title =
+        `${d.nodes} nodes, ${d.edges} edges, ${d.communities} communities.\n` +
+        `${d.writes_since_refresh || 0} vault writes since last refresh.\n` +
+        `Click: open viz · Shift+click or right-click: rebuild from live vault.`;
     } else {
       elGraphifyBtn.style.display = 'none';
     }
   } catch (_) { /* leave hidden */ }
 }
+async function triggerGraphifyRefresh() {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const host = params.get('host') || window.location.host || 'localhost:7710';
+    const proto = window.location.protocol === 'https:' ? 'https' : 'http';
+    const r = await fetch(`${proto}://${host}/graphify/refresh`, {
+      method: 'POST', credentials: 'include',
+    });
+    const d = await r.json();
+    if (d.started) {
+      logEvent('hud', ` graphify rebuild started (${d.files_staged || '?'} files staged)`);
+    } else {
+      logEvent('hud', ` graphify rebuild not started: ${d.reason || 'unknown'}`);
+    }
+    setTimeout(refreshGraphify, 2000);
+  } catch (e) {
+    logEvent('hud', ` graphify refresh failed: ${e.message || e}`);
+  }
+}
 if (elGraphifyBtn) {
   elGraphifyBtn.addEventListener('click', (ev) => {
     ev.stopPropagation();
+    if (ev.shiftKey) { triggerGraphifyRefresh(); return; }
     const params = new URLSearchParams(window.location.search);
     const host = params.get('host') || window.location.host || 'localhost:7710';
     const proto = window.location.protocol === 'https:' ? 'https' : 'http';
     window.open(`${proto}://${host}/graphify`, '_blank', 'noopener');
   });
+  elGraphifyBtn.addEventListener('contextmenu', (ev) => {
+    ev.preventDefault();
+    triggerGraphifyRefresh();
+  });
   refreshGraphify();
-  setInterval(refreshGraphify, 60000);
+  setInterval(refreshGraphify, 30000);
 }
 
 const elProviderBtn = document.getElementById('provider-btn');

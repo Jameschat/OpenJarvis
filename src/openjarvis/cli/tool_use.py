@@ -364,6 +364,23 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "refresh_graph",
+            "description": (
+                "Trigger a background rebuild of the graphify knowledge "
+                "graph from the live vault. Non-blocking: returns "
+                "immediately with start status. The next graph_query / "
+                "graph_path / graph_explain call after the rebuild "
+                "finishes will auto-pick-up the new graph. Use when the "
+                "operator asks to refresh / rebuild the graph, or when "
+                "graph_query returns nothing relevant for what should be "
+                "in the vault."
+            ),
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "graph_explain",
             "description": (
                 "Dump everything connected to a single node in the knowledge "
@@ -877,6 +894,13 @@ def _tool_graph_explain(node: str) -> str:
     return json.dumps(graphify_bridge.explain(node or ""))
 
 
+def _tool_graph_refresh() -> str:
+    from openjarvis.cli import graphify_bridge
+    stale = graphify_bridge.staleness()
+    res = graphify_bridge.refresh(blocking=False)
+    return json.dumps({"refresh": res, "previous_state": stale})
+
+
 _TOOL_DISPATCH = {
     "recall_vault": _tool_recall_vault,
     "remember_fact": _tool_remember_fact,
@@ -889,6 +913,7 @@ _TOOL_DISPATCH = {
     "graph_query": _tool_graph_query,
     "graph_path": _tool_graph_path,
     "graph_explain": _tool_graph_explain,
+    "refresh_graph": _tool_graph_refresh,
 }
 
 

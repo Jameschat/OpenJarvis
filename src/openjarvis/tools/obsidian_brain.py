@@ -109,6 +109,14 @@ def _emit_event(op: str, label: str, kind: str = "knowledge", count: int = 1,
     Mission Control uses ``source`` to decide which brain to animate."""
     # Thread-local override beats the caller-supplied default
     effective_source = getattr(_local, "source", None) or source
+    # Bump graphify staleness counter on writes/appends — best effort,
+    # never blocks vault ops if the bridge has issues.
+    if op in ("write", "append"):
+        try:
+            from openjarvis.cli import graphify_bridge
+            graphify_bridge.note_vault_write()
+        except Exception:
+            pass
     event = {
         "op": op,
         "label": label[:120],

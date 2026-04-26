@@ -2,8 +2,7 @@
 
 The graphify CLI builds a graph from the operator's Obsidian vault and
 saves it to ``graphify-out/graph.json``. This module loads that graph
-once, caches it (with mtime check for staleness), and exposes three
-operations the LLM tool-use brain can call:
+once, caches it (with mtime check for staleness), and exposes:
 
   * ``query(question, mode="bfs", depth=3)`` — find nodes whose label
     matches the question, traverse outward, return ranked subgraph.
@@ -12,11 +11,17 @@ operations the LLM tool-use brain can call:
     "how does X reach Y" / "what bridges X and Y".
   * ``explain(node)`` — dump everything connected to a single node.
     Use for "tell me what X is and what it touches".
+  * ``refresh()`` — kick off graphify in a background subprocess to
+    rebuild the graph from the live vault. Non-blocking; the next
+    query that lands after the rebuild auto-loads the new graph via
+    mtime check.
+  * ``note_vault_write()`` / ``staleness()`` — track how many vault
+    writes have happened since the last refresh, so the HUD can show
+    a STALE indicator and the operator can refresh on demand.
 
-Everything runs without spawning subprocesses. Fast, no auth, no
-network. If the graph isn't present (graphify never run), the
-operations return a structured "not available" response instead of
-crashing.
+Read ops have zero side effects. Refresh runs the actual graphify CLI
+externally — never inline — so a long-running rebuild can't poison
+the Jarvis process.
 """
 
 from __future__ import annotations
@@ -330,4 +335,150 @@ def explain(node: str) -> Dict[str, Any]:
     }
 
 
-__all__ = ["status", "query", "path", "explain"]
+# ---------------------------------------------------------------------------
+# Staleness tracking + background refresh
+# ---------------------------------------------------------------------------
+
+_writes_since_refresh = 0
+_last_refresh_started: float = 0.0
+_refresh_proc: Any = None
+_refresh_lock = threading.Lock()
+
+
+def note_vault_write() -> None:
+    """Called by obsidian_brain on every vault write so we can show a
+    'STALE' indicator and prompt a refresh when enough has changed."""
+    global _writes_since_refresh
+    with _refresh_lock:
+        _writes_since_refresh += 1
+
+
+def staleness() -> Dict[str, Any]:
+    """Summary the HUD or LLM can use to decide whether to refresh."""
+    with _refresh_lock:
+        writes = _writes_since_refresh
+        last_started = _last_refresh_started
+        proc = _refresh_proc
+    p = _graph_file()
+    age_seconds = None
+    if p.exists():
+        import time
+        age_seconds = int(time.time() - p.stat().st_mtime)
+    refreshing = bool(proc and proc.poll() is None)
+    return {
+        "writes_since_refresh": writes,
+        "graph_age_seconds": age_seconds,
+        "refresh_in_progress": refreshing,
+        "last_refresh_started": last_started,
+    }
+
+
+def _vault_root() -> Path:
+    return Path(os.environ.get(
+        "OPENJARVIS_GRAPHIFY_VAULT_ROOT",
+        r"E:\Claude\Obsidian\Claude\Brain",
+    ))
+
+
+def _vault_subfolders() -> List[str]:
+    raw = os.environ.get(
+        "OPENJARVIS_GRAPHIFY_SUBFOLDERS",
+        "Knowledge,Projects,Decisions,People,Daily,Content",
+    )
+    return [s.strip() for s in raw.split(",") if s.strip()]
+
+
+def _staging_dir() -> Path:
+    return Path(os.environ.get(
+        "OPENJARVIS_GRAPHIFY_STAGING",
+        str(_graphify_dir().parent / "source"),
+    ))
+
+
+def _stage_vault_subset() -> int:
+    """Mirror the chosen vault subfolders into the staging dir. Returns
+    file count. Best-effort copy — overwrites destination."""
+    import shutil
+    src = _vault_root()
+    dst = _staging_dir()
+    if dst.exists():
+        shutil.rmtree(dst, ignore_errors=True)
+    dst.mkdir(parents=True, exist_ok=True)
+    n = 0
+    for sub in _vault_subfolders():
+        sp = src / sub
+        if not sp.exists():
+            continue
+        shutil.copytree(sp, dst / sub)
+        n += sum(1 for _ in (dst / sub).rglob("*.md"))
+    return n
+
+
+def refresh(blocking: bool = False) -> Dict[str, Any]:
+    """Kick off graphify against the vault subset in a background
+    subprocess. Returns immediately unless blocking=True. Resets the
+    write-staleness counter optimistically (it'll be accurate by the
+    time the subprocess finishes)."""
+    global _writes_since_refresh, _last_refresh_started, _refresh_proc
+    import subprocess
+    import sys
+    import time
+
+    with _refresh_lock:
+        if _refresh_proc and _refresh_proc.poll() is None:
+            return {"started": False, "reason": "refresh already in progress"}
+        try:
+            file_count = _stage_vault_subset()
+        except Exception as exc:
+            logger.exception("graphify_bridge: staging copy failed")
+            return {"started": False, "reason": f"staging copy failed: {exc}"}
+        if file_count == 0:
+            return {"started": False, "reason": "no files in staging — check vault path / subfolders"}
+
+        # Find the graphify executable. uv tool install put it under
+        # ~/.local/bin on Windows, plus 'graphify' should be on PATH if
+        # the user ran update-shell.
+        candidates = [
+            os.environ.get("OPENJARVIS_GRAPHIFY_BIN", ""),
+            str(Path.home() / ".local" / "bin" / "graphify.exe"),
+            str(Path.home() / ".local" / "bin" / "graphify"),
+            "graphify",
+        ]
+        exe = next((c for c in candidates if c and (Path(c).exists() if "/" in c or "\\" in c else True)), "graphify")
+
+        # Run from the parent of graphify-out so outputs land in the
+        # expected location.
+        cwd = _graphify_dir().parent
+        cwd.mkdir(parents=True, exist_ok=True)
+        log_path = _graphify_dir().parent / "refresh.log"
+        try:
+            log_fh = log_path.open("ab")
+            _refresh_proc = subprocess.Popen(
+                [exe, str(_staging_dir())],
+                cwd=str(cwd),
+                stdout=log_fh,
+                stderr=log_fh,
+                creationflags=0x08000000 if sys.platform == "win32" else 0,
+            )
+        except Exception as exc:
+            logger.exception("graphify_bridge: failed to spawn refresh")
+            return {"started": False, "reason": f"spawn failed: {exc}"}
+
+        _last_refresh_started = time.time()
+        _writes_since_refresh = 0
+
+    if blocking:
+        try:
+            _refresh_proc.wait(timeout=600)
+        except Exception:
+            pass
+    return {
+        "started": True,
+        "files_staged": file_count,
+        "log": str(log_path),
+        "blocking": blocking,
+    }
+
+
+__all__ = ["status", "query", "path", "explain",
+           "note_vault_write", "staleness", "refresh"]
