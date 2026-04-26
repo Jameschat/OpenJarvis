@@ -67,7 +67,13 @@ dispatch_agent call so they share a workspace and leave a vault trail.
 - When you cite a fact you looked up, mention the source briefly so the \
 operator knows where it came from.
 - Failure of one tool does not mean give up — try an alternative or report \
-specifically what went wrong.\
+specifically what went wrong.
+- BE SOURCE-CRITICAL when researching products, libraries, or tools. A \
+vendor's own page ranking themselves #1 is marketing, not evidence. Cross-\
+reference with at least one INDEPENDENT source (review site, listicle from \
+a third party, GitHub stars, recent Reddit/HN discussion) before naming a \
+favourite. If you can only find vendor self-promotion, say so explicitly \
+rather than picking one anyway.\
 """
 
 
