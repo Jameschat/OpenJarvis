@@ -1205,7 +1205,11 @@ def _run_task(task: Task) -> None:
         agent_model = (agent_spec or {}).get("model") or ""
         if agent_model and agent_model != "claude-default":
             cmd += ["--model", agent_model]
-        cmd.append(full_prompt)
+        # The prompt is fed via stdin (set in popen_kwargs below) instead
+        # of as a final positional arg. Windows subprocess arg quoting
+        # mangles long multi-line prompts when both --append-system-prompt
+        # and the positional prompt contain newlines/backticks. Stdin
+        # bypasses all that.
 
     # Compose env for the spawn — inherit our env, then export the vault
     # URL + token explicitly so curl-style helpers in the agent can find them.
@@ -1225,6 +1229,11 @@ def _run_task(task: Task) -> None:
         "stderr": stderr_log.open("wb"),
         "env": spawn_env,
     }
+    # Claude path uses stdin for the prompt (avoids Windows arg-quoting
+    # issues with multi-line prompts). Codex still takes the prompt as
+    # an arg because we already collapsed newlines for it.
+    if provider != "codex":
+        popen_kwargs["stdin"] = subprocess.PIPE
     if sys.platform == "win32":
         popen_kwargs["creationflags"] = 0x08000000  # CREATE_NO_WINDOW
 
@@ -1242,6 +1251,15 @@ def _run_task(task: Task) -> None:
         proc = subprocess.Popen(cmd, **popen_kwargs)
         with _procs_lock:
             _running_procs[task.id] = proc
+        # Feed the prompt via stdin for claude (set up above). Close stdin
+        # so the CLI knows there's no more input. Codex received the prompt
+        # as an arg so its stdin is None — the write is conditional.
+        if proc.stdin is not None:
+            try:
+                proc.stdin.write(full_prompt.encode("utf-8", errors="replace"))
+                proc.stdin.close()
+            except Exception:
+                logger.exception("failed writing prompt to stdin for %s", task.id)
         exit_code = proc.wait()
         _reg.mark_finished(task.id, exit_code=exit_code)
         logger.info("agent_runner: finished task %s exit=%d", task.id, exit_code)
