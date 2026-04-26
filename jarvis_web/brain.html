@@ -3334,7 +3334,34 @@ function renderResponseHtml(text) {
 }
 function setResponseText(text) {
   responseEl.innerHTML = renderResponseHtml(text);
+  scheduleResponseClear();
 }
+
+// --- Auto-clear the response bubble after a quiet period ---
+// Default 10 s after the text appears OR after TTS audio finishes
+// (whichever is later). Hovering pauses the timer so the operator can
+// read/copy without the bubble vanishing mid-sentence.
+const RESPONSE_CLEAR_MS = 10000;
+let _responseClearTimer = null;
+let _responseHoverHold = false;
+function scheduleResponseClear(delay) {
+  if (_responseClearTimer) clearTimeout(_responseClearTimer);
+  if (_responseHoverHold) return;            // paused — will reschedule on mouseleave
+  const ms = typeof delay === 'number' ? delay : RESPONSE_CLEAR_MS;
+  _responseClearTimer = setTimeout(() => {
+    _responseClearTimer = null;
+    if (_responseHoverHold) return;
+    responseEl.classList.remove('visible');
+  }, ms);
+}
+responseEl.addEventListener('mouseenter', () => {
+  _responseHoverHold = true;
+  if (_responseClearTimer) { clearTimeout(_responseClearTimer); _responseClearTimer = null; }
+});
+responseEl.addEventListener('mouseleave', () => {
+  _responseHoverHold = false;
+  if (responseEl.classList.contains('visible')) scheduleResponseClear();
+});
 
 let mediaRecorder = null;
 let chunks = [];
@@ -3522,7 +3549,11 @@ async function handleTalkEnd() {
         console.log('[jarvis] audio safety reset');
         resetTalkUI();
       }, est);
-      const clearAndReset = () => { clearTimeout(safetyTimer); resetTalkUI(); };
+      const clearAndReset = () => {
+        clearTimeout(safetyTimer);
+        resetTalkUI();
+        scheduleResponseClear();   // restart the bubble's 10s fade timer
+      };
       audio.onended = clearAndReset;
       audio.onerror = clearAndReset;
       audio.onabort = clearAndReset;
@@ -3724,7 +3755,11 @@ async function sendChat() {
       const est = isFinite(audio.duration) && audio.duration > 0
         ? audio.duration * 1000 + 3000 : 45000;
       const safety = setTimeout(() => resetTalkUI(), est);
-      const clearAndReset = () => { clearTimeout(safety); resetTalkUI(); };
+      const clearAndReset = () => {
+        clearTimeout(safety);
+        resetTalkUI();
+        scheduleResponseClear();
+      };
       audio.onended = clearAndReset;
       audio.onerror = clearAndReset;
       try { await audio.play(); } catch (_) { clearAndReset(); }
@@ -3874,6 +3909,7 @@ async function runMenuCommand(text, el) {
         talkHint.textContent = 'HOLD SPACE or CLICK';
         if (runningCommandEl) runningCommandEl.classList.remove('running');
         runningCommandEl = null;
+        scheduleResponseClear();
       };
       audio.onended = finish;
       audio.onerror = finish;
