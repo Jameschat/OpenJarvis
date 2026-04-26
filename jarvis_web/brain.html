@@ -835,8 +835,22 @@ canvas { display: block; }
   opacity: 0; transition: opacity 0.3s;
   max-height: 30vh; overflow-y: auto;
   pointer-events: auto;
+  /* Allow the operator to select / copy the response text. The parent
+     #conversation is pointer-events:none so the galaxy stays draggable
+     through it, but selection on the response itself must be explicitly
+     re-enabled or the down-event never lands. */
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
 }
 #response.visible { opacity: 1; }
+/* Also allow selecting the user's own typed prompt above the response */
+#transcript {
+  pointer-events: auto;
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
+}
 
 #composer-wrap {
   position: fixed;
