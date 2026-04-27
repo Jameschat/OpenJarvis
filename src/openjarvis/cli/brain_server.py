@@ -1259,10 +1259,32 @@ class _Handler(SimpleHTTPRequestHandler):
         ~/.claude/settings.json. Each Claude Code session becomes a live
         card in mission control for the duration of its activity.
 
+        Hardening (audit 2026-04-26 C4): the hook scripts run on the SAME
+        host as Jarvis, so this endpoint never legitimately needs to
+        accept connections from anywhere except 127.0.0.1. Restricting
+        to loopback closes a major unauth attack surface — the audit
+        showed this open route enabled vault poisoning + eventual RCE
+        (an attacker could POST a crafted hook event whose subagent
+        description re-armed dispatch_agent on the operator's next
+        recall_vault hit).
+
         Tolerant of encoding issues: tries UTF-8 first, falls back to
         CP1252 / latin-1. PowerShell 5.1 in particular can send bodies
         in the console code page if the hook wrapper isn't careful.
         """
+        # Loopback gate — accept only same-host connections. cloudflared
+        # connects to 127.0.0.1 itself, but TUNNEL traffic arrives with
+        # the Cloudflare edge in the X-Forwarded-For chain, so we reject
+        # anything where the original client wasn't local.
+        peer_ip = self.client_address[0] if self.client_address else ""
+        if peer_ip not in ("127.0.0.1", "::1", "localhost"):
+            return self._json_response(403, {"error": "claude_event accepts loopback connections only"})
+        # Also refuse if any X-Forwarded-For chain is present — that
+        # means cloudflared proxied us, i.e. the request came in via
+        # the public tunnel.
+        if self.headers.get("X-Forwarded-For") or self.headers.get("Cf-Connecting-Ip"):
+            return self._json_response(403, {"error": "claude_event refuses tunnel-proxied requests"})
+
         from openjarvis.tools import agent_runner
         try:
             n = int(self.headers.get("Content-Length", 0))
