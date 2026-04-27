@@ -1130,14 +1130,28 @@ class _Handler(SimpleHTTPRequestHandler):
             name = (qs.get("name") or [""])[0].strip()
             if not name:
                 return self._json_response(400, {"error": "'name' parameter required"})
-            from openjarvis.tools.obsidian_brain import DEFAULT_VAULT
-            # Resolve by exact stem match within the vault, recursively
+            # Hardening (audit 2026-04-26 C2): reject anything that looks
+            # like a path component, restrict the search to BRAIN_ROOT
+            # (was DEFAULT_VAULT, exposing notes outside Brain/), and
+            # verify the resolved hit stays inside BRAIN_ROOT.
+            if any(c in name for c in ("/", "\\", "..")) or "\x00" in name:
+                return self._json_response(400, {"error": "invalid name"})
+            if len(name) > 200:
+                return self._json_response(400, {"error": "name too long"})
+            from openjarvis.tools.obsidian_brain import BRAIN_ROOT
             from pathlib import Path as _P
+            brain = _P(BRAIN_ROOT).resolve()
             target = None
-            for md in _P(DEFAULT_VAULT).rglob("*.md"):
+            for md in brain.rglob("*.md"):
                 if any(part.startswith(".") for part in md.parts):
                     continue
                 if md.stem == name:
+                    # Final containment check against resolved path
+                    try:
+                        if not md.resolve().is_relative_to(brain):
+                            continue
+                    except (ValueError, OSError):
+                        continue
                     target = md
                     break
             if target is None:
@@ -1166,10 +1180,20 @@ class _Handler(SimpleHTTPRequestHandler):
             folder = (qs.get("folder") or [""])[0].strip()
             limit = int((qs.get("limit") or ["20"])[0])
             limit = max(1, min(100, limit))
+            # Hardening (audit 2026-04-26 M2): reject path-traversal
+            # components in folder; verify resolved base stays inside
+            # BRAIN_ROOT before enumerating.
+            if any(c in folder for c in ("/", "\\", "..")) or "\x00" in folder:
+                return self._json_response(400, {"error": "invalid folder"})
             from openjarvis.tools.obsidian_brain import DEFAULT_VAULT, BRAIN_ROOT
             base = (BRAIN_ROOT / folder) if folder else BRAIN_ROOT
             if not base.exists():
                 return self._json_response(404, {"error": f"folder '{folder}' not found"})
+            try:
+                if not base.resolve().is_relative_to(BRAIN_ROOT.resolve()):
+                    return self._json_response(400, {"error": "folder outside vault"})
+            except (ValueError, OSError):
+                return self._json_response(400, {"error": "folder outside vault"})
             items = []
             for md in sorted(base.rglob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True):
                 if any(part.startswith(".") for part in md.parts):
@@ -1204,7 +1228,20 @@ class _Handler(SimpleHTTPRequestHandler):
                     content = read_today_journal()
                 date = datetime.now().strftime("%Y-%m-%d")
             else:
+                # Hardening (audit 2026-04-26 M3): enforce ISO date
+                # format. Previously '?date=../../etc/passwd' was treated
+                # as a literal filename; with the .md suffix that won't
+                # match the real /etc/passwd but DOES enable reads of
+                # any .md anywhere on disk via path traversal.
+                if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date):
+                    return self._json_response(400, {"error": "invalid date format (expect YYYY-MM-DD)"})
                 p = DAILY_DIR / f"{date}.md"
+                # Final containment check
+                try:
+                    if not p.resolve().is_relative_to(DAILY_DIR.resolve()):
+                        return self._json_response(400, {"error": "date outside vault"})
+                except (ValueError, OSError):
+                    return self._json_response(400, {"error": "date outside vault"})
                 content = p.read_text(encoding="utf-8") if p.exists() else None
                 if content is not None:
                     obsidian_brain._emit_event("read", f"journal: {date}", kind="daily", source="chatgpt")
