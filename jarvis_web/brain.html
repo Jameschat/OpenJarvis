@@ -1088,22 +1088,52 @@ canvas { display: block; }
 /* Source-driven left edge color — set inline via --accent so each row picks its own */
 .log-row { --accent: #5ecfff; }
 
-/* Mobile — stack panels below the brain, keep them readable */
+/* Mobile — stack panels below the brain, keep them readable.
+   Every fixed-position desktop panel must either get a relative-flow
+   override here OR be explicitly hidden — anything left out keeps its
+   desktop top/left coords on phone width and blocks the viewport.
+   Panels are stacked in this CSS order via flex `order` so the visual
+   feed is: stats -> schedule -> projects -> live -> log, regardless of
+   their DOM order. */
 @media (max-width: 720px) {
-  #hud-stats {
-    top: auto; bottom: auto;
+  #hud-stats,
+  #hud-schedule,
+  #hud-projects,
+  #hud-live,
+  #hud-log {
     position: relative;
+    top: auto; bottom: auto; left: auto; right: auto;
     margin: 8px 12px 0 12px;
     width: auto;
-    left: auto; right: auto;
+    max-height: 200px;
   }
-  #hud-live, #hud-log, #hud-projects {
-    position: relative;
-    left: auto; right: auto; bottom: auto; top: auto;
-    margin: 8px 12px 0 12px;
-    width: auto;
-    max-height: 220px;
-  }
+  /* Visual order on phone — independent of DOM source order. The agent
+     cards live inside #agent-layer (margin: 50vh ...) so the relative
+     panels naturally follow. We just want them in a sensible reading
+     order rather than the DOM-source order which was driven by desktop
+     z-stacking concerns. */
+  #hud-stats     { order: 1; }
+  #hud-schedule  { order: 2; }
+  #hud-projects  { order: 3; }
+  #hud-live      { order: 4; }
+  #hud-log       { order: 5; max-height: 240px; }
+
+  /* Heading panels are too dense on phones — drop max-height and tighten
+     the inner padding so each panel stays glanceable rather than a wall. */
+  #hud-stats { padding-bottom: 4px; }
+  #hud-schedule { max-height: 180px; }
+
+  /* Schedule's inner list scroll thumb is hard to grab on phones — make
+     it a touch wider for thumb-comfort. */
+  #schedule-list::-webkit-scrollbar { width: 8px; }
+  #projects-list::-webkit-scrollbar { width: 8px; }
+
+  /* Stop the centred conversation overlay from crashing into the ops
+     banner brand on small phones — push it down 8px more. */
+  #conversation { top: calc(env(safe-area-inset-top, 0px) + 132px); }
+
+  /* Ops banner clock + sub already hidden on mobile (see line ~210);
+     leave only the brand text for clarity. */
 }
 
 /* -------- Task ticker (bottom-left) — kept for backward compat / hidden -------- */
