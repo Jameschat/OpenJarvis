@@ -218,11 +218,33 @@ def remember(content: str, title: Optional[str] = None,
 
     ``folder`` is one of: Knowledge, Projects, People, Decisions, or any
     custom subfolder (will be created on demand).
+
+    Hardening (audit 2026-04-26 H1-RCE): ``folder`` is validated to
+    prevent path traversal. Previously ``folder='../../Startup'`` would
+    happily mkdir + write outside BRAIN_ROOT, allowing arbitrary .md
+    drops anywhere on disk (including Windows Startup folder for
+    persistence). Now: reject path-traversal characters, then verify
+    the resolved base stays inside BRAIN_ROOT before any mkdir.
     """
     _ensure_layout()
     if not BRAIN_ROOT.exists():
         return None
+    folder = (folder or "Knowledge").strip() or "Knowledge"
+    if any(c in folder for c in ("/", "\\", "..")) or "\x00" in folder:
+        logger.warning("brain.remember: rejected folder with traversal chars: %r", folder)
+        folder = "Knowledge"
+    if len(folder) > 60:
+        folder = folder[:60]
     base = BRAIN_ROOT / folder
+    try:
+        # Resolve without requiring existence (parents=True will create
+        # later); compare against BRAIN_ROOT.resolve() to catch any
+        # symlink/relative tricks before we touch the filesystem.
+        if not base.resolve().is_relative_to(BRAIN_ROOT.resolve()):
+            logger.warning("brain.remember: folder %r escaped BRAIN_ROOT", folder)
+            base = BRAIN_ROOT / "Knowledge"
+    except (ValueError, OSError):
+        base = BRAIN_ROOT / "Knowledge"
     base.mkdir(parents=True, exist_ok=True)
     title = (title or content)[:80].strip()
     slug = _slugify(title)
