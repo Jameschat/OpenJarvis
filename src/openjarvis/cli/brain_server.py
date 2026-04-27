@@ -61,6 +61,16 @@ _voice_turn_lock = threading.Lock()
 import hmac
 import secrets
 
+def _err_ref() -> str:
+    """Audit 2026-04-26 M2: opaque error ref returned to clients in
+    place of str(exc), so 500 responses don't leak filesystem paths,
+    env-var hints, or third-party-library exception text (which can
+    occasionally include secrets baked in). The full exception is
+    still logged server-side via logger.exception, keyed by this ref
+    so the operator can correlate."""
+    return secrets.token_hex(4)
+
+
 _PIN_SESSIONS: Dict[str, float] = {}  # token -> expires_at (unix seconds)
 _PIN_SESSIONS_LOCK = threading.Lock()
 # Audit 2026-04-26 M4: dropped from 30 days to 7 days to limit blast
@@ -398,7 +408,7 @@ class _Handler(SimpleHTTPRequestHandler):
                 self._json_response(200, parse_graph())
             except Exception as exc:
                 logger.exception("/vault_graph failed")
-                self._json_response(500, {"error": str(exc)})
+                self._json_response(500, {"error": "internal error", "ref": _err_ref()})
         elif self.path == "/vault/openapi.json":
             # OpenAPI schema for the ChatGPT Custom GPT "Add Action"
             # flow. Audit 2026-04-26 L1: bearer-gated to stop public
@@ -424,7 +434,7 @@ class _Handler(SimpleHTTPRequestHandler):
                 self._json_response(200, {"mode": agent_runner.get_provider_mode()})
             except Exception as exc:
                 logger.exception("/provider get failed")
-                self._json_response(500, {"error": str(exc)})
+                self._json_response(500, {"error": "internal error", "ref": _err_ref()})
         # /unifi + /unifi_events removed — UniFi bridge no longer active
         elif self.path == "/schedule":
             try:
@@ -432,7 +442,7 @@ class _Handler(SimpleHTTPRequestHandler):
                 self._json_response(200, {"schedules": agent_runner.list_scheduled()})
             except Exception as exc:
                 logger.exception("/schedule list failed")
-                self._json_response(500, {"error": str(exc)})
+                self._json_response(500, {"error": "internal error", "ref": _err_ref()})
         elif self.path == "/commands":
             self._handle_commands_list()
         elif self.path in ("/graphify", "/graphify/"):
@@ -537,7 +547,7 @@ class _Handler(SimpleHTTPRequestHandler):
             self._json_response(400, {"error": str(exc)})
         except Exception as exc:
             logger.exception("/provider set failed")
-            self._json_response(500, {"error": str(exc)})
+            self._json_response(500, {"error": "internal error", "ref": _err_ref()})
 
     def _graphify_dir(self) -> Path:
         """Where the graphify outputs live. Configurable via env, with a
@@ -565,7 +575,7 @@ class _Handler(SimpleHTTPRequestHandler):
             self.wfile.write(data)
         except Exception as exc:
             logger.exception("/graphify serve failed: %s", name)
-            self._json_response(500, {"error": str(exc)})
+            self._json_response(500, {"error": "internal error", "ref": _err_ref()})
 
     def _handle_graphify_status(self) -> None:
         """Quick liveness/summary used by the HUD to decide whether to show the
@@ -602,7 +612,7 @@ class _Handler(SimpleHTTPRequestHandler):
             })
         except Exception as exc:
             logger.exception("/graphify/status failed")
-            self._json_response(500, {"error": str(exc)})
+            self._json_response(500, {"error": "internal error", "ref": _err_ref()})
 
     def _handle_music_status(self) -> None:
         """Check whether ACE-Step UI (Vite dev server) is reachable. Probe
@@ -635,7 +645,7 @@ class _Handler(SimpleHTTPRequestHandler):
             self._json_response(200, res)
         except Exception as exc:
             logger.exception("/graphify/refresh failed")
-            self._json_response(500, {"error": str(exc)})
+            self._json_response(500, {"error": "internal error", "ref": _err_ref()})
 
     def _handle_commands_list(self) -> None:
         """Return the menu structure as JSON for the browser HUD to render."""
@@ -649,7 +659,7 @@ class _Handler(SimpleHTTPRequestHandler):
             self._json_response(200, {"categories": payload})
         except Exception as exc:
             logger.exception("/commands failed")
-            self._json_response(500, {"error": str(exc)})
+            self._json_response(500, {"error": "internal error", "ref": _err_ref()})
 
     def _handle_chat(self) -> None:
         """POST /chat — body: {text, files: [{name, type, content_b64}]}.
@@ -793,7 +803,7 @@ class _Handler(SimpleHTTPRequestHandler):
         except Exception as exc:
             logger.exception("/chat failed")
             _brain_state.update(state="idle")
-            self._json_response(500, {"error": str(exc)})
+            self._json_response(500, {"error": "internal error", "ref": _err_ref()})
         finally:
             _voice_turn_lock.release()
 
@@ -848,7 +858,7 @@ class _Handler(SimpleHTTPRequestHandler):
         except Exception as exc:
             logger.exception("/command failed")
             _brain_state.update(state="idle")
-            self._json_response(500, {"error": str(exc)})
+            self._json_response(500, {"error": "internal error", "ref": _err_ref()})
         finally:
             _voice_turn_lock.release()
 
@@ -871,7 +881,7 @@ class _Handler(SimpleHTTPRequestHandler):
             self._json_response(400, {"error": str(exc)})
         except Exception as exc:
             logger.exception("/agent_task failed")
-            self._json_response(500, {"error": str(exc)})
+            self._json_response(500, {"error": "internal error", "ref": _err_ref()})
 
     def _handle_agent_cancel(self, task_id: str) -> None:
         from openjarvis.tools import agent_runner
@@ -889,7 +899,7 @@ class _Handler(SimpleHTTPRequestHandler):
             self._json_response(200, {"ok": True, "queued": queued, "count": len(queued)})
         except Exception as exc:
             logger.exception("/agents/wake_all failed")
-            self._json_response(500, {"error": str(exc)})
+            self._json_response(500, {"error": "internal error", "ref": _err_ref()})
 
     def _handle_cancel_all(self) -> None:
         """Terminate every running task + cancel all queued todos."""
@@ -899,7 +909,7 @@ class _Handler(SimpleHTTPRequestHandler):
             self._json_response(200, {"ok": True, "cancelled": n})
         except Exception as exc:
             logger.exception("/agents/cancel_all failed")
-            self._json_response(500, {"error": str(exc)})
+            self._json_response(500, {"error": "internal error", "ref": _err_ref()})
 
     def _handle_schedule_cancel(self, sched_id: str) -> None:
         from openjarvis.tools import agent_runner
@@ -918,7 +928,7 @@ class _Handler(SimpleHTTPRequestHandler):
             self._json_response(200, {"ok": True, "tasks": ids})
         except Exception as exc:
             logger.exception("/content/kickoff failed")
-            self._json_response(500, {"error": str(exc)})
+            self._json_response(500, {"error": "internal error", "ref": _err_ref()})
 
     def _handle_schedule_create(self) -> None:
         """POST /schedule — body: {agent_id, title, run_at, prompt?, recurrence?}.
@@ -955,7 +965,7 @@ class _Handler(SimpleHTTPRequestHandler):
             self._json_response(200, {"ok": True, "path": str(path), "run_at": run_at})
         except Exception as exc:
             logger.exception("/schedule failed")
-            self._json_response(500, {"error": str(exc)})
+            self._json_response(500, {"error": "internal error", "ref": _err_ref()})
 
     # ----- Browser/PIN auth for the protected endpoints -----
 
@@ -1188,7 +1198,7 @@ class _Handler(SimpleHTTPRequestHandler):
             })
         except Exception as exc:
             logger.exception("/vault/remember failed")
-            self._json_response(500, {"error": str(exc)})
+            self._json_response(500, {"error": "internal error", "ref": _err_ref()})
 
     def _handle_vault_recall(self) -> None:
         """GET /vault/recall?q=... — keyword search across the vault."""
@@ -1209,7 +1219,7 @@ class _Handler(SimpleHTTPRequestHandler):
             self._json_response(200, {"query": query, "count": len(results), "results": results})
         except Exception as exc:
             logger.exception("/vault/recall failed")
-            self._json_response(500, {"error": str(exc)})
+            self._json_response(500, {"error": "internal error", "ref": _err_ref()})
 
     def _handle_vault_get(self) -> None:
         """GET /vault/get?name=<note-stem>  -- read a specific note."""
@@ -1259,7 +1269,7 @@ class _Handler(SimpleHTTPRequestHandler):
             })
         except Exception as exc:
             logger.exception("/vault/get failed")
-            self._json_response(500, {"error": str(exc)})
+            self._json_response(500, {"error": "internal error", "ref": _err_ref()})
 
     def _handle_vault_list(self) -> None:
         """GET /vault/list?folder=Knowledge&limit=20  -- list notes in a folder."""
@@ -1301,7 +1311,7 @@ class _Handler(SimpleHTTPRequestHandler):
             self._json_response(200, {"folder": folder or "Brain", "count": len(items), "notes": items})
         except Exception as exc:
             logger.exception("/vault/list failed")
-            self._json_response(500, {"error": str(exc)})
+            self._json_response(500, {"error": "internal error", "ref": _err_ref()})
 
     def _handle_vault_journal(self) -> None:
         """GET /vault/journal?date=YYYY-MM-DD  -- get a daily journal (today by default)."""
@@ -1341,7 +1351,7 @@ class _Handler(SimpleHTTPRequestHandler):
             self._json_response(200, {"date": date, "content": content})
         except Exception as exc:
             logger.exception("/vault/journal failed")
-            self._json_response(500, {"error": str(exc)})
+            self._json_response(500, {"error": "internal error", "ref": _err_ref()})
 
     def _handle_claude_event(self) -> None:
         """Ingest a Claude Code hook payload.
@@ -1405,7 +1415,7 @@ class _Handler(SimpleHTTPRequestHandler):
             self._json_response(200, {"ok": True})
         except Exception as exc:
             logger.exception("/claude_event failed")
-            self._json_response(500, {"error": str(exc)})
+            self._json_response(500, {"error": "internal error", "ref": _err_ref()})
 
     def _handle_voice_turn(self) -> None:
         """Accept an audio upload, run the full Jarvis pipeline, return JSON."""
@@ -1503,7 +1513,7 @@ class _Handler(SimpleHTTPRequestHandler):
         except Exception as exc:
             logger.exception("/voice_turn failed")
             _brain_state.update(state="idle")
-            self._json_response(500, {"error": str(exc)})
+            self._json_response(500, {"error": "internal error", "ref": _err_ref()})
 
     def _json_response(self, status: int, data: dict) -> None:
         body = json.dumps(data).encode("utf-8")
