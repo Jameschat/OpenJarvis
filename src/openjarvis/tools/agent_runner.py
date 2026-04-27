@@ -257,6 +257,15 @@ class AgentStats:
     tasks_failed: int = 0
     total_runtime_ms: int = 0
     total_runs: int = 0
+    # Failure-mode counters (autonomy-improvement #4, 2026-04-27).
+    # Each counts a distinct failure shape over the agent's lifetime so the
+    # HUD can show 'this agent salvaged 6/10 of last week's tasks instead
+    # of writing files natively' — i.e. tells the operator when an agent
+    # is degrading even when its tasks technically 'completed'.
+    salvages: int = 0          # tasks where _maybe_salvage_stdout had to capture stdout
+    no_files: int = 0          # tasks that produced zero new project artifacts
+    refusals: int = 0          # tasks whose stdout looks like the model refused
+    quota_hits: int = 0        # tasks that hit "monthly usage limit" / similar
 
 
 # ---------------------------------------------------------------------------
@@ -504,6 +513,22 @@ class _Registry:
                 s.tasks_completed += 1
             else:
                 s.tasks_failed += 1
+            self._save_unlocked()
+
+    def record_failure_mode(self, agent_id: str, kind: str) -> None:
+        """Bump a failure-mode counter on the agent's lifetime stats.
+        Autonomy-improvement #4 (2026-04-27). Thread-safe — takes the
+        registry lock + persists. ``kind`` must be one of:
+        salvages | no_files | refusals | quota_hits.
+        Unknown kinds are silently ignored to avoid breaking the task
+        when the salvage classifier evolves."""
+        if kind not in ("salvages", "no_files", "refusals", "quota_hits"):
+            return
+        with self._lock:
+            s = self.stats.get(agent_id)
+            if s is None:
+                return
+            setattr(s, kind, getattr(s, kind, 0) + 1)
             self._save_unlocked()
 
     # ----- claude-code session tracking -----
@@ -799,6 +824,12 @@ class _Registry:
                     "skills": spec.get("skills", []),
                     "color": spec.get("color", "#5ee0a1"),
                     "kind": "builtin",
+                    # Failure-mode counters (autonomy #4) — let the HUD
+                    # warn the operator when an agent is degrading.
+                    "salvages": getattr(s, "salvages", 0),
+                    "no_files": getattr(s, "no_files", 0),
+                    "refusals": getattr(s, "refusals", 0),
+                    "quota_hits": getattr(s, "quota_hits", 0),
                 })
             # Append live Claude Code sessions as dynamic cards
             now = time.time()
@@ -1380,12 +1411,42 @@ def _list_project_artifacts(ws: Path) -> set:
     return out
 
 
+_REFUSAL_PATTERNS = re.compile(
+    r"(?i)\b(i (?:can'?t|cannot|won'?t|will not) "
+    r"(?:help|do|complete|fulfil|fulfill|comply|assist|provide|generate)|"
+    r"as an ai (?:language )?model|"
+    r"i (?:must|have to) (?:decline|refuse))",
+)
+_QUOTA_PATTERNS = re.compile(
+    r"(?i)(monthly usage limit|usage limit|rate limit|"
+    r"quota (?:exceeded|reached)|you'?ve hit your|"
+    r"too many requests|429 too many)",
+)
+
+
+def _classify_stdout(content: str) -> "Optional[str]":
+    """Return 'refusals' / 'quota_hits' / None for the given stdout.
+    Used by the salvage path to bump failure-mode counters with the
+    most informative classification (autonomy-improvement #4)."""
+    if not content:
+        return None
+    head = content[:2000]                 # only inspect the head — refusals
+    if _QUOTA_PATTERNS.search(head):      # appear up front, not buried
+        return "quota_hits"
+    if _REFUSAL_PATTERNS.search(head):
+        return "refusals"
+    return None
+
+
 def _maybe_salvage_stdout(task: Task, ws: Path, stdout_log: Path,
                           pre_files: set) -> None:
     """If the agent finished but produced no NEW project artifacts, capture
     the stdout as a fallback deliverable so the work isn't trapped in a log
     file. Common failure mode: architect prints PLAN content to stdout
     instead of using its Write tool — we rescue it here.
+
+    Also bumps failure-mode counters on the agent's stats record so the
+    HUD can show degradation patterns (autonomy-improvement #4).
 
     Heuristic for the file name:
       - if title starts with 'Plan' / 'Design' / 'Architect' → PLAN.md
@@ -1399,6 +1460,14 @@ def _maybe_salvage_stdout(task: Task, ws: Path, stdout_log: Path,
         if new_files:
             return  # agent produced something — nothing to salvage
 
+        # No new files appeared. Bump no_files counter unconditionally —
+        # this is a structural failure of the dispatch (agent didn't write
+        # anything to disk).
+        try:
+            _reg.record_failure_mode(task.agent_id, "no_files")
+        except Exception:
+            logger.debug("record_failure_mode(no_files) failed", exc_info=True)
+
         if not stdout_log.exists():
             return
         try:
@@ -1407,8 +1476,24 @@ def _maybe_salvage_stdout(task: Task, ws: Path, stdout_log: Path,
             return
         # Strip ANSI escape codes the CLI may emit
         content = re.sub(r"\x1b\[[0-9;?]*[A-Za-z]", "", content).strip()
+
+        # Classify the stdout for finer-grained failure tracking.
+        kind = _classify_stdout(content)
+        if kind:
+            try:
+                _reg.record_failure_mode(task.agent_id, kind)
+            except Exception:
+                logger.debug("record_failure_mode(%s) failed", kind, exc_info=True)
+
         if len(content) < 200:
             return  # not substantial enough to be a real deliverable
+
+        # Substantial stdout but no files — this is the classic "agent
+        # talked instead of writing" failure. Bump salvages.
+        try:
+            _reg.record_failure_mode(task.agent_id, "salvages")
+        except Exception:
+            logger.debug("record_failure_mode(salvages) failed", exc_info=True)
 
         title_lower = (task.title or "").lower().strip()
         if title_lower.startswith(("plan", "design", "architect")):

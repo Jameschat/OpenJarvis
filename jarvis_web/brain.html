@@ -3237,6 +3237,23 @@ function renderAgentCard(rec) {
   const accent = a.color || '#5ee0a1';
   el.style.setProperty('--accent', accent);
   el.style.setProperty('--accent-rgb', hexToRgb(accent));
+  // Failure-mode badges (autonomy #4) — only render when an agent has
+  // accumulated some failures, so healthy agents stay clean. Tooltip
+  // explains each counter; visual only nudges the operator toward
+  // 'this agent is degrading'.
+  const sal = a.salvages || 0;
+  const nof = a.no_files || 0;
+  const ref = a.refusals || 0;
+  const quo = a.quota_hits || 0;
+  const failParts = [];
+  if (sal) failParts.push(`<span title="Tasks where Jarvis had to salvage stdout because the agent didn't write files natively">⚠${sal}sv</span>`);
+  if (ref) failParts.push(`<span title="Tasks where the agent refused to do the work (model said 'I can't…')" style="color:#ffb0b0">⊘${ref}rf</span>`);
+  if (quo) failParts.push(`<span title="Tasks that hit a provider quota (Anthropic/OpenAI usage limit)" style="color:#ffd76a">⛔${quo}qa</span>`);
+  // no_files alone (without salvage or refusal) is rare and noisy — skip
+  // it to keep the badge row short. The salvage counter already implies
+  // no_files > 0 when shown.
+  const failBadges = failParts.length ? `<div class="meta" style="margin-top:2px;font-size:9px;letter-spacing:0.6px">${failParts.join(' ')}</div>` : '';
+
   el.innerHTML = `
     <div class="head"><span class="dot"></span><span class="name">${a.name || a.id}</span></div>
     <div class="meta">
@@ -3245,6 +3262,7 @@ function renderAgentCard(rec) {
       <span><b>${a.tasks_completed}</b> done</span>
       ${a.tasks_failed ? `<span>·</span><span style="color:#e8b0b0"><b>${a.tasks_failed}</b> fail</span>` : ''}
     </div>
+    ${failBadges}
     ${a.current_task ? `<div class="task" title="${escapeAttr(a.current_task)}">▸ ${escapeHtml(String(a.current_task))}</div>` : ''}
   `;
 }
