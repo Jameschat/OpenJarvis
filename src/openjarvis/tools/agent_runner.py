@@ -234,6 +234,30 @@ DEFAULT_AGENTS: List[Dict[str, Any]] = [
         "color": "#c0a3ff",   # lilac
         "provider": "codex",
     },
+    # ---- Autonomous browser pilot (in-process Python agent) -------------
+    # Unlike the claude/codex CLI agents, this one runs inside the Jarvis
+    # process so it can use the Python ToolRegistry's browser_* tools
+    # (Playwright). gpt-4o for vision (it sees screenshots). Cost-capped
+    # at $0.50/run, 25 turns. Spawned via "watch X / browse to X / look
+    # up X online and brief me" voice triggers (C-4 will wire those up).
+    {
+        "id": "browser-pilot",
+        "name": "browser-pilot",
+        "role": (
+            "Autonomous browser pilot powered by gpt-4o vision. Drives a "
+            "headless Chromium session via the browser_* tool family to "
+            "navigate any website, take screenshots, click, type, and "
+            "extract content. Writes a RESULT.md briefing to its task "
+            "workspace. Cost-capped at $0.50/run."
+        ),
+        "model": "gpt-4o",
+        "skills": ["browser", "vision", "research"],
+        "color": "#a4ffe0",   # mint — matches the AgentCore PROJECTS dot
+        "provider": "python",
+        # In-process Python agent — agent_runner._run_task imports this
+        # entry and calls it directly instead of spawning a CLI.
+        "python_entry": "openjarvis.tools.browser_pilot:run_task",
+    },
 ]
 
 
@@ -1149,6 +1173,47 @@ def _run_task(task: Task) -> None:
     """
     agent_spec = next((a for a in DEFAULT_AGENTS if a["id"] == task.agent_id), None)
     provider = (agent_spec or {}).get("provider", "claude")
+
+    # In-process Python agents (e.g. browser-pilot) — no CLI subprocess.
+    # The agent's reasoning loop runs in this thread using direct access
+    # to the Python ToolRegistry. agent_spec.python_entry is a
+    # "module.path:callable" string we resolve and invoke with the Task.
+    if provider == "python":
+        entry = (agent_spec or {}).get("python_entry")
+        if not entry or ":" not in entry:
+            logger.error("python agent %s has no/invalid python_entry — task %s will fail",
+                         task.agent_id, task.id)
+            _reg.mark_finished(task.id, exit_code=-1,
+                               error=f"agent {task.agent_id!r} has no python_entry")
+            return
+        # Workspace setup mirrors the CLI path so RESULT.md / log files
+        # land in the same place subsequent agents and Brain/Sessions
+        # auto-writers expect.
+        if task.project_id:
+            ws = PROJECTS_DIR / task.project_id
+        else:
+            ws = RUNS_DIR / task.id
+        ws.mkdir(parents=True, exist_ok=True)
+        try:
+            (ws / "prompt.txt").write_text(task.prompt or "", encoding="utf-8")
+        except Exception:
+            pass
+        task.workspace = str(ws)
+        _reg.mark_running(task.id, str(ws))
+        try:
+            mod_path, func_name = entry.split(":", 1)
+            import importlib
+            mod = importlib.import_module(mod_path)
+            fn = getattr(mod, func_name)
+            result = fn(task) or {}
+            ok = bool(result.get("ok"))
+            exit_code = 0 if ok else 1
+            error = None if ok else (result.get("error") or "python agent reported not-ok")
+            _reg.mark_finished(task.id, exit_code=exit_code, error=error)
+        except Exception as exc:
+            logger.exception("python agent %s crashed (task %s)", task.agent_id, task.id)
+            _reg.mark_finished(task.id, exit_code=-1, error=f"python agent crashed: {exc}")
+        return
 
     if provider == "codex":
         exe = _find_codex()
