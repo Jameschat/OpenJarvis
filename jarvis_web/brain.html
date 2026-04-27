@@ -129,7 +129,92 @@ canvas { display: block; }
    Hidden so it doesn't overlap the composer's "HOLD SPACE / CLICK MIC"
    text. Code that updates statusEl.textContent still runs harmlessly. */
 #status { display: none; }
-#title-wrap {
+
+/* ==================================================================
+   OPERATIONS CENTER top banner — full-width cyan-bordered strip,
+   AgentCore-style. Replaces the old centred #title-wrap (which is now
+   hidden). Branding on the left, live state pill + clock on the right.
+   Sits above everything (z 8) but pointer-events:none so the brain
+   stays draggable underneath the dark zones at left/right of the bar.
+================================================================== */
+#ops-banner {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: 38px;
+  display: flex; align-items: center;
+  padding: 0 18px;
+  font-family: 'Consolas','SF Mono','Menlo',monospace;
+  font-size: 11px;
+  letter-spacing: 1.6px;
+  color: #c5f0ff;
+  background:
+    linear-gradient(180deg, rgba(10,28,46,0.86), rgba(8,22,38,0.7));
+  border-bottom: 1px solid rgba(94,224,255,0.28);
+  box-shadow:
+    0 0 18px rgba(94,224,255,0.10),
+    inset 0 -1px 0 rgba(94,224,255,0.16);
+  backdrop-filter: blur(12px) saturate(140%);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
+  z-index: 8;
+  pointer-events: none;
+  user-select: none;
+}
+#ops-banner .ob-brand {
+  font-weight: 700;
+  font-size: 12.5px;
+  letter-spacing: 3.4px;
+  color: #d8f5ff;
+  text-shadow: 0 0 8px rgba(94,224,255,0.55);
+}
+#ops-banner .ob-sep {
+  margin: 0 12px;
+  color: rgba(94,224,255,0.45);
+}
+#ops-banner .ob-sub {
+  text-transform: uppercase;
+  color: rgba(180,220,240,0.78);
+  letter-spacing: 2.2px;
+  font-size: 10.5px;
+}
+#ops-banner .ob-spacer { flex: 1; }
+#ops-banner .ob-status {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 3px 10px;
+  border: 1px solid rgba(94,224,255,0.35);
+  border-radius: 2px;
+  background: rgba(8,30,46,0.6);
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  font-size: 10px;
+  color: #b9f0d2;
+}
+#ops-banner .ob-status .ob-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: #5ee0a1;
+  box-shadow: 0 0 6px rgba(94,224,161,0.8);
+  animation: subtitleDot 2.4s ease-in-out infinite;
+}
+#ops-banner .ob-status[data-state="thinking"] .ob-dot { background: #ffc060; box-shadow: 0 0 6px rgba(255,192,96,0.75); }
+#ops-banner .ob-status[data-state="speaking"] .ob-dot { background: #5ecfff; box-shadow: 0 0 6px rgba(94,207,255,0.75); }
+#ops-banner .ob-status[data-state="listening"] .ob-dot { background: #5ee0e0; box-shadow: 0 0 6px rgba(94,224,224,0.85); }
+#ops-banner .ob-clock {
+  margin-left: 14px;
+  color: rgba(180,220,240,0.7);
+  font-size: 10.5px;
+  letter-spacing: 1.8px;
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 720px) {
+  #ops-banner { height: 32px; padding: 0 10px; font-size: 9.5px; }
+  #ops-banner .ob-brand { font-size: 10px; letter-spacing: 2px; }
+  #ops-banner .ob-sub, #ops-banner .ob-clock { display: none; }
+}
+
+/* Hide the old centred title — its job moved into #ops-banner.
+   Re-enable by removing this rule if the centred Iron-Man title is missed. */
+#title-wrap { display: none !important; }
+
+#title-wrap-old {
   position: fixed; top: 18px; left: 50%; transform: translateX(-50%);
   text-align: center;
   pointer-events: none;
@@ -490,7 +575,8 @@ canvas { display: block; }
 
 /* Top-left stats panel */
 #hud-stats {
-  top: 20px; left: 22px;
+  /* Pushed below the 38px ops banner — was top:20 before reskin */
+  top: 56px; left: 22px;
   /* Widened from 220 to fit GRAPHIFY/MUSIC/AUTO/MUTE buttons in the
      header without overflow. Buttons can now also wrap to a second row
      thanks to flex-wrap on .mc-panel-head. */
@@ -586,7 +672,8 @@ canvas { display: block; }
    the networks panel has been removed. Same width/height, lifted from
    top:520 to top:280. */
 #hud-schedule {
-  top: 280px; left: 22px;
+  /* Was top:280 — bumped to clear the now-shifted #hud-stats (top:56). */
+  top: 316px; left: 22px;
   width: 260px;
   max-height: 240px;
   display: flex; flex-direction: column;
@@ -675,6 +762,221 @@ canvas { display: block; }
   color: #ffe6e6;
 }
 .sched-row.fired .sched-cancel { display: none; }
+
+/* Region callouts pinned to brain lobes — small cyan-bordered labels that
+   track world-space centroids each animation frame, like the AgentCore
+   reference shot. Faded out when the centroid is on the far side of the
+   rotating cortex (sz > 0). Pure decorative overlay, pointer-events none
+   so they never block the brain's drag-rotate. */
+#region-labels {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 6;
+}
+.region-label {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  font-family: 'Consolas','SF Mono','Menlo',monospace;
+  font-size: 9.5px;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: #c5f0ff;
+  background: rgba(8,22,38,0.72);
+  border: 1px solid rgba(94,224,255,0.45);
+  padding: 2px 6px;
+  border-radius: 2px;
+  white-space: nowrap;
+  box-shadow: 0 0 8px rgba(94,224,255,0.18);
+  transition: opacity 0.2s ease;
+  will-change: transform, left, top, opacity;
+}
+.region-label .rl-tick {
+  display: inline-block;
+  width: 5px; height: 1px;
+  background: rgba(94,224,255,0.55);
+  vertical-align: middle;
+  margin-right: 5px;
+}
+@media (max-width: 720px) {
+  #region-labels { display: none; }    /* too crowded on phones */
+}
+
+/* COMMUNITIES legend — right column, top. Vertical stack of glowing pills
+   matching the TikTok AgentCore reference shot. One pill per neural-cluster
+   community, swatch coloured by the community's RGB, count = number of
+   neurons assigned to it. Pure data-viz panel — no interactivity for now. */
+#hud-legend {
+  /* Pushed below the 38px ops banner — was top:20 before reskin */
+  top: 56px; right: 22px;
+  width: 180px;
+  max-height: 240px;
+  display: flex; flex-direction: column;
+  overflow: hidden;
+  z-index: 7;
+}
+#legend-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px 8px 8px 8px;
+  display: flex; flex-direction: column; gap: 5px;
+}
+#legend-list::-webkit-scrollbar { width: 4px; }
+#legend-list::-webkit-scrollbar-thumb { background: rgba(94,224,161,0.25); border-radius: 2px; }
+.legend-pill {
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 8px 4px 6px;
+  font-family: 'Consolas','SF Mono','Menlo',monospace;
+  font-size: 10px;
+  letter-spacing: 0.6px;
+  color: #b9f0d2;
+  background: rgba(8,30,20,0.5);
+  border: 1px solid rgba(94,224,161,0.35);
+  border-radius: 3px;
+  box-shadow: 0 0 6px rgba(94,224,161,0.12) inset;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.legend-pill .lp-swatch {
+  width: 8px; height: 8px;
+  border-radius: 2px;
+  flex: 0 0 auto;
+  box-shadow: 0 0 5px currentColor;
+}
+.legend-pill .lp-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  letter-spacing: 0.8px;
+}
+.legend-pill .lp-count {
+  flex: 0 0 auto;
+  font-size: 9px;
+  color: rgba(180,240,210,0.55);
+}
+
+/* On mobile the legend folds into the inline panel stack like the others */
+@media (max-width: 720px) {
+  #hud-legend { display: none; }   /* hide entirely on phones — it's chrome */
+}
+
+/* PROJECTS panel — right column (mirror of SCHEDULED on the left). Shows
+   per-project plan progress (agent_plan.list_plans()) so the operator can
+   see what long-running team-tasks are doing without opening the agents
+   drawer. Right-side placement avoids overlapping the activity log,
+   which sweeps left:22 → 702. */
+#hud-projects {
+  /* Was top:280 — bumped to clear the legend (top:56 + max-height:240 = 296) */
+  top: 316px; right: 22px;
+  width: 280px;
+  max-height: 280px;
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+#projects-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0 6px 0;
+}
+#projects-list::-webkit-scrollbar { width: 5px; }
+#projects-list::-webkit-scrollbar-thumb { background: rgba(164,255,224,0.25); border-radius: 3px; }
+#projects-list .mc-empty {
+  padding: 14px 12px;
+  color: rgba(160,180,210,0.45);
+  font-size: 11px;
+  letter-spacing: 1.5px;
+  text-align: center;
+}
+.proj-row {
+  padding: 8px 12px 9px 12px;
+  border-left: 3px solid transparent;
+  border-bottom: 1px solid rgba(80,140,220,0.06);
+  cursor: default;
+}
+.proj-row:last-child { border-bottom: none; }
+.proj-row:hover { background: rgba(80,140,220,0.06); }
+.proj-row.pending      { border-left-color: rgba(180,200,230,0.45); }
+.proj-row.in_progress  { border-left-color: rgba(94,224,161,0.85); }
+.proj-row.done         { border-left-color: rgba(120,200,255,0.85); opacity: 0.65; }
+.proj-row.failed       { border-left-color: rgba(255,140,90,0.85); }
+.proj-row.abandoned    { border-left-color: rgba(160,120,200,0.7); opacity: 0.55; }
+
+.proj-head {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 11.5px;
+  color: #e8f1ff;
+  margin-bottom: 4px;
+}
+.proj-head .proj-id {
+  font-family: 'Consolas','SF Mono','Menlo',monospace;
+  font-size: 11px;
+  color: #d8e8ff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+}
+.proj-head .proj-pct {
+  font-family: 'Consolas','SF Mono','Menlo',monospace;
+  font-size: 10.5px;
+  color: rgba(164,255,224,0.85);
+  letter-spacing: 0.5px;
+}
+.proj-row.failed .proj-head .proj-pct { color: rgba(255,180,140,0.9); }
+.proj-row.done .proj-head .proj-pct { color: rgba(180,210,240,0.7); }
+
+.proj-bar {
+  height: 3px;
+  background: rgba(80,140,220,0.12);
+  border-radius: 2px;
+  overflow: hidden;
+  margin: 0 0 6px 0;
+}
+.proj-bar > i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, rgba(94,224,161,0.7), rgba(164,255,224,0.95));
+  transition: width 0.4s ease;
+}
+.proj-row.failed .proj-bar > i {
+  background: linear-gradient(90deg, rgba(255,140,90,0.6), rgba(255,180,120,0.95));
+}
+.proj-row.done .proj-bar > i {
+  background: linear-gradient(90deg, rgba(120,180,255,0.6), rgba(180,220,255,0.85));
+}
+
+.proj-step {
+  font-family: 'Consolas','SF Mono','Menlo',monospace;
+  font-size: 10px;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.4;
+}
+.proj-step.running { color: #b9f0d2; }
+.proj-step.next    { color: rgba(180,210,240,0.6); }
+.proj-step .ps-tag {
+  display: inline-block;
+  font-size: 9px;
+  padding: 0 4px;
+  margin-right: 5px;
+  border-radius: 2px;
+  letter-spacing: 0.5px;
+  vertical-align: 1px;
+}
+.proj-step.running .ps-tag {
+  background: rgba(94,224,161,0.15);
+  color: #5ee0a1;
+  border: 1px solid rgba(94,224,161,0.35);
+}
+.proj-step.next .ps-tag {
+  background: transparent;
+  color: rgba(160,190,220,0.7);
+  border: 1px solid rgba(120,160,200,0.25);
+}
 
 /* Bottom-right live tasks panel — only visible while something is running.
    Sits above the menu/mic so it never blocks vault-graph labels in the
@@ -795,9 +1097,9 @@ canvas { display: block; }
     width: auto;
     left: auto; right: auto;
   }
-  #hud-live, #hud-log {
+  #hud-live, #hud-log, #hud-projects {
     position: relative;
-    left: auto; right: auto; bottom: auto;
+    left: auto; right: auto; bottom: auto; top: auto;
     margin: 8px 12px 0 12px;
     width: auto;
     max-height: 220px;
@@ -1477,6 +1779,18 @@ canvas { display: block; }
   </div>
 </div>
 
+<!-- AgentCore-style operations banner — full-width, top of screen -->
+<div id="ops-banner">
+  <span class="ob-brand">JARVIS</span>
+  <span class="ob-sep">·</span>
+  <span class="ob-sub">Operations Center</span>
+  <span class="ob-spacer"></span>
+  <span class="ob-status" id="ob-status" data-state="idle">
+    <span class="ob-dot"></span>
+    <span id="ob-status-text">READY</span>
+  </span>
+  <span class="ob-clock" id="ob-clock">--:--:--</span>
+</div>
 <div id="title-wrap">
   <div id="title">J . A . R . V . I . S .</div>
   <div id="subtitle"><span class="dot"></span>Mission Control</div>
@@ -1550,6 +1864,35 @@ canvas { display: block; }
   </div>
   <div id="schedule-list">
     <div class="mc-empty">— nothing scheduled —</div>
+  </div>
+</div>
+
+<!-- Region callouts pinned to brain lobes (positioned each frame from JS) -->
+<div id="region-labels"></div>
+
+<!-- Right column, top: community legend — one pill per neural-cluster region,
+     mirrors the AgentCore-style vertical pill list. Populated once on init from
+     COMMUNITY_CENTROIDS; doesn't update at runtime. -->
+<div id="hud-legend" class="mc-panel">
+  <div class="mc-panel-head">
+    <span class="mc-dot" style="background:#5ee0a1"></span>
+    REGIONS
+    <span class="mc-panel-meta" id="legend-count">0</span>
+  </div>
+  <div id="legend-list">
+    <div class="mc-empty">— —</div>
+  </div>
+</div>
+
+<!-- Left column, below schedule: per-project plan-progress (autonomy #2 / agent_plan) -->
+<div id="hud-projects" class="mc-panel">
+  <div class="mc-panel-head">
+    <span class="mc-dot" style="background:#a4ffe0"></span>
+    PROJECTS
+    <span class="mc-panel-meta" id="projects-count">0</span>
+  </div>
+  <div id="projects-list">
+    <div class="mc-empty">— no plans —</div>
   </div>
 </div>
 
@@ -1802,6 +2145,79 @@ class Neuron {
 
 for (let i = 0; i < NEURON_COUNT; i++) neurons.push(new Neuron());
 
+// --- Community palette + spatial assignment ---
+// Each neuron is mapped to one of ~16 communities by k-means-style nearest-
+// centroid lookup against centroids placed randomly on the brain ellipsoid.
+// This gives the cortex an organic, rainbow-lobed look (each "region" of
+// the brain has a coherent colour), echoing the graphify community-colour
+// graph but rendered directly into the central neural cluster instead of
+// as a separate satellite. Colours match the GRAPHIFY_PAL.community palette
+// so the visual language is consistent.
+// First four centroids are the canonical Jarvis "brains" — JARVIS, OBSIDIAN,
+// CHATGPT, GRAPHIFY — placed at hand-picked world positions so each becomes
+// a labelled lobe in the cortex. Their colours match the original satellite-
+// glyph palettes (vault gold, chatgpt green, graphify lime, jarvis sky-blue)
+// so the visual language carries through. The remaining 12 communities are
+// procedurally placed via seeded LCG and named generically.
+const NAMED_BRAINS = [
+  { name: 'JARVIS',   rgb: '110,170,255', x:    0, y:  -40, z:  220 },
+  { name: 'OBSIDIAN', rgb: '255,201,90',  x: -240, y:   20, z:    0 },
+  { name: 'CHATGPT',  rgb: '94,224,161',  x:  240, y:   20, z:    0 },
+  { name: 'GRAPHIFY', rgb: '180,255,140', x:    0, y: -160, z: -140 },
+];
+const NEURAL_COMMUNITY_PALETTE = [
+  '232,112,112', '180,120,255', '255,107,157', '107,164,255',
+  '255,180,80',  '90,224,200',  '224,140,255', '255,140,140',
+  '140,224,140', '180,200,255', '255,220,140', '200,255,180',
+];
+const COMMUNITY_CENTROIDS = [];
+(function _seedCommunityCentroids() {
+  // Push the four named brains first — these are the meaningful lobes.
+  NAMED_BRAINS.forEach((b, i) => {
+    COMMUNITY_CENTROIDS.push({
+      x: b.x, y: b.y, z: b.z,
+      rgb: b.rgb,
+      idx: i,
+      name: b.name,
+      count: 0,
+    });
+  });
+  // Then 12 procedural communities. Deterministic LCG so colour layout is
+  // stable across reloads — the operator's eye learns where each community
+  // lives, so we don't want it to shuffle on every refresh.
+  let seed = 1337;
+  const rnd = () => { seed = (seed * 9301 + 49297) % 233280; return seed / 233280; };
+  for (let k = 0; k < NEURAL_COMMUNITY_PALETTE.length; k++) {
+    const theta = rnd() * Math.PI * 2;
+    const phi = Math.acos(2 * rnd() - 1);
+    const r = 180 + rnd() * 60;
+    COMMUNITY_CENTROIDS.push({
+      x: r * 1.4 * Math.sin(phi) * Math.cos(theta),
+      y: r * 0.85 * Math.sin(phi) * Math.sin(theta),
+      z: r * Math.cos(phi),
+      rgb: NEURAL_COMMUNITY_PALETTE[k],
+      idx: NAMED_BRAINS.length + k,
+      count: 0,
+    });
+  }
+})();
+for (const n of neurons) {
+  let best = COMMUNITY_CENTROIDS[0];
+  let bestD = Infinity;
+  for (const c of COMMUNITY_CENTROIDS) {
+    const dx = n.baseX - c.x, dy = n.baseY - c.y, dz = n.baseZ - c.z;
+    const d = dx * dx + dy * dy + dz * dz;
+    if (d < bestD) { bestD = d; best = c; }
+  }
+  n.communityIdx = best.idx;
+  n.communityRgb = best.rgb;
+  const parts = best.rgb.split(',');
+  n.communityR = +parts[0];
+  n.communityG = +parts[1];
+  n.communityB = +parts[2];
+  best.count++;
+}
+
 // --- Pre-compute connections (static topology) ---
 const connections = [];
 for (let i = 0; i < neurons.length; i++) {
@@ -1890,12 +2306,14 @@ function animate() {
   ctx.fillStyle = '#020208';
   ctx.fillRect(0, 0, W, H);
 
-  // Central ambient glow — brighter so the brain is clearly lit.
-  // Scaled down on mobile so the halo doesn't reach the title area.
+  // Central ambient glow — softened from 0.14 → 0.07 so the rainbow
+  // community colours of the neurons dominate the read instead of being
+  // washed out by a single state-driven tint. Still pulses with smoothEnergy
+  // so listening / speaking states feel alive.
   const glowR = (260 + smoothEnergy * 120) * brainScale;
   const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, glowR);
-  grad.addColorStop(0, `rgba(${pal.r},${pal.g},${pal.b},0.14)`);
-  grad.addColorStop(0.5, `rgba(${pal.r},${pal.g},${pal.b},0.05)`);
+  grad.addColorStop(0, `rgba(${pal.r},${pal.g},${pal.b},0.07)`);
+  grad.addColorStop(0.5, `rgba(${pal.r},${pal.g},${pal.b},0.025)`);
   grad.addColorStop(1, 'rgba(0,0,0,0)');
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, W, H);
@@ -1960,37 +2378,79 @@ function animate() {
   const sorted = neurons.map((n, i) => ({ n, i })).sort((a, b) => a.n.sd - b.n.sd);
 
   // --- Draw connections ---
-  // Draw every connection at a faint base alpha so the neural web is
-  // always visible, with active ones pulsing brighter on top.
+  // Edges blend the two endpoint communities — same-community edges read as
+  // a solid lobe colour, cross-community edges read as a "synapse bridge"
+  // that fades through both. State palette only contributes during fire
+  // (active task), so the resting brain is rainbow rather than monochrome.
   for (const c of connections) {
     const a = neurons[c.a], b = neurons[c.b];
     const depth = Math.min(a.sd, b.sd);
-    // Base web (always on) + pulse highlight (state-driven)
-    const baseAlpha = 0.09 * depth;
+    const baseAlpha = 0.08 * depth;
     const pulseAlpha = c.pulse * depth * 0.9;
     const alpha = baseAlpha + pulseAlpha;
     if (alpha < 0.02) continue;
+    // Average of the two community colours, biased toward the more-fired one
+    const fA = a.fireLevel, fB = b.fireLevel;
+    const wA = 0.5 + (fA - fB) * 0.4;
+    const wB = 1 - wA;
+    const cr = Math.floor(a.communityR * wA + b.communityR * wB);
+    const cg = Math.floor(a.communityG * wA + b.communityG * wB);
+    const cb_ = Math.floor(a.communityB * wA + b.communityB * wB);
     ctx.beginPath();
     ctx.moveTo(a.sx, a.sy);
     ctx.lineTo(b.sx, b.sy);
-    ctx.strokeStyle = pal.glow + alpha.toFixed(3) + ')';
+    ctx.strokeStyle = `rgba(${cr},${cg},${cb_},${alpha.toFixed(3)})`;
     ctx.lineWidth = 0.6 + c.pulse * 1.8;
     ctx.stroke();
   }
 
+  // --- Additive bloom pass on connections ---
+  // Heavily-pulsed edges get an extra glow layer in `lighter` composite mode
+  // so synapse highways look hot during activity. Cheap because we skip
+  // anything below a pulse threshold.
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  for (const c of connections) {
+    if (c.pulse < 0.25) continue;
+    const a = neurons[c.a], b = neurons[c.b];
+    const depth = Math.min(a.sd, b.sd);
+    const fA = a.fireLevel, fB = b.fireLevel;
+    const wA = 0.5 + (fA - fB) * 0.4, wB = 1 - wA;
+    const cr = Math.floor(a.communityR * wA + b.communityR * wB);
+    const cg = Math.floor(a.communityG * wA + b.communityG * wB);
+    const cb_ = Math.floor(a.communityB * wA + b.communityB * wB);
+    const haloAlpha = c.pulse * c.pulse * depth * 0.7;
+    ctx.beginPath();
+    ctx.moveTo(a.sx, a.sy);
+    ctx.lineTo(b.sx, b.sy);
+    ctx.strokeStyle = `rgba(${cr},${cg},${cb_},${haloAlpha.toFixed(3)})`;
+    ctx.lineWidth = 2 + c.pulse * 5;
+    ctx.stroke();
+  }
+  ctx.restore();
+
   // --- Draw neurons ---
   for (const { n } of sorted) {
-    // Raised idle floor (0.35 vs 0.15) and slightly bigger sizes — neurons
-    // always visible, not just when they fire.
-    const baseAlpha = 0.38 + n.fireLevel * 0.6;
+    // Raised idle floor (0.38) — neurons always visible, not just when fired.
+    const baseAlpha = 0.42 + n.fireLevel * 0.58;
     const alpha = baseAlpha * n.sd;
     const size = (n.size + n.fireLevel * 3) * n.sd;
 
-    // Outer glow
-    if (n.fireLevel > 0.1) {
-      const glowSize = size * (2 + n.fireLevel * 3);
+    // Pre-compute the per-neuron drawn colour: community RGB blended toward
+    // state palette only as the neuron fires. Resting cortex stays rainbow;
+    // firing neurons shift toward whatever the brain is currently doing
+    // (idle blue / listening cyan / thinking orange / speaking blue).
+    const blend = n.fireLevel * 0.45;
+    const dr = Math.floor(n.communityR + (pal.r - n.communityR) * blend);
+    const dg = Math.floor(n.communityG + (pal.g - n.communityG) * blend);
+    const db = Math.floor(n.communityB + (pal.b - n.communityB) * blend);
+
+    // Outer glow — community-coloured halo, always on but bigger when fired
+    const glowAlpha = (0.18 + n.fireLevel * 0.45) * n.sd;
+    if (glowAlpha > 0.04) {
+      const glowSize = size * (2.2 + n.fireLevel * 3.2);
       const g = ctx.createRadialGradient(n.sx, n.sy, 0, n.sx, n.sy, glowSize);
-      g.addColorStop(0, pal.glow + (alpha * 0.3).toFixed(3) + ')');
+      g.addColorStop(0, `rgba(${dr},${dg},${db},${(glowAlpha * 0.55).toFixed(3)})`);
       g.addColorStop(1, 'rgba(0,0,0,0)');
       ctx.fillStyle = g;
       ctx.fillRect(n.sx - glowSize, n.sy - glowSize, glowSize * 2, glowSize * 2);
@@ -1999,32 +2459,104 @@ function animate() {
     // Core dot
     ctx.beginPath();
     ctx.arc(n.sx, n.sy, Math.max(0.5, size), 0, Math.PI * 2);
-    ctx.fillStyle = `rgba(${pal.r + Math.floor(n.fireLevel * (255-pal.r) * 0.5)}, ${pal.g + Math.floor(n.fireLevel * (255-pal.g) * 0.3)}, ${pal.b + Math.floor(n.fireLevel * (255-pal.b) * 0.2)}, ${alpha.toFixed(3)})`;
+    ctx.fillStyle = `rgba(${dr},${dg},${db},${alpha.toFixed(3)})`;
     ctx.fill();
 
     // Bright center for fired neurons
     if (n.fireLevel > 0.3) {
       ctx.beginPath();
       ctx.arc(n.sx, n.sy, Math.max(0.3, size * 0.4), 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(255,255,255,${(n.fireLevel * alpha * 0.6).toFixed(3)})`;
+      ctx.fillStyle = `rgba(255,255,255,${(n.fireLevel * alpha * 0.7).toFixed(3)})`;
       ctx.fill();
     }
   }
+
+  // --- Additive bloom pass on fired neurons ---
+  // Stacks 3 radial gradients per neuron in `lighter` composite mode. Where
+  // multiple fired neurons overlap, their bloom compounds into white-hot
+  // hotspots — same trick a real bloom shader does, faked in 2D canvas. Only
+  // runs for neurons with non-trivial fireLevel so resting cortex stays cheap.
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  for (const { n } of sorted) {
+    if (n.fireLevel < 0.18) { n._lastFire = n.fireLevel; continue; }
+    const blend = n.fireLevel * 0.45;
+    const dr = Math.floor(n.communityR + (pal.r - n.communityR) * blend);
+    const dg = Math.floor(n.communityG + (pal.g - n.communityG) * blend);
+    const db = Math.floor(n.communityB + (pal.b - n.communityB) * blend);
+    const baseSize = (n.size + n.fireLevel * 3) * n.sd;
+    // Three stacked glows: tight & bright, medium, wide & soft
+    const layers = [
+      { mul: 2.4,  alpha: 0.34 * n.fireLevel },
+      { mul: 5.0,  alpha: 0.20 * n.fireLevel },
+      { mul: 9.5,  alpha: 0.10 * n.fireLevel },
+    ];
+    for (const L of layers) {
+      const gs = baseSize * L.mul;
+      const grad = ctx.createRadialGradient(n.sx, n.sy, 0, n.sx, n.sy, gs);
+      grad.addColorStop(0, `rgba(${dr},${dg},${db},${L.alpha.toFixed(3)})`);
+      grad.addColorStop(0.5, `rgba(${dr},${dg},${db},${(L.alpha * 0.35).toFixed(3)})`);
+      grad.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(n.sx - gs, n.sy - gs, gs * 2, gs * 2);
+    }
+    // Detect a hard fire-up — neuron just transitioned from low to high.
+    // Spawn a brief expanding action-potential ring. Throttled by lastBurstAt
+    // so the same neuron doesn't burst every frame while it's at peak.
+    const tNow = performance.now();
+    if (n.fireLevel > 0.55 && (n._lastFire || 0) < 0.35 &&
+        (tNow - (n._lastBurstAt || 0)) > 380) {
+      burstRings.push({
+        x: n.sx, y: n.sy, depth: n.sd,
+        r: 0,
+        rgb: `${dr},${dg},${db}`,
+        bornAt: tNow,
+      });
+      n._lastBurstAt = tNow;
+    }
+    n._lastFire = n.fireLevel;
+  }
+  ctx.restore();
+
+  // --- Action-potential burst rings (additive, expand & fade over ~480ms) ---
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  const tNowR = performance.now();
+  for (let i = burstRings.length - 1; i >= 0; i--) {
+    const br = burstRings[i];
+    const age = (tNowR - br.bornAt) / 480;
+    if (age >= 1) { burstRings.splice(i, 1); continue; }
+    const r = (10 + age * 80) * br.depth;
+    const a = (1 - age) * (1 - age) * 0.55;
+    ctx.beginPath();
+    ctx.arc(br.x, br.y, r, 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(${br.rgb},${a.toFixed(3)})`;
+    ctx.lineWidth = (2 - age * 1.5) * br.depth;
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  // --- Cortex sparks (synapse fire along edges, driven by SSE events) ---
+  tickAndDrawCortexSparks();
+
+  // --- Region callouts (HTML overlays pinned to community centroids) ---
+  updateRegionLabels();
 
   // --- Agent stars (galaxy mode) ---
   drawAgentStars();
   updateAgentStars();
 
-  // --- Second brain (Obsidian memory crystal) ---
-  drawVault(1 / FPS);
-
-  // --- Third brain (ChatGPT) ---
-  drawGpt(1 / FPS);
-
-  // UniFi (4th brain) removed — operator didn't use it. Slot now empty.
-
-  // --- Fifth brain (Graphify knowledge graph) ---
-  drawGraphify(1 / FPS);
+  // Satellite "brain" glyphs (Vault / GPT / Graphify) intentionally NOT
+  // drawn — the operator wanted the AgentCore single-cluster look where
+  // every brain is a labelled lobe inside one neural cortex rather than
+  // four orbiting hubs. The functions are still defined and the SSE/data
+  // hooks (vault writes, gpt calls, graphify rebuild) still fire — their
+  // visual effect is now routed through the cortex itself (community
+  // colouring + neuron fire waves) instead of through dedicated glyphs.
+  // To restore the old layout, uncomment the three calls below.
+  // drawVault(1 / FPS);
+  // drawGpt(1 / FPS);
+  // drawGraphify(1 / FPS);
 
   // --- Status ---
   statusEl.textContent = STATUS_TEXT[state] || state.toUpperCase();
@@ -3484,6 +4016,18 @@ function connectVaultSSE() {
     try {
       const e = JSON.parse(ev.data);
       spawnVaultParticles(e.op || 'write', e.source || 'voice');
+      // AgentCore reskin — every vault event also fires a cortex spark
+      // along a random edge so the brain visibly twitches when activity
+      // happens. Colour-coded by source so you can read the actor at a
+      // glance: cyan = jarvis voice, green = chatgpt, orange = agent,
+      // amber = vault tool. 2 sparks for writes, 1 for reads.
+      const _src = e.source || 'voice';
+      const _sparkRgb = _src === 'chatgpt' ? '94,224,161'
+                      : _src === 'agent'   ? '255,180,80'
+                      : _src === 'claude'  ? '155,242,255'
+                      : (e.op === 'tool' || e.op === 'tool-fail') ? '255,201,90'
+                      : '107,164,255';
+      spawnCortexSpark(_sparkRgb, (e.op === 'read' ? 1 : 2));
       vaultLog.push(e);
       while (vaultLog.length > VAULT_LOG_MAX) vaultLog.shift();
       if (e.op === 'write' || e.op === 'append') {
@@ -3548,12 +4092,28 @@ function connectOrchSSE() {
           const isCodex = agentColorsCodex.has(a.id);
           const src = isCodex ? 'codex' : (a.kind === 'claude-session' ? 'claude' : (a.kind === 'subagent' ? 'agent' : 'claude'));
           logEvent(src, ' ' + a.name + ' started · ' + (a.current_task || '').slice(0, 60));
+          // Cortex spark per agent kick-off — colour matches the agent's lane
+          spawnCortexSpark(
+            src === 'codex'  ? '255,180,80'
+          : src === 'claude' ? '155,242,255'
+          : src === 'agent'  ? '180,120,255'
+          :                    '107,164,255',
+            3
+          );
           if (isCodex) sessionStats.codexTasks++;
           else if (a.kind === 'builtin') sessionStats.claudeTasks++;
         } else if (a.status === 'idle' && prev && prev.status === 'running') {
           const isCodex = agentColorsCodex.has(a.id);
           const src = isCodex ? 'codex' : (a.kind === 'claude-session' ? 'claude' : (a.kind === 'subagent' ? 'agent' : 'claude'));
           logEvent(src, ' ' + a.name + ' finished');
+          // Lighter spark on completion — single ping back through the cortex
+          spawnCortexSpark(
+            src === 'codex'  ? '255,180,80'
+          : src === 'claude' ? '155,242,255'
+          : src === 'agent'  ? '180,120,255'
+          :                    '107,164,255',
+            1
+          );
         }
       }
       window._prevAgentSnap = Object.fromEntries(incoming.map(a => [a.id, { status: a.status }]));
@@ -3563,6 +4123,7 @@ function connectOrchSSE() {
       updateAggregate(d.aggregate || {});
       updateStatsPanel(d);
       updateLiveTasksPanel(d);
+      updateProjectsPanel(d.plans || []);
       // Keep the provider toggle in sync with server-side state
       if (d.provider_mode && d.provider_mode !== providerMode) {
         applyProviderUI(d.provider_mode);
@@ -4708,8 +5269,282 @@ function updateLiveTasksPanel(snap) {
   }
 }
 
+// PROJECTS panel — renders agent_plan.list_plans() entries as compact rows
+// with a progress bar + running/next-step hint. Bound to /orch_events SSE
+// so it updates whenever an agent state change triggers a snapshot diff.
+const elProjectsList  = document.getElementById('projects-list');
+const elProjectsCount = document.getElementById('projects-count');
+function updateProjectsPanel(plans) {
+  if (!elProjectsList) return;
+  if (elProjectsCount) elProjectsCount.textContent = String(plans.length);
+  if (plans.length === 0) {
+    if (elProjectsList.dataset.empty !== '1') {
+      elProjectsList.innerHTML = '<div class="mc-empty">— no plans —</div>';
+      elProjectsList.dataset.empty = '1';
+      elProjectsList._lastHtml = '';
+    }
+    return;
+  }
+  elProjectsList.dataset.empty = '0';
+  // Sort: in_progress first, then pending, then failed, then done — within each
+  // group most-recently-updated first.
+  const order = { in_progress: 0, pending: 1, failed: 2, abandoned: 3, done: 4 };
+  const sorted = [...plans].sort((a, b) => {
+    const oa = order[a.status] ?? 9;
+    const ob = order[b.status] ?? 9;
+    if (oa !== ob) return oa - ob;
+    return (b.updated_at || 0) - (a.updated_at || 0);
+  });
+  const html = sorted.map(p => {
+    const counts = p.step_counts || {};
+    const total = Math.max(1, p.total_steps || 0);
+    const done = counts.done || 0;
+    const pct = Math.round((done / total) * 100);
+    const status = p.status || 'pending';
+    const idTrim = (p.project_id || '').slice(0, 22);
+    let stepLine = '';
+    // Running step (if any) wins; otherwise show next runnable pending step.
+    // We don't have step-level data in the snapshot summary, so we infer:
+    //   - counts.running > 0  → "running" badge with project_id
+    //   - else counts.pending > 0 → "next" badge + N pending
+    if ((counts.running || 0) > 0) {
+      stepLine = '<div class="proj-step running">' +
+        '<span class="ps-tag">RUN</span>' +
+        escapeHtml((counts.running || 0) + ' step' + ((counts.running || 0) === 1 ? '' : 's') + ' active') +
+        '</div>';
+    } else if (status === 'done') {
+      stepLine = '<div class="proj-step next">' +
+        '<span class="ps-tag">DONE</span>' +
+        escapeHtml(done + '/' + total + ' complete') +
+        '</div>';
+    } else if (status === 'failed' && (counts.failed || 0) > 0) {
+      stepLine = '<div class="proj-step next" style="color:rgba(255,180,140,0.85)">' +
+        '<span class="ps-tag" style="color:#ff8c5a;border-color:rgba(255,140,90,0.4)">FAIL</span>' +
+        escapeHtml((counts.failed || 0) + ' failed · ' + (counts.pending || 0) + ' pending') +
+        '</div>';
+    } else if ((counts.pending || 0) > 0) {
+      stepLine = '<div class="proj-step next">' +
+        '<span class="ps-tag">NEXT</span>' +
+        escapeHtml((counts.pending || 0) + ' pending') +
+        '</div>';
+    }
+    return '<div class="proj-row ' + status + '" title="' + escapeHtml(p.goal || '') + '">' +
+      '<div class="proj-head">' +
+        '<span class="proj-id">' + escapeHtml(idTrim) + '</span>' +
+        '<span class="proj-pct">' + pct + '%</span>' +
+      '</div>' +
+      '<div class="proj-bar"><i style="width:' + pct + '%"></i></div>' +
+      stepLine +
+    '</div>';
+  }).join('');
+  if (elProjectsList._lastHtml !== html) {
+    elProjectsList.innerHTML = html;
+    elProjectsList._lastHtml = html;
+  }
+}
+
+// REGIONS legend — populates the right-column pill list once on init from
+// COMMUNITY_CENTROIDS. Names are cortex-themed placeholders; if/when the
+// graphify graph exposes real semantic community labels, swap them in here.
+(function _renderLegendOnce() {
+  const list = document.getElementById('legend-list');
+  const meta = document.getElementById('legend-count');
+  if (!list) return;
+  const REGION_NAMES = [
+    'FRONTAL',  'PARIETAL', 'OCCIPITAL','TEMPORAL',
+    'MOTOR',    'SENSORY',  'AUDITORY', 'VISUAL',
+    'LIMBIC',   'BROCA',    'WERNICKE', 'INSULA',
+    'AMYGDALA', 'HIPPOCAMP','THALAMUS', 'PONS',
+  ];
+  // Skip empty centroids (none should be empty given our seed, but guard)
+  const populated = COMMUNITY_CENTROIDS.filter(c => c.count > 0);
+  if (populated.length === 0) {
+    list.innerHTML = '<div class="mc-empty">— —</div>';
+    return;
+  }
+  // Sort by descending node count so dominant regions sit at the top
+  // Named brains float to the top; unnamed sorted by descending count.
+  populated.sort((a, b) => {
+    if (!!a.name !== !!b.name) return a.name ? -1 : 1;
+    return b.count - a.count;
+  });
+  list.innerHTML = populated.map(c => {
+    const name = c.name || REGION_NAMES[c.idx % REGION_NAMES.length] || ('R' + c.idx);
+    const weight = c.name ? '700' : '500';
+    return '<div class="legend-pill" style="color:rgb(' + c.rgb + ');font-weight:' + weight + '">' +
+      '<span class="lp-swatch" style="background:rgb(' + c.rgb + ')"></span>' +
+      '<span class="lp-name">' + name + '</span>' +
+      '<span class="lp-count">' + c.count + '</span>' +
+    '</div>';
+  }).join('');
+  if (meta) meta.textContent = String(populated.length);
+})();
+
+// Cortex sparks — synapse-fire particles that travel along a connection
+// edge between two neurons, leaving a fading trail. SSE events (vault
+// writes, tool calls, agent state changes) spawn these so the brain looks
+// alive whenever the system actually does something. Uses existing
+// connections topology — no new geometry, just point-along-edge animation.
+const cortexSparks = [];
+const CORTEX_SPARK_CAP = 90;
+// Burst rings — brief expanding action-potential rings spawned when a
+// neuron transitions hard from low to high fireLevel. Drawn additively
+// in the bloom pass. Capped implicitly by their 480ms lifetime.
+const burstRings = [];
+function spawnCortexSpark(rgb, count) {
+  if (!connections.length) return;
+  const n = count || 1;
+  for (let i = 0; i < n; i++) {
+    const c = connections[Math.floor(Math.random() * connections.length)];
+    cortexSparks.push({
+      aIdx: c.a,
+      bIdx: c.b,
+      t: 0,
+      speed: 0.018 + Math.random() * 0.022,
+      rgb: rgb || neurons[c.a].communityRgb,
+    });
+  }
+  // Trim oldest if we overflow — keeps the brain from drowning if a flurry
+  // of events fires (e.g. an agent batch dispatch). 90 sparks at 60fps is
+  // already at the visual saturation point.
+  while (cortexSparks.length > CORTEX_SPARK_CAP) cortexSparks.shift();
+}
+function tickAndDrawCortexSparks() {
+  for (let i = cortexSparks.length - 1; i >= 0; i--) {
+    const s = cortexSparks[i];
+    s.t += s.speed;
+    if (s.t >= 1) {
+      // Reaching the destination "fires" that neuron — propagates the
+      // visual energy back into the existing fireLevel decay system.
+      const target = neurons[s.bIdx];
+      if (target) target.fireLevel = Math.min(1, (target.fireLevel || 0) + 0.55);
+      cortexSparks.splice(i, 1);
+      continue;
+    }
+    const a = neurons[s.aIdx], b = neurons[s.bIdx];
+    if (!a || !b) { cortexSparks.splice(i, 1); continue; }
+    const x = a.sx + (b.sx - a.sx) * s.t;
+    const y = a.sy + (b.sy - a.sy) * s.t;
+    const depth = (a.sd + b.sd) * 0.5;
+    // Trail (fades from transparent at the tail to bright at the head)
+    const tailT = Math.max(0, s.t - 0.22);
+    const tx = a.sx + (b.sx - a.sx) * tailT;
+    const ty = a.sy + (b.sy - a.sy) * tailT;
+    const grad = ctx.createLinearGradient(tx, ty, x, y);
+    grad.addColorStop(0, `rgba(${s.rgb},0)`);
+    grad.addColorStop(1, `rgba(${s.rgb},0.85)`);
+    ctx.strokeStyle = grad;
+    ctx.lineWidth = 1.6 * depth;
+    ctx.beginPath();
+    ctx.moveTo(tx, ty);
+    ctx.lineTo(x, y);
+    ctx.stroke();
+    // Glow halo
+    const glowR = 6 * depth;
+    const g = ctx.createRadialGradient(x, y, 0, x, y, glowR);
+    g.addColorStop(0, `rgba(${s.rgb},0.55)`);
+    g.addColorStop(1, `rgba(${s.rgb},0)`);
+    ctx.fillStyle = g;
+    ctx.fillRect(x - glowR, y - glowR, glowR * 2, glowR * 2);
+    // Core dot
+    ctx.beginPath();
+    ctx.arc(x, y, 2.2 * depth, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(${s.rgb},1)`;
+    ctx.fill();
+    // White-hot core
+    ctx.beginPath();
+    ctx.arc(x, y, 1.0 * depth, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255,255,255,0.95)`;
+    ctx.fill();
+  }
+}
+
+// Region callouts — one per top community by neuron count. Each label is an
+// absolute-positioned HTML div whose translate is updated every animation
+// frame from the centroid's projected screen position. HTML, not canvas, so
+// the text stays crisp; pointer-events:none so they don't block drag-rotate.
+const REGION_LABEL_NAMES = [
+  'PRIMARY CORTEX',  'FEATURE LAYER',  'MEMORY CORE',     'ASSOCIATION',
+  'SENSORY HUB',     'MOTOR LAYER',    'AUDITORY GATE',   'VISUAL CORTEX',
+  'LIMBIC NODE',     'BROCAS AREA',    'WERNICKES AREA',  'INSULAR',
+  'AMYGDALA',        'HIPPOCAMPUS',    'THALAMIC RELAY',  'PONTINE',
+];
+const REGION_LABEL_LIMIT = 6;          // top-N communities get a callout
+const _regionLabelEntries = [];        // { centroid, el, probe }
+(function _initRegionLabels() {
+  const host = document.getElementById('region-labels');
+  if (!host) return;
+  // Always include the named brains (JARVIS, OBSIDIAN, CHATGPT, GRAPHIFY)
+  // first — those are meaningful labels the operator wants visible. Fill
+  // remaining slots with the largest unnamed communities by neuron count.
+  const populated = COMMUNITY_CENTROIDS.filter(c => c.count > 0);
+  const named = populated.filter(c => c.name).slice();
+  const unnamed = populated.filter(c => !c.name).sort((a, b) => b.count - a.count);
+  const top = named.concat(unnamed).slice(0, REGION_LABEL_LIMIT);
+  for (const c of top) {
+    const el = document.createElement('div');
+    el.className = 'region-label';
+    el.style.color = `rgb(${c.rgb})`;
+    el.style.borderColor = `rgba(${c.rgb},0.55)`;
+    el.style.boxShadow = `0 0 8px rgba(${c.rgb},0.22)`;
+    const name = c.name || REGION_LABEL_NAMES[c.idx % REGION_LABEL_NAMES.length] || ('REGION-' + c.idx);
+    // Named brains get a slightly bolder presentation
+    if (c.name) el.style.fontWeight = '700';
+    el.innerHTML = '<span class="rl-tick"></span>' + name;
+    el.style.opacity = '0';
+    host.appendChild(el);
+    _regionLabelEntries.push({
+      centroid: c,
+      el: el,
+      probe: { x: c.x, y: c.y, z: c.z, sx: 0, sy: 0, sd: 1, sz: 0 },
+    });
+  }
+})();
+function updateRegionLabels() {
+  if (!_regionLabelEntries.length || isMobile) return;
+  for (const r of _regionLabelEntries) {
+    // Re-prime the probe (project mutates in place) and run the same camera
+    // projection used for neurons so the label stays glued to its lobe.
+    r.probe.x = r.centroid.x;
+    r.probe.y = r.centroid.y;
+    r.probe.z = r.centroid.z;
+    project(r.probe);
+    const behind = r.probe.sz > 0;
+    // Offset the label slightly outward from the brain centre so it doesn't
+    // bury itself in the densest neuron cluster.
+    const dx = r.probe.sx - cx, dy = r.probe.sy - cy;
+    const len = Math.sqrt(dx * dx + dy * dy) || 1;
+    const off = 18;
+    const px = r.probe.sx + (dx / len) * off;
+    const py = r.probe.sy + (dy / len) * off;
+    r.el.style.left = px.toFixed(1) + 'px';
+    r.el.style.top  = py.toFixed(1) + 'px';
+    r.el.style.opacity = behind ? '0.18' : '0.92';
+  }
+}
+
+// OPS BANNER — keeps the top-bar status pill + clock in sync. State pill
+// reads `state` (the global from connectSSE); clock is local. The banner's
+// CSS animates the dot pulse, we just mutate the data-state + label.
+const obStatus = document.getElementById('ob-status');
+const obStatusText = document.getElementById('ob-status-text');
+const obClock = document.getElementById('ob-clock');
+function _padN(n) { return n < 10 ? '0' + n : '' + n; }
+function updateOpsBanner() {
+  if (obStatus) {
+    obStatus.dataset.state = state || 'idle';
+    if (obStatusText) obStatusText.textContent = (STATUS_TEXT[state] || 'READY');
+  }
+  if (obClock) {
+    const d = new Date();
+    obClock.textContent = _padN(d.getHours()) + ':' + _padN(d.getMinutes()) + ':' + _padN(d.getSeconds());
+  }
+}
+updateOpsBanner();
+
 // Tick the uptime + (cheap) re-render of live tasks even when no SSE event fires
 setInterval(() => {
+  updateOpsBanner();
   if (elStatUptime) {
     const s = Math.floor((Date.now() - SESSION_START) / 1000);
     elStatUptime.textContent = s < 60 ? s + 's'

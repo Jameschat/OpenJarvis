@@ -78,11 +78,23 @@ _state = _BridgeState()
 _thread: Any = None
 
 
+def _decorate(snap: dict) -> dict:
+    """Inject plan summaries into the snapshot so the PROJECTS HUD panel
+    can render without a second round-trip. List-plans walks a few small
+    JSON files on disk — cheap enough to do every poll tick (1s)."""
+    try:
+        from openjarvis.tools import agent_plan
+        snap["plans"] = agent_plan.list_plans()
+    except Exception:
+        snap.setdefault("plans", [])
+    return snap
+
+
 def _poll_loop() -> None:
     logger.info("agent_runner bridge started — HUD will show 6 local agents")
     while True:
         try:
-            snap = agent_runner.get_snapshot()
+            snap = _decorate(agent_runner.get_snapshot())
             _state.update(snap)
         except Exception:
             logger.exception("agent_runner bridge poll iteration crashed (continuing)")
@@ -115,7 +127,7 @@ def get_snapshot() -> dict:
     snap = _state.current()
     if not snap.get("agents"):
         try:
-            snap = agent_runner.get_snapshot()
+            snap = _decorate(agent_runner.get_snapshot())
             _state.update(snap)
         except Exception:
             pass
