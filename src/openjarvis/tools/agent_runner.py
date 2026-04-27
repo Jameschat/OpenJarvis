@@ -1211,11 +1211,48 @@ def _run_task(task: Task) -> None:
         # and the positional prompt contain newlines/backticks. Stdin
         # bypasses all that.
 
-    # Compose env for the spawn — inherit our env, then export the vault
-    # URL + token explicitly so curl-style helpers in the agent can find them.
-    spawn_env = {**os.environ}
-    spawn_env.setdefault(
-        "OPENJARVIS_VAULT_URL",
+    # Compose env for the spawn.
+    #
+    # Hardening (audit 2026-04-26 H2): previously this was
+    # `spawn_env = {**os.environ}` which leaked EVERY env var to the
+    # spawned agent — including OPENJARVIS_TUNNEL_TOKEN (Cloudflare
+    # tunnel), OPENJARVIS_PUBLIC_PIN (mission control auth), Spotify
+    # creds, ANTHROPIC_API_KEY / OPENAI_API_KEY (where applicable),
+    # AWS keys, and anything else in shell env. A misbehaving or
+    # prompt-injected agent could `print(os.environ)` and the values
+    # would land in stdout_log; future logs/sessions reading those
+    # logs back would surface the secrets again.
+    #
+    # New: a curated allow-list of env vars the spawned process
+    # actually needs — Windows system vars + the explicit Jarvis
+    # vault address. Tokens are added per-tool only when needed
+    # (currently just OPENJARVIS_VAULT_TOKEN for vault helpers, and
+    # the LLM provider keys which the CLI itself reads).
+    _ALLOWED_ENV = (
+        # Windows essentials
+        "PATH", "PATHEXT", "SYSTEMROOT", "SYSTEMDRIVE", "WINDIR",
+        "USERPROFILE", "USERNAME", "USERDOMAIN", "HOMEDRIVE", "HOMEPATH",
+        "APPDATA", "LOCALAPPDATA", "PROGRAMDATA", "PROGRAMFILES",
+        "PROGRAMFILES(X86)", "PROGRAMW6432", "COMMONPROGRAMFILES",
+        "TEMP", "TMP", "COMSPEC", "OS", "PROCESSOR_ARCHITECTURE",
+        "NUMBER_OF_PROCESSORS", "PROCESSOR_IDENTIFIER",
+        # POSIX equivalents (cross-platform safety)
+        "HOME", "USER", "LANG", "LC_ALL", "SHELL", "TERM", "PWD",
+        # Tool ecosystems the agents may need
+        "NODE_PATH", "NPM_CONFIG_PREFIX", "PYTHONPATH", "PYTHONIOENCODING",
+        "VIRTUAL_ENV", "CONDA_PREFIX", "UV_CACHE_DIR",
+        # LLM provider creds — the spawned CLIs (claude, codex) read
+        # these directly from env. Without them the agent can't run.
+        "ANTHROPIC_API_KEY", "OPENAI_API_KEY",
+        "ANTHROPIC_AUTH_TOKEN", "OPENAI_ORG_ID", "OPENAI_BASE_URL",
+        # Claude Code internals
+        "CLAUDE_PLUGIN_ROOT",
+    )
+    spawn_env = {k: v for k, v in os.environ.items() if k in _ALLOWED_ENV}
+    # Vault address + token explicitly set so curl-style helpers in
+    # the agent can talk to /vault/* (the agent NEEDS these to do
+    # vault work; everything else is denied above).
+    spawn_env["OPENJARVIS_VAULT_URL"] = (
         os.environ.get("OPENJARVIS_VAULT_URL", "")
         or os.environ.get("OPENJARVIS_TUNNEL_URL", "")
         or "http://127.0.0.1:7710"
