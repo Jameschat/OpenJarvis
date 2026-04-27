@@ -342,6 +342,16 @@ class _Handler(SimpleHTTPRequestHandler):
         if path_only == "/auth/check":
             return self._handle_auth_check()
         if path_only == "/vault/openapi.json":
+            # Audit 2026-04-26 L1: serving this open lets any scanner
+            # hitting the public tunnel fingerprint the instance as a
+            # Jarvis vault and learn the full /vault/* API surface.
+            # Require the bearer token (so ChatGPT can still fetch it
+            # with its Authorization header configured) but reject
+            # anonymous scanners.
+            if not self._check_vault_auth():
+                return self._json_response(401, {
+                    "error": "openapi schema requires bearer token",
+                })
             return self._json_response(200, _vault_openapi_schema())
         if path_only in ("/", "/brain", "/brain.html", "/phone", "/phone.html",
                           "/manifest.webmanifest"):
@@ -387,7 +397,13 @@ class _Handler(SimpleHTTPRequestHandler):
                 logger.exception("/vault_graph failed")
                 self._json_response(500, {"error": str(exc)})
         elif self.path == "/vault/openapi.json":
-            # OpenAPI schema for the ChatGPT Custom GPT "Add Action" flow
+            # OpenAPI schema for the ChatGPT Custom GPT "Add Action"
+            # flow. Audit 2026-04-26 L1: bearer-gated to stop public
+            # scanners fingerprinting Jarvis. (Also handled at the
+            # open-routes top — this branch is rarely hit but kept for
+            # the symmetry.)
+            if not self._check_vault_auth():
+                return self._json_response(401, {"error": "openapi schema requires bearer token"})
             self._json_response(200, _vault_openapi_schema())
         elif self.path.startswith("/vault/recall"):
             self._handle_vault_recall()
