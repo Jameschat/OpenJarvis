@@ -1044,17 +1044,27 @@ class _Handler(SimpleHTTPRequestHandler):
     def _check_vault_auth(self) -> bool:
         """Bearer-token check for the /vault/* endpoints exposed to ChatGPT.
 
-        If ``OPENJARVIS_VAULT_TOKEN`` env var is set, requests must carry
-        ``Authorization: Bearer <token>``. If the env var is unset, the
-        endpoints are open (useful while testing locally).
+        Hardening (audit 2026-04-26):
+          * Requires ``OPENJARVIS_VAULT_TOKEN`` to be configured. If the
+            env var is unset OR empty, ALL /vault/* requests are denied
+            (previously the endpoints defaulted to wide-open which is a
+            CRITICAL bypass over the public Cloudflare tunnel).
+          * Token comparison via ``hmac.compare_digest`` to defeat the
+            byte-by-byte timing oracle that ``==`` enables.
+          * Empty-bearer attack (``Authorization: Bearer ``) explicitly
+            rejected — previously matched empty == empty when the env
+            var was unset.
         """
         expected = os.environ.get("OPENJARVIS_VAULT_TOKEN", "").strip()
         if not expected:
-            return True
+            return False                # configured-or-deny
         auth = self.headers.get("Authorization") or ""
-        if auth.startswith("Bearer "):
-            return auth[7:].strip() == expected
-        return False
+        if not auth.startswith("Bearer "):
+            return False
+        supplied = auth[7:].strip()
+        if not supplied:
+            return False                # empty token always denied
+        return hmac.compare_digest(supplied, expected)
 
     def _handle_vault_remember(self) -> None:
         """POST /vault/remember — body: {content, title?, folder?, tags?}.
