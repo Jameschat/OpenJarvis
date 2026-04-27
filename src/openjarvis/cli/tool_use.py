@@ -88,6 +88,14 @@ work ("how is X connected to Y in my notes", "what bridges A and B", \
 `graph_query` traverses outward, `graph_path` finds the shortest \
 chain, `graph_explain` lists every direct neighbour. Use recall_vault \
 for keyword search, the graph tools for structural relationships.
+- For MULTI-STEP project work (operator says "build a thing" that \
+clearly needs 2+ agents working on a shared workspace), prefer the \
+plan tools over a single big dispatch: call `create_plan` first with \
+the breakdown, then `dispatch_agent` for the first ready step \
+(passing plan_step_id). On any subsequent turn that mentions an \
+existing project_id, call `get_plan` first to see where you left off; \
+use `advance_plan` to dispatch the next ready step. For single-step \
+requests, skip create_plan entirely — just dispatch_agent.
 - When the operator asks for a constraint (e.g. "use independent \
 sources only", "GitHub stars not vendor sites"), TREAT IT AS A HARD RULE. \
 If your tool calls violate the constraint, retry with corrected queries \
@@ -217,8 +225,95 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
                             "pass files. Use lowercase-hyphenated. Omit for one-off tasks."
                         ),
                     },
+                    "plan_step_id": {
+                        "type": "string",
+                        "description": (
+                            "Optional. If this dispatch fulfils a step from a plan "
+                            "created via create_plan, pass the step id (e.g. 's2') "
+                            "so completion auto-updates the plan. Requires project_id."
+                        ),
+                    },
                 },
                 "required": ["agent", "prompt", "title"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_plan",
+            "description": (
+                "Persist a multi-step execution plan for a project so future turns "
+                "and other agents can resume it. Use when the operator's request "
+                "decomposes into 2+ agent dispatches sharing a project_id. After "
+                "creating, immediately call dispatch_agent for the first ready step "
+                "(passing plan_step_id). On subsequent turns, call get_plan first to "
+                "see where you left off rather than re-deciding the breakdown. Don't "
+                "use for single-shot requests."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "project_id": {"type": "string",
+                        "description": "Lowercase-hyphenated project slug, e.g. 'scheduling-app'."},
+                    "goal": {"type": "string",
+                        "description": "One-sentence statement of what 'done' means."},
+                    "steps": {
+                        "type": "array",
+                        "description": "2+ ordered steps. Each step is one agent dispatch.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {"type": "string", "description": "Short slug unique within plan, e.g. 's1'."},
+                                "agent": {"type": "string", "description": "Agent id from list_agents."},
+                                "title": {"type": "string", "description": "Short label (~60 chars)."},
+                                "prompt": {"type": "string", "description": "Self-contained instruction for dispatch_agent."},
+                                "depends_on": {"type": "array", "items": {"type": "string"},
+                                    "description": "Step ids this step waits for."},
+                            },
+                            "required": ["id", "agent", "title", "prompt"],
+                        },
+                    },
+                },
+                "required": ["project_id", "goal", "steps"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_plan",
+            "description": (
+                "Look up a saved plan and its current progress. Call when the "
+                "operator asks 'where are we on project X', or at the start of any "
+                "turn that mentions an existing project_id, before deciding whether "
+                "to dispatch_agent or create_plan."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "project_id": {"type": "string"},
+                },
+                "required": ["project_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "advance_plan",
+            "description": (
+                "Dispatch the next ready step of a saved plan. Convenience wrapper "
+                "around get_plan + dispatch_agent — use when the operator says "
+                "'continue project X' or 'do the next step'. No-op if nothing is "
+                "ready or the plan is already complete."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "project_id": {"type": "string"},
+                },
+                "required": ["project_id"],
             },
         },
     },
@@ -473,7 +568,8 @@ def _tool_list_agents() -> str:
 
 
 def _tool_dispatch_agent(agent: str, prompt: str, title: str,
-                         project_id: Optional[str] = None) -> str:
+                         project_id: Optional[str] = None,
+                         plan_step_id: Optional[str] = None) -> str:
     from openjarvis.tools import agent_runner
     valid_ids = {a["id"] for a in agent_runner.list_agents()}
     if agent not in valid_ids:
@@ -495,18 +591,166 @@ def _tool_dispatch_agent(agent: str, prompt: str, title: str,
             pid = None
         elif len(pid) > 60:
             pid = pid[:60].strip("-") or None
+
+    # Plan-step validation (autonomy #2c): if plan_step_id is given but
+    # we have no project_id (or the step doesn't exist), warn and
+    # proceed without the link. Don't reject the dispatch — the
+    # operator asked for work, work happens; only the plan-tracking
+    # is opt-out on bad input.
+    step_id = (plan_step_id or "").strip() or None
+    plan_warning: Optional[str] = None
+    if step_id:
+        if not pid:
+            plan_warning = "plan_step_id requires project_id; ignored"
+            step_id = None
+        else:
+            try:
+                from openjarvis.tools import agent_plan
+                plan = agent_plan.get_plan(pid)
+                if plan is None:
+                    plan_warning = f"no plan exists for project {pid!r}; step ignored"
+                    step_id = None
+                elif not any(s.get("id") == step_id for s in plan.get("steps") or []):
+                    valid_steps = [s.get("id") for s in plan.get("steps") or []]
+                    plan_warning = (f"step {step_id!r} not in plan; valid: {valid_steps}; "
+                                    "step ignored")
+                    step_id = None
+            except Exception:
+                logger.exception("agent_plan.get_plan failed in dispatch_agent")
+                step_id = None
+
     task_id = agent_runner.add_task(title=title[:80], agent_id=agent,
-                                    prompt=prompt, project_id=pid)
+                                    prompt=prompt, project_id=pid,
+                                    plan_step_id=step_id)
     # Vault: ensure every project has a home note. Future sessions can
     # then recall "what's in the X project" naturally.
     if pid:
         _ensure_project_note(pid, title=title, task_id=task_id,
                              agent=agent, prompt=prompt)
-    return json.dumps({
+    out: Dict[str, Any] = {
         "ok": True,
         "task_id": task_id,
         "agent": agent,
         "project_id": pid,
+    }
+    if step_id:
+        out["plan_step_id"] = step_id
+    if plan_warning:
+        out["plan_warning"] = plan_warning
+    return json.dumps(out)
+
+
+def _tool_create_plan(project_id: str, goal: str,
+                      steps: List[Dict[str, Any]]) -> str:
+    """Create + persist a multi-step plan."""
+    try:
+        from openjarvis.tools import agent_plan
+    except Exception as exc:
+        return json.dumps({"ok": False, "error": f"agent_plan unavailable: {exc}"})
+    try:
+        plan_path = agent_plan.create_plan(
+            project_id=project_id, goal=goal, steps=steps,
+            created_by="tool_use.create_plan",
+        )
+    except agent_plan.PlanValidationError as exc:
+        return json.dumps({"ok": False, "error": str(exc)})
+    except Exception as exc:
+        logger.exception("create_plan failed")
+        return json.dumps({"ok": False, "error": str(exc)})
+
+    nxt = agent_plan.next_pending_step(project_id)
+    return json.dumps({
+        "ok": True,
+        "project_id": project_id,
+        "plan_path": str(plan_path),
+        "step_count": len(steps),
+        "next_step": (
+            {"id": nxt["id"], "agent": nxt["agent"], "title": nxt["title"],
+             "prompt": nxt["prompt"]}
+            if nxt else None
+        ),
+        "hint": (
+            "Now call dispatch_agent for next_step.id, passing "
+            "plan_step_id=next_step.id, project_id=project_id, and the "
+            "step's prompt as the dispatch prompt."
+            if nxt else "plan has no runnable steps"
+        ),
+    })
+
+
+def _tool_get_plan(project_id: str) -> str:
+    """Read the current plan + summary."""
+    try:
+        from openjarvis.tools import agent_plan
+    except Exception as exc:
+        return json.dumps({"ok": False, "error": f"agent_plan unavailable: {exc}"})
+    plan = agent_plan.get_plan(project_id)
+    if plan is None:
+        return json.dumps({
+            "ok": False,
+            "reason": f"no plan for project {project_id!r}",
+        })
+    nxt = agent_plan.next_pending_step(project_id)
+    summary = agent_plan.plan_summary(project_id)
+    return json.dumps({
+        "ok": True,
+        "project_id": project_id,
+        "summary": summary,
+        "status": plan.get("status"),
+        "goal": plan.get("goal"),
+        "steps": [
+            {"id": s.get("id"), "agent": s.get("agent"),
+             "title": s.get("title"), "status": s.get("status"),
+             "task_id": s.get("task_id"),
+             "depends_on": s.get("depends_on") or []}
+            for s in plan.get("steps") or []
+        ],
+        "next_step": (
+            {"id": nxt["id"], "agent": nxt["agent"],
+             "title": nxt["title"], "prompt": nxt["prompt"]}
+            if nxt else None
+        ),
+    })
+
+
+def _tool_advance_plan(project_id: str) -> str:
+    """Dispatch the next ready step of a saved plan."""
+    try:
+        from openjarvis.tools import agent_plan, agent_runner
+    except Exception as exc:
+        return json.dumps({"ok": False, "error": f"agent_plan unavailable: {exc}"})
+    plan = agent_plan.get_plan(project_id)
+    if plan is None:
+        return json.dumps({"ok": False, "dispatched": False,
+                           "reason": f"no plan for project {project_id!r}"})
+    nxt = agent_plan.next_pending_step(project_id)
+    if nxt is None:
+        return json.dumps({"ok": True, "dispatched": False,
+                           "reason": "no runnable steps (plan complete or blocked)"})
+    try:
+        task_id = agent_runner.add_task(
+            title=nxt.get("title", "")[:80],
+            agent_id=nxt["agent"],
+            prompt=nxt.get("prompt", ""),
+            project_id=project_id,
+            plan_step_id=nxt["id"],
+        )
+    except Exception as exc:
+        logger.exception("advance_plan dispatch failed")
+        return json.dumps({"ok": False, "dispatched": False, "error": str(exc)})
+    # Ensure the project's vault note exists for visibility
+    try:
+        _ensure_project_note(project_id, title=nxt.get("title", ""),
+                             task_id=task_id, agent=nxt["agent"],
+                             prompt=nxt.get("prompt", ""))
+    except Exception:
+        pass
+    return json.dumps({
+        "ok": True,
+        "dispatched": True,
+        "task_id": task_id,
+        "step_id": nxt["id"],
+        "agent": nxt["agent"],
     })
 
 
@@ -982,6 +1226,9 @@ _TOOL_DISPATCH = {
     "graph_path": _tool_graph_path,
     "graph_explain": _tool_graph_explain,
     "refresh_graph": _tool_graph_refresh,
+    "create_plan": _tool_create_plan,
+    "get_plan": _tool_get_plan,
+    "advance_plan": _tool_advance_plan,
 }
 
 
