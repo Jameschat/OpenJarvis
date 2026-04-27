@@ -621,6 +621,20 @@ def _tool_web_search(query: str, limit: int = 5) -> str:
     return json.dumps({"hits": hits})
 
 
+def _is_internal_ip(ip_str: str) -> bool:
+    """SSRF defence (audit 2026-04-26 H3): block private / loopback /
+    link-local / metadata IP ranges so a prompt-injected fetch_url can't
+    pivot to internal services (e.g. 127.0.0.1:7710 Jarvis brain,
+    169.254.169.254 cloud metadata, RFC1918 LAN devices)."""
+    try:
+        import ipaddress
+        ip = ipaddress.ip_address(ip_str)
+    except (ValueError, TypeError):
+        return False
+    return (ip.is_private or ip.is_loopback or ip.is_link_local
+            or ip.is_multicast or ip.is_reserved or ip.is_unspecified)
+
+
 def _tool_fetch_url(url: str, max_chars: int = 8000) -> str:
     try:
         import httpx
@@ -628,10 +642,55 @@ def _tool_fetch_url(url: str, max_chars: int = 8000) -> str:
         return json.dumps({"error": f"httpx unavailable: {exc}"})
     if not (url.startswith("http://") or url.startswith("https://")):
         return json.dumps({"error": "url must start with http:// or https://"})
+
+    # SSRF guard: resolve hostname and block internal IPs before connecting.
+    # Re-checked after each redirect via the event_hooks below.
+    try:
+        from urllib.parse import urlparse
+        import socket
+        host = urlparse(url).hostname or ""
+        if not host:
+            return json.dumps({"error": "no hostname in url"})
+        try:
+            resolved = socket.gethostbyname(host)
+        except OSError as exc:
+            return json.dumps({"error": f"dns resolution failed: {exc}"})
+        if _is_internal_ip(resolved):
+            return json.dumps({
+                "error": "fetch_url refused: target resolves to an internal IP "
+                         "(loopback / RFC1918 / link-local / metadata range). "
+                         "External URLs only."
+            })
+    except Exception as exc:
+        return json.dumps({"error": f"url validation failed: {exc}"})
+
+    def _redirect_guard(response):
+        """Re-validate redirected URLs so a public hostname can't 302 to
+        an internal one mid-request."""
+        loc = response.headers.get("location")
+        if not loc:
+            return
+        try:
+            from urllib.parse import urlparse, urljoin
+            new = urljoin(str(response.url), loc)
+            new_host = urlparse(new).hostname or ""
+            if not new_host:
+                raise ValueError("redirect with no hostname")
+            new_resolved = socket.gethostbyname(new_host)
+            if _is_internal_ip(new_resolved):
+                raise httpx.RequestError(
+                    f"redirect target {new_host} resolves to internal IP")
+        except httpx.RequestError:
+            raise
+        except Exception:
+            # Silent: let httpx handle weird redirects normally
+            pass
+
     cap = max(500, min(int(max_chars or 8000), 20000))
     try:
         with httpx.Client(timeout=15.0, follow_redirects=True,
-                          headers={"User-Agent": _USER_AGENT}) as client:
+                          headers={"User-Agent": _USER_AGENT},
+                          event_hooks={"response": [_redirect_guard]}) as client:
             resp = client.get(url)
             resp.raise_for_status()
             ctype = (resp.headers.get("content-type") or "").lower()
