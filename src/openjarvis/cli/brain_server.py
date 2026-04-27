@@ -65,6 +65,19 @@ _PIN_SESSIONS: Dict[str, float] = {}  # token -> expires_at (unix seconds)
 _PIN_SESSIONS_LOCK = threading.Lock()
 _SESSION_TTL = 30 * 86400              # 30 days
 
+# Brute-force defence (audit 2026-04-26 C3): per-IP failed-attempt
+# tracker. Keys are stripped client IPs; values are
+# (failure_count, first_failure_ts). After _PIN_LOCK_THRESHOLD failures
+# within _PIN_LOCK_WINDOW_S, the IP is locked out for _PIN_LOCK_DURATION_S.
+_PIN_FAILS: Dict[str, "tuple[int, float, float]"] = {}  # ip -> (count, window_start, locked_until)
+_PIN_FAILS_LOCK = threading.Lock()
+_PIN_LOCK_THRESHOLD = 8                # failures within window → lockout
+_PIN_LOCK_WINDOW_S = 300               # 5 min sliding window
+_PIN_LOCK_DURATION_S = 1800            # 30 min lockout
+_PIN_FAIL_DELAY_BASE_S = 0.4           # base delay (existing behaviour)
+_PIN_FAIL_DELAY_MAX_S = 4.0            # caps additive backoff
+_PIN_MIN_LENGTH = 6                    # minimum PIN length enforced at startup
+
 
 def _public_pin() -> str:
     return os.environ.get("OPENJARVIS_PUBLIC_PIN", "").strip()
@@ -983,10 +996,69 @@ class _Handler(SimpleHTTPRequestHandler):
         if not pin:
             return self._json_response(503, {"ok": False,
                                               "error": "PIN not configured on server"})
-        # Constant-time comparison + small delay to deter brute force
-        time.sleep(0.4)
+
+        # Per-IP brute-force gate (audit 2026-04-26 C3). Use the
+        # Cf-Connecting-Ip header when present (Cloudflare tunnel
+        # forwards this), otherwise fall back to the TCP peer address.
+        # That way a brute-forcer who keeps hitting the public tunnel
+        # gets locked out at their real source IP, not at cloudflared's.
+        peer_ip = (self.headers.get("Cf-Connecting-Ip")
+                   or self.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+                   or (self.client_address[0] if self.client_address else "unknown"))
+        now = time.time()
+        with _PIN_FAILS_LOCK:
+            count, win_start, locked_until = _PIN_FAILS.get(peer_ip, (0, now, 0.0))
+            if locked_until > now:
+                # Already locked — return 429 + retry-after
+                retry = int(locked_until - now)
+                logger.warning("PIN brute-force lockout active for %s (%ds remain)",
+                               peer_ip, retry)
+                self.send_response(429)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Retry-After", str(retry))
+                body_bytes = json.dumps({
+                    "ok": False, "error": "too many failed attempts",
+                    "retry_after_s": retry,
+                }).encode("utf-8")
+                self.send_header("Content-Length", str(len(body_bytes)))
+                self.end_headers()
+                try: self.wfile.write(body_bytes)
+                except Exception: pass
+                return
+            # Slide the window
+            if now - win_start > _PIN_LOCK_WINDOW_S:
+                count = 0
+                win_start = now
+
+        # Backoff delay grows with failure count (capped). Even
+        # one failure costs a base delay so the legitimate user
+        # doesn't notice but a parallel attacker still pays.
+        delay = min(_PIN_FAIL_DELAY_BASE_S * (count + 1), _PIN_FAIL_DELAY_MAX_S)
+        time.sleep(delay)
+
         if not hmac.compare_digest(submitted, pin):
+            with _PIN_FAILS_LOCK:
+                count, win_start, _ = _PIN_FAILS.get(peer_ip, (0, now, 0.0))
+                if now - win_start > _PIN_LOCK_WINDOW_S:
+                    count = 0
+                    win_start = now
+                count += 1
+                if count >= _PIN_LOCK_THRESHOLD:
+                    locked_until = now + _PIN_LOCK_DURATION_S
+                    logger.warning("PIN brute-force lockout for %s "
+                                   "(%d failures in %ds, locked %dm)",
+                                   peer_ip, count, _PIN_LOCK_WINDOW_S,
+                                   _PIN_LOCK_DURATION_S // 60)
+                    _PIN_FAILS[peer_ip] = (count, win_start, locked_until)
+                else:
+                    _PIN_FAILS[peer_ip] = (count, win_start, 0.0)
+                    logger.info("PIN failure for %s (%d/%d in window)",
+                                peer_ip, count, _PIN_LOCK_THRESHOLD)
             return self._json_response(401, {"ok": False, "error": "wrong PIN"})
+
+        # Success — clear any failure history for this IP
+        with _PIN_FAILS_LOCK:
+            _PIN_FAILS.pop(peer_ip, None)
         token = _make_session_token()
         # Build response with Set-Cookie. Only flag as ``Secure`` when the
         # client actually came over HTTPS — otherwise the browser silently
@@ -1538,6 +1610,28 @@ def start_brain_server(open_browser: bool = True) -> None:
     global _server_thread
     if _server_thread is not None:
         return  # already running
+
+    # Audit 2026-04-26 C3: minimum-PIN-length advisory at startup. We
+    # only WARN (don't refuse to boot) because a short PIN is still
+    # better than no PIN, and refusing to start would surprise the
+    # operator. Lockout (above) provides the actual brute-force
+    # defence; this warning prompts the operator to lengthen the PIN
+    # the next time they edit jarvis.bat.
+    pin = _public_pin()
+    if pin and len(pin) < _PIN_MIN_LENGTH:
+        logger.warning(
+            "OPENJARVIS_PUBLIC_PIN is only %d chars — recommend at least "
+            "%d for brute-force resistance over the public tunnel. "
+            "Lockout still protects you (8 wrong attempts/5min = 30min "
+            "ban) but a longer PIN raises the bar significantly.",
+            len(pin), _PIN_MIN_LENGTH,
+        )
+    elif not pin:
+        logger.warning(
+            "OPENJARVIS_PUBLIC_PIN is unset — every PIN-gated endpoint "
+            "is currently OPEN. This is fine for local dev but DO NOT "
+            "expose via Cloudflare tunnel without setting a PIN."
+        )
 
     def _run() -> None:
         # ThreadingHTTPServer: each request gets its own thread so long-lived
