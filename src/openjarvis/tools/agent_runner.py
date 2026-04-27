@@ -246,6 +246,18 @@ class Task:
     # code, etc). When None, the task gets a fresh isolated workspace at
     # ``RUNS_DIR/<task.id>/``.
     project_id: Optional[str] = None
+    # Verification loop fields (autonomy-improvement #1, 2026-04-27).
+    # All defaulted so existing state.json deserializes cleanly without
+    # migration. Behaviour is opt-in via OPENJARVIS_VERIFY_LOOP env var
+    # and only applies to dev-coding agents (backend-dev / frontend-dev /
+    # gpt-backend / gpt-frontend).
+    priority: int = 50              # lower = sooner; operator=20, verifier/retry=50
+    verified: bool = False
+    verifier_grade: Optional[str] = None     # 'pass' | 'needs-work' | 'fail' | 'error'
+    verifier_notes: str = ""
+    retry_count: int = 0
+    parent_task_id: Optional[str] = None     # set on retries: original task.id
+    verifier_for: Optional[str] = None       # set on the reviewer task: target task.id
 
 
 @dataclass
@@ -452,13 +464,20 @@ class _Registry:
     # ----- mutators -----
 
     def add_task(self, title: str, agent_id: str, prompt: str,
-                 project_id: Optional[str] = None) -> str:
+                 project_id: Optional[str] = None,
+                 *, priority: int = 50,
+                 parent_task_id: Optional[str] = None,
+                 verifier_for: Optional[str] = None,
+                 retry_count: int = 0) -> str:
         if agent_id not in self.stats:
             raise ValueError(f"unknown agent: {agent_id}")
         effective, swapped = self._maybe_swap_agent(agent_id)
         tid = "t_" + uuid.uuid4().hex[:10]
         task = Task(id=tid, title=title, agent_id=effective, prompt=prompt,
-                    project_id=project_id)
+                    project_id=project_id, priority=int(priority),
+                    parent_task_id=parent_task_id,
+                    verifier_for=verifier_for,
+                    retry_count=int(retry_count))
         with self._lock:
             self.tasks[tid] = task
             self._save_unlocked()
@@ -473,10 +492,12 @@ class _Registry:
         return tid
 
     def next_ready_task(self) -> Optional[Task]:
-        """Return the oldest todo task whose assigned agent is idle, or None."""
+        """Return the highest-priority todo task whose assigned agent is
+        idle, or None. Sort key: (priority, created_at). Lower priority
+        wins (operator=20 beats verifier=50 beats default=50)."""
         with self._lock:
             todos = [t for t in self.tasks.values() if t.status == "todo"]
-            todos.sort(key=lambda t: t.created_at)
+            todos.sort(key=lambda t: (getattr(t, "priority", 50), t.created_at))
             for t in todos:
                 if self.stats[t.agent_id].status == "idle":
                     return t
@@ -1673,16 +1694,27 @@ def stop_worker() -> None:
 
 
 def add_task(title: str, agent_id: str, prompt: Optional[str] = None,
-             project_id: Optional[str] = None) -> str:
+             project_id: Optional[str] = None,
+             *, priority: int = 50,
+             parent_task_id: Optional[str] = None,
+             verifier_for: Optional[str] = None,
+             retry_count: int = 0) -> str:
     """Queue a task. ``prompt`` defaults to ``title`` if not supplied.
 
     If ``project_id`` is set, the task shares a workspace at
     ``~/.openjarvis/agents/projects/<project_id>/`` with any other task
     using the same id. Use this when an architect-led team needs to pass
     files (PLAN.md, source code, test results) between agents.
+
+    Verification-loop fields (autonomy #1) are kw-only and default to
+    'normal task' values; existing callers don't need to change.
     """
     return _reg.add_task(title=title, agent_id=agent_id,
-                         prompt=prompt or title, project_id=project_id)
+                         prompt=prompt or title, project_id=project_id,
+                         priority=priority,
+                         parent_task_id=parent_task_id,
+                         verifier_for=verifier_for,
+                         retry_count=retry_count)
 
 
 def cancel_task(task_id: str) -> bool:
