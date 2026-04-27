@@ -483,7 +483,8 @@ class _Registry:
                  *, priority: int = 50,
                  parent_task_id: Optional[str] = None,
                  verifier_for: Optional[str] = None,
-                 retry_count: int = 0) -> str:
+                 retry_count: int = 0,
+                 plan_step_id: Optional[str] = None) -> str:
         if agent_id not in self.stats:
             raise ValueError(f"unknown agent: {agent_id}")
         effective, swapped = self._maybe_swap_agent(agent_id)
@@ -504,6 +505,20 @@ class _Registry:
         else:
             logger.info("agent_runner: queued %s for %s%s", tid, effective,
                         f" (project={project_id})" if project_id else "")
+
+        # Plan integration (autonomy #2b). If this dispatch fulfils a step
+        # of a saved plan, link the task -> step + mark the step as
+        # running. Best-effort wrapped — plan failures must NEVER prevent
+        # the task being queued.
+        if plan_step_id and project_id:
+            try:
+                from openjarvis.tools import agent_plan
+                agent_plan.link_task_to_step(tid, project_id, plan_step_id)
+                agent_plan.mark_step(project_id, plan_step_id,
+                                     status="running", task_id=tid)
+            except Exception:
+                logger.exception("agent_plan: link/mark on add_task failed (non-fatal)")
+
         return tid
 
     def next_ready_task(self) -> Optional[Task]:
@@ -531,6 +546,10 @@ class _Registry:
             self._save_unlocked()
 
     def mark_finished(self, task_id: str, exit_code: int, error: Optional[str] = None) -> None:
+        # Take a copy of fields needed for plan callback before we drop the
+        # lock. Plan-callback runs OUTSIDE the lock so it can take the
+        # plan's own lock without nested-lock deadlock risk.
+        plan_callback: Optional[Tuple[str, str, int]] = None  # (project_id, step_id, exit_code)
         with self._lock:
             t = self.tasks[task_id]
             t.ended_at = time.time()
@@ -550,6 +569,25 @@ class _Registry:
             else:
                 s.tasks_failed += 1
             self._save_unlocked()
+            # Capture project_id while we still hold the lock
+            if t.project_id:
+                plan_callback = (t.project_id, task_id, exit_code)
+
+        # Plan integration (autonomy #2b). If this task was linked to a
+        # plan step, mark the step done/failed and persist deliverables.
+        # Best-effort, non-fatal.
+        if plan_callback is not None:
+            project_id, tid, ec = plan_callback
+            try:
+                from openjarvis.tools import agent_plan
+                step_link = agent_plan.step_for_task(tid)
+                if step_link:
+                    pid_link, sid = step_link
+                    new_status = "done" if (ec == 0 and error is None) else "failed"
+                    agent_plan.mark_step(pid_link, sid, status=new_status,
+                                         exit_code=ec)
+            except Exception:
+                logger.exception("agent_plan: mark_finished callback failed (non-fatal)")
 
     def record_failure_mode(self, agent_id: str, kind: str) -> None:
         """Bump a failure-mode counter on the agent's lifetime stats.
@@ -1911,7 +1949,8 @@ def add_task(title: str, agent_id: str, prompt: Optional[str] = None,
              *, priority: int = 50,
              parent_task_id: Optional[str] = None,
              verifier_for: Optional[str] = None,
-             retry_count: int = 0) -> str:
+             retry_count: int = 0,
+             plan_step_id: Optional[str] = None) -> str:
     """Queue a task. ``prompt`` defaults to ``title`` if not supplied.
 
     If ``project_id`` is set, the task shares a workspace at
@@ -1921,13 +1960,35 @@ def add_task(title: str, agent_id: str, prompt: Optional[str] = None,
 
     Verification-loop fields (autonomy #1) are kw-only and default to
     'normal task' values; existing callers don't need to change.
+
+    plan_step_id (autonomy #2): if this dispatch fulfils a step from a
+    saved plan (created via agent_plan.create_plan), pass the step id
+    so completion auto-updates the plan and links the task back to it.
+    Requires project_id.
     """
     return _reg.add_task(title=title, agent_id=agent_id,
                          prompt=prompt or title, project_id=project_id,
                          priority=priority,
                          parent_task_id=parent_task_id,
                          verifier_for=verifier_for,
-                         retry_count=retry_count)
+                         retry_count=retry_count,
+                         plan_step_id=plan_step_id)
+
+
+def _bootstrap_plan_task_map() -> None:
+    """At startup, rebuild the in-process task_id -> step_id reverse
+    map from disk so post-restart task completions still update plan
+    state. Safe to call multiple times — it only adds, never removes."""
+    try:
+        from openjarvis.tools import agent_plan
+        agent_plan.rebuild_task_map_from_disk()
+    except Exception:
+        logger.exception("agent_plan: bootstrap rebuild failed (non-fatal)")
+
+
+# Run once when the module is imported (matches the timing of _reg = _Registry()
+# above which loads state.json on first import).
+_bootstrap_plan_task_map()
 
 
 def cancel_task(task_id: str) -> bool:
