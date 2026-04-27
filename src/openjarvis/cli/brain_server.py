@@ -63,7 +63,10 @@ import secrets
 
 _PIN_SESSIONS: Dict[str, float] = {}  # token -> expires_at (unix seconds)
 _PIN_SESSIONS_LOCK = threading.Lock()
-_SESSION_TTL = 30 * 86400              # 30 days
+# Audit 2026-04-26 M4: dropped from 30 days to 7 days to limit blast
+# radius if a cookie ever leaks (XSS, LAN sniff over plain HTTP, etc).
+# Operator pays the cost of one extra PIN entry per week.
+_SESSION_TTL = 7 * 86400               # 7 days
 
 # Brute-force defence (audit 2026-04-26 C3): per-IP failed-attempt
 # tracker. Keys are stripped client IPs; values are
