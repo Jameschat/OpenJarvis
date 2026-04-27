@@ -1140,6 +1140,37 @@ def _run_task(task: Task) -> None:
                     "When you finish, leave a one-paragraph HANDOFF.md (or append",
                     "to it) summarising what you did so the next agent has context.",
                 ]
+        # Test-driven discipline (autonomy-improvement #3, 2026-04-27).
+        # Dev-coding agents are biased toward write-test-first because that
+        # produces verifiable deliverables on disk. Excluded: architect /
+        # qa-engineer / code-reviewer / docs-writer / content team — TDD
+        # doesn't fit their roles. The block is appended AFTER the OUTPUT
+        # FORMAT preamble so it sharpens (rather than replaces) the
+        # files-on-disk rule.
+        _DEV_AGENT_IDS = {"backend-dev", "frontend-dev",
+                          "gpt-backend", "gpt-frontend"}
+        if task.agent_id in _DEV_AGENT_IDS:
+            parts += [
+                "",
+                "TEST-DRIVEN DISCIPLINE (mandatory for dev tasks):",
+                "  1. WRITE THE TESTS FIRST. Create tests/ with one or more",
+                "     test files that specify the behaviour you'll implement.",
+                "     For Python use unittest or pytest; for JS/TS use the",
+                "     project's existing framework (vitest, jest, etc) or",
+                "     fall back to a Node-native node:test runner.",
+                "  2. THEN IMPLEMENT in src/ (or the language-appropriate",
+                "     location). Keep functions small and testable.",
+                "  3. RUN THE TESTS BEFORE YOU FINISH. Use Bash to invoke",
+                "     `python -m unittest discover tests` (or the equivalent).",
+                "     Iterate until they pass. If they can't pass (missing",
+                "     dependency you can't install, etc), say so explicitly",
+                "     in HANDOFF.md and leave the failure visible.",
+                "  4. Final deliverables MUST include: the tests you wrote,",
+                "     the implementation, and either passing test output OR",
+                "     a clear note in HANDOFF.md about why they don't pass.",
+                "Skip TDD only if the task is genuinely not code (e.g. design",
+                "doc, schema definition). State the skip reason in HANDOFF.md.",
+            ]
         parts += [
             "",
             f"You are operating as the {task.agent_id} agent ({role})",
