@@ -484,8 +484,17 @@ def _tool_dispatch_agent(agent: str, prompt: str, title: str,
         })
     pid = (project_id or "").strip().lower() or None
     if pid:
-        # Defensive — keep project ids filesystem-safe
+        # Defensive — keep project ids filesystem-safe.
+        # Audit (M2-RCE) found ".." survives this regex (only "-_" are
+        # stripped at the ends); a literal ".." pid would resolve to
+        # PROJECTS_DIR/.. = the agents-root parent, letting the spawned
+        # agent run in / write to a non-project location. Final guard
+        # rejects pure-dot ids and overlong values.
         pid = re.sub(r"[^a-z0-9._-]+", "-", pid).strip("-") or None
+        if pid in ("", ".", "..") or set(pid) == {"."}:
+            pid = None
+        elif len(pid) > 60:
+            pid = pid[:60].strip("-") or None
     task_id = agent_runner.add_task(title=title[:80], agent_id=agent,
                                     prompt=prompt, project_id=pid)
     # Vault: ensure every project has a home note. Future sessions can
