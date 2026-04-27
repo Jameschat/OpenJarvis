@@ -186,4 +186,20 @@ try:
 except ImportError:
     pass
 
+# Browser tools (Playwright-backed). Auto-importing here registers them in
+# ToolRegistry so agent_runner-dispatched agents can use them. Explicitly
+# excluded from the conversational tool_use.py whitelist — see the comment
+# block around _AGNO_TOOL_WHITELIST — so the live LLM brain still cannot
+# pick them autonomously mid-conversation. Side-effecting use only via
+# explicit "spin up a browser_pilot to..." agent dispatch.
+try:
+    import openjarvis.tools.browser  # noqa: F401
+except ImportError:
+    pass
+
+try:
+    import openjarvis.tools.browser_axtree  # noqa: F401
+except ImportError:
+    pass
+
 __all__ = ["BaseTool", "ToolExecutor", "ToolSpec"]
