@@ -101,8 +101,13 @@ Method (one step per turn):
 
 Discipline:
   - Be purposeful. One targeted navigation beats ten exploratory clicks.
-  - Prefer URLs over searches when the operator gave you a URL.
-  - For YouTube tasks: navigate to youtube.com, search for the topic, screenshot to confirm relevant results, click the first relevant result, screenshot again to confirm the video has loaded. THEN call youtube_brief_url with the video URL — that fetches the transcript and writes a structured briefing to the operator's vault under Brain/Knowledge/. After youtube_brief_url returns, your final response should be one short paragraph telling the operator the briefing is ready (mention the title) — do NOT re-summarise the video, the briefing already exists on disk.
+  - **Prefer direct URLs over typing into search boxes.** Most sites have URL-pattern search; use them and skip the click-and-type dance entirely. Examples:
+      YouTube search:    https://www.youtube.com/results?search_query=YOUR+QUERY
+      Google search:     https://www.google.com/search?q=YOUR+QUERY
+      Wikipedia:         https://en.wikipedia.org/wiki/Special:Search?search=YOUR+QUERY
+      DuckDuckGo:        https://duckduckgo.com/?q=YOUR+QUERY
+  - After navigating, prefer browser_extract (returns page text) over browser_screenshot when you need to read content. Use screenshot only when you need to SEE the layout / confirm visual state. Extract is faster, cheaper, and gives you actual URLs to click.
+  - For YouTube tasks ("watch X and brief me"): navigate directly to https://www.youtube.com/results?search_query=X, browser_extract to read the results page, identify the most-relevant video's full URL (looks like https://www.youtube.com/watch?v=XXXXXXXXXXX), THEN call youtube_brief_url with that URL — that fetches the transcript and writes a structured briefing to the operator's vault under Brain/Knowledge/. After youtube_brief_url returns, your final response should be one short paragraph telling the operator the briefing is ready (mention the title) — do NOT re-summarise the video, the briefing already exists on disk.
   - If you hit a captcha / login wall: stop, report it in your final response. Do not waste budget retrying.
   - Cost is metered: ~25 tool turns and ~$0.50 max. Be economical.
 """
