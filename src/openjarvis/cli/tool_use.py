@@ -241,6 +241,47 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "dispatch_browser_pilot",
+            "description": (
+                "Spawn an autonomous browser-pilot agent on a goal that "
+                "needs real web browsing — gpt-4o vision drives a headless "
+                "Chromium session via Playwright, navigates, clicks, screen-"
+                "shots, extracts text, and (for YouTube goals) fetches a "
+                "transcript and writes a structured briefing to "
+                "Brain/Knowledge/. Use this for: 'watch X on YouTube and "
+                "brief me', 'find a video about Y and summarise it', 'look "
+                "up Z online and tell me what's there', 'browse to <url> "
+                "and ...'. Does NOT need follow-up — the operator gets the "
+                "briefing in their vault asynchronously. Cost-capped at "
+                "~$0.50/run; typical cost is $0.05-0.15. Prefer this over "
+                "dispatch_agent for any task that needs to actually look "
+                "at a real web page."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "goal": {
+                        "type": "string",
+                        "description": (
+                            "Natural-language goal for the pilot. Be specific "
+                            "about what page / video / topic, and what the "
+                            "operator wants out of it. e.g. 'Watch a 5-10 "
+                            "minute video about personal branding on YouTube "
+                            "and write a structured briefing to my vault.'"
+                        ),
+                    },
+                    "title": {
+                        "type": "string",
+                        "description": "Short label (~60 chars) for the task in the HUD.",
+                    },
+                },
+                "required": ["goal", "title"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "create_plan",
             "description": (
                 "Persist a multi-step execution plan for a project so future turns "
@@ -638,6 +679,38 @@ def _tool_dispatch_agent(agent: str, prompt: str, title: str,
     if plan_warning:
         out["plan_warning"] = plan_warning
     return json.dumps(out)
+
+
+def _tool_dispatch_browser_pilot(goal: str, title: str) -> str:
+    """Spawn the browser-pilot agent on a goal. Thin wrapper around
+    add_task — exists as a dedicated tool (not just dispatch_agent with
+    agent='browser-pilot') so the conversational LLM has a clearer
+    signal that THIS is what to reach for on browse-y intents."""
+    from openjarvis.tools import agent_runner
+    g = (goal or "").strip()
+    if len(g) < 6:
+        return json.dumps({"ok": False, "error": "goal too short"})
+    t = (title or g)[:80]
+    try:
+        task_id = agent_runner.add_task(
+            title=t,
+            agent_id="browser-pilot",
+            prompt=g,
+            priority=20,   # operator-spoken intent priority
+        )
+    except Exception as exc:
+        logger.exception("dispatch_browser_pilot failed")
+        return json.dumps({"ok": False, "error": f"dispatch failed: {exc}"})
+    return json.dumps({
+        "ok": True,
+        "task_id": task_id,
+        "agent": "browser-pilot",
+        "note": (
+            "Browser pilot is now running in the background. Briefing will "
+            "land in Brain/Knowledge/ when complete. Operator does not need "
+            "to wait."
+        ),
+    })
 
 
 def _tool_create_plan(project_id: str, goal: str,
@@ -1218,6 +1291,7 @@ _TOOL_DISPATCH = {
     "remember_fact": _tool_remember_fact,
     "list_agents": _tool_list_agents,
     "dispatch_agent": _tool_dispatch_agent,
+    "dispatch_browser_pilot": _tool_dispatch_browser_pilot,
     "web_search": _tool_web_search,
     "github_search": _tool_github_search,
     "hackernews_search": _tool_hackernews_search,

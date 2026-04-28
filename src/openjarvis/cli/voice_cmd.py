@@ -1324,6 +1324,17 @@ def voice(
         except Exception:
             pass
 
+        # Browser pilot — "watch X on YouTube", "look up Y online", "browse to Z".
+        # Sits before team-task so research intents brief instead of spawning
+        # a coding team. Mirrors the wiring in process_voice_command above.
+        try:
+            from openjarvis.tools.browser_pilot import _try_browse
+            r = _try_browse(text)
+            if r:
+                return r
+        except Exception:
+            pass
+
         # Team task — must run before single-agent claude_code so "build me a project"
         # routes to the agent_runner team rather than a one-shot.
         try:
@@ -1456,6 +1467,25 @@ def voice(
                 return
         except Exception:
             logger.exception("content fast-path failed")
+
+        # --- Fast-path: browser pilot ("watch X on YouTube", "look up Y online") ---
+        # Routes "watch / browse / search the web" intents to the in-process
+        # browser-pilot agent (gpt-4o vision driving Playwright). Sits BEFORE
+        # team-task because phrases like "search the web for X" should brief,
+        # not spawn a coding team.
+        try:
+            from openjarvis.tools.browser_pilot import _try_browse
+            browse_result = _try_browse(text)
+            if browse_result:
+                console.print(f"[cyan]J.A.R.V.I.S.>[/cyan] {browse_result}")
+                if tts_backend:
+                    _speak_response(browse_result, tts_backend, config, ui, console)
+                elif ui:
+                    from openjarvis.cli.jarvis_ui import JarvisState
+                    ui.set_state(JarvisState.IDLE)
+                return
+        except Exception:
+            logger.exception("browser-pilot fast-path failed")
 
         # --- Fast-path: team task ("spin up a team", "have the agents build X") ---
         # Routes straight to the in-process agent_runner, dispatching to the

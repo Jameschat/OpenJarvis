@@ -39,6 +39,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -377,3 +378,75 @@ def run_task(task) -> Dict[str, Any]:
         "final_text": last_text,
         "result_path": str(result_md),
     }
+
+
+# ---------------------------------------------------------------------------
+# Voice fast-path — detect browser-pilot intent and enqueue a task
+# ---------------------------------------------------------------------------
+#
+# Wired into cli/voice_cmd.py the same way _try_team_task is. Returns a
+# spoken acknowledgment string when an intent is matched, None otherwise.
+# Patterns are deliberately conservative — phrases that could be a vault
+# recall ("what do you know about X", "remind me about X") fall through.
+
+_BROWSE_TRIGGER_PATTERNS = [
+    # YouTube / video phrasings
+    re.compile(r"\bwatch\b[^.?!]*\b(on\s+youtube|youtube\s+video|video\s+on)\b", re.I),
+    re.compile(r"\bwatch\b\s+(a|some|me\s+a|me\s+some)\s+video\b", re.I),
+    re.compile(r"\bfind\b\s+(a|me\s+a|some|me\s+some)\s+video[s]?\b\s+(about|on|of)\b", re.I),
+    re.compile(r"\bsummari[sz]e\b\s+(this|that|the)\s+video\b", re.I),
+    # Online research phrasings
+    re.compile(r"\blook\b\s+(up|into)\b[^.?!]*\b(online|on\s+the\s+web|on\s+youtube|on\s+google)\b", re.I),
+    re.compile(r"\bsearch\b\s+(the\s+web|online|youtube|google)\b", re.I),
+    re.compile(r"\bgo\s+find\b[^.?!]*\b(online|on\s+the\s+web)\b", re.I),
+    # Direct browse phrasings
+    re.compile(r"\bbrowse\s+to\b", re.I),
+    re.compile(r"\bgo\s+to\s+(https?://|www\.|youtube\.com\b)", re.I),
+    re.compile(r"\bopen\s+(up\s+)?(youtube|the\s+browser|chromium|chrome)\b[^.?!]*\b(and|then)\b", re.I),
+    # Brief-me phrasings paired with a video / URL signal
+    re.compile(r"\bbrief\s+me\s+(on|about)\b[^.?!]*\b(video|youtube|article|page|url)\b", re.I),
+]
+
+
+def _try_browse(text: str) -> Optional[str]:
+    """Voice fast-path detector. If the operator said something that
+    clearly wants a browser-pilot dispatch ("watch X on YouTube and
+    brief me", "look up Y online", "browse to Z"), enqueue a task on
+    the browser-pilot agent and return a spoken acknowledgment.
+
+    Returns None when no trigger matches — the caller falls through to
+    the next fast-path or the LLM.
+    """
+    if not text:
+        return None
+    t = text.strip()
+    if len(t) < 6:
+        return None
+    if not any(p.search(t) for p in _BROWSE_TRIGGER_PATTERNS):
+        return None
+
+    try:
+        from openjarvis.tools.agent_runner import add_task
+    except Exception:
+        logger.exception("browser_pilot fast-path: agent_runner import failed")
+        return None
+
+    title = t if len(t) <= 70 else t[:67] + "..."
+    try:
+        add_task(
+            title=title,
+            agent_id="browser-pilot",
+            prompt=t,
+            priority=20,   # operator-spoken intent — same priority as voice tasks
+        )
+    except Exception:
+        logger.exception("browser_pilot fast-path: dispatch failed")
+        return (
+            "I tried to spin up the browser pilot, sir, but the dispatch "
+            "failed. Check the logs."
+        )
+
+    return (
+        "On it, sir. The browser pilot is investigating now — I'll write "
+        "the briefing to your vault when it's done."
+    )
