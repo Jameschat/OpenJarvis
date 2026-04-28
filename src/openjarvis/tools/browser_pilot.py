@@ -82,6 +82,10 @@ _BROWSER_TOOL_NAMES = (
     "browser_type",
     "browser_screenshot",
     "browser_extract",
+    # Briefing helper — transcript fetch + structured summary written to vault.
+    # Listed alongside the browser_* tools so the pilot can reach for it
+    # naturally on "watch X and brief me" goals.
+    "youtube_brief_url",
 )
 
 _SYSTEM_PROMPT = """You are JARVIS Browser Pilot — an autonomous web-browsing agent driving a real Chromium instance via the browser_* tools.
@@ -98,7 +102,7 @@ Method (one step per turn):
 Discipline:
   - Be purposeful. One targeted navigation beats ten exploratory clicks.
   - Prefer URLs over searches when the operator gave you a URL.
-  - For YouTube tasks: navigate to youtube.com, search for the topic, screenshot to confirm relevant results, click the first relevant result, screenshot again to confirm playback. Note the title and URL in your final briefing — the surrounding system handles transcript extraction separately.
+  - For YouTube tasks: navigate to youtube.com, search for the topic, screenshot to confirm relevant results, click the first relevant result, screenshot again to confirm the video has loaded. THEN call youtube_brief_url with the video URL — that fetches the transcript and writes a structured briefing to the operator's vault under Brain/Knowledge/. After youtube_brief_url returns, your final response should be one short paragraph telling the operator the briefing is ready (mention the title) — do NOT re-summarise the video, the briefing already exists on disk.
   - If you hit a captcha / login wall: stop, report it in your final response. Do not waste budget retrying.
   - Cost is metered: ~25 tool turns and ~$0.50 max. Be economical.
 """

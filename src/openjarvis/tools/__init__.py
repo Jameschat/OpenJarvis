@@ -202,4 +202,13 @@ try:
 except ImportError:
     pass
 
+# YouTube briefing tool — fetches a transcript via youtube-transcript-api
+# and writes a structured briefing to Brain/Knowledge/. Used by the
+# browser-pilot agent for "watch this video and brief me" tasks.
+# Excluded from the conversational tool whitelist same as browser_*.
+try:
+    import openjarvis.tools.youtube_brief  # noqa: F401
+except ImportError:
+    pass
+
 __all__ = ["BaseTool", "ToolExecutor", "ToolSpec"]
