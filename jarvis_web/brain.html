@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no, interactive-widget=resizes-content">
 <title>J.A.R.V.I.S. — Mission Control</title>
 
 <!-- PWA / iOS app shell -->
@@ -1737,11 +1737,14 @@ canvas { display: block; }
 
   /* Brain canvas stays full-bleed (and is shifted to the upper third of the
      viewport via JS — see resize()) so the agent list can flow naturally
-     below it without forcing the user to scroll past empty space. */
+     below it without forcing the user to scroll past empty space.
+     Bottom margin = clearance for composer (~58 tall) + toggle row (52)
+     + safe area + breathing room ≈ 200 → 290px so cards never underlap
+     the composer or the bottom button row. */
   #agent-layer {
     position: relative;
     inset: auto;
-    margin: 50vh 12px 200px 12px;
+    margin: 50vh 12px 290px 12px;
     pointer-events: auto;
     z-index: 5;
     display: flex;
@@ -1756,34 +1759,80 @@ canvas { display: block; }
   }
   .agent-card:hover { width: 100% !important; }
 
-  /* Conversation overlay: smaller, narrower, higher contrast */
-  #conversation { top: calc(env(safe-area-inset-top, 0px) + 124px); width: 92vw; }
+  /* Conversation overlay: smaller, narrower, higher contrast.
+     env+132 chosen to clear the 32px ops banner + 78px hud-agg pill. */
+  #conversation { top: calc(env(safe-area-inset-top, 0px) + 132px); width: 92vw; }
   #transcript { font-size: 13px; }
   #response   { font-size: 14px; max-height: 22vh; }
 
   /* Task ticker — slim it down so it doesn't dominate */
-  #hud-tasks { bottom: 152px; left: 12px; right: 12px; max-width: none; }
+  #hud-tasks { bottom: 220px; left: 12px; right: 12px; max-width: none; }
   #hud-tasks .label { font-size: 9px; letter-spacing: 2px; }
 
-  /* Mic button — bigger thumb target, sits above the phone safe area */
-  #talk-wrap {
-    bottom: calc(env(safe-area-inset-bottom, 0px) + 18px);
-  }
-  #talk-btn { width: 88px; height: 88px; }
-  #talk-hint { font-size: 9px; letter-spacing: 3px; }
+  /* ---- BOTTOM CONTROL STACK on phones ----
+     iPhone real estate is tight. Layered bottom-up:
+       1) safe-area-inset
+       2) Toggle row at +14: [agents-toggle | talk-btn (centred) | menu-toggle]
+       3) Composer at +88: full-width text input above the toggle row.
+     Composer used to be width:86vw centred, which crashed into the right-
+     anchored toggles (~50px overlap). Going full-width-minus-12-gutter +
+     anchoring it ABOVE the toggle row eliminates the collision.        */
 
-  /* Menu becomes a bottom sheet style modal — not a side popover */
+  #composer-wrap {
+    left: 12px; right: 12px;
+    width: auto;
+    transform: none;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 88px);
+  }
+  #composer { box-shadow: 0 8px 28px rgba(0,0,0,0.45); }
+  #composer-input { font-size: 16px; }   /* >= 16 prevents iOS auto-zoom on focus */
+
+  /* Mic button shrinks from 88 -> 56 — composer is the primary input on
+     phones, talk-btn is a secondary push-to-talk option. Centred on the
+     toggle row. */
+  #talk-wrap {
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 14px);
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 7;
+  }
+  #talk-btn { width: 56px; height: 56px; font-size: 22px; }
+  #talk-hint { display: none; }   /* "HOLD SPACE" instructions don't apply */
+
+  /* Toggles flank the centred talk-btn at the same vertical level. */
   #menu-toggle {
-    bottom: calc(env(safe-area-inset-bottom, 0px) + 38px);
-    right: 14px; width: 48px; height: 48px;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 18px);
+    right: 14px; width: 44px; height: 44px;
+    z-index: 7;
   }
   #menu-panel {
     right: 12px; left: 12px;
     width: auto;
-    bottom: calc(env(safe-area-inset-bottom, 0px) + 96px);
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 76px);
     max-height: 55vh;
   }
   #menu-cmds { grid-template-columns: 1fr; }
+}
+
+/* The earlier @media (max-width:720px) #agents-toggle rule above set
+   right:76 to match the desktop hamburger gap. That value was correct
+   when both buttons were 48px. We've shrunk to 44px and tightened the
+   gap, so override here for consistency. Lives inside its own media
+   query block to make the override explicit and grep-able. */
+@media (max-width: 720px) {
+  #agents-toggle {
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 18px);
+    right: 70px;     /* menu (right:14, w:44) + 12px gap = 70px */
+    width: 44px; height: 44px;
+    z-index: 7;
+  }
+
+  /* Top-right HUD pill — was overlapping the ops banner in earlier rev.
+     Move it just below the 32px banner with a small gap. */
+  #hud-agg {
+    top: calc(env(safe-area-inset-top, 0px) + 44px);
+  }
+  #hud-agg .pill { font-size: 10.5px; padding: 5px 10px; }
 }
 
 /* Even smaller phones (e.g. iPhone SE 1st-gen) */
