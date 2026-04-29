@@ -4702,6 +4702,36 @@ async function handleTalkEnd() {
     return;
   }
 
+  // QUEUE PATH — current turn is in flight. Stash the audio blob and
+  // fire it later when _chatBusy clears. Voice and chat share the same
+  // queue + busy flag because they hit the same server lock.
+  if (_chatBusy) {
+    if (_chatQueue.length >= _CHAT_QUEUE_MAX) {
+      if (talkHint) talkHint.textContent =
+        'QUEUE FULL · max ' + _CHAT_QUEUE_MAX + ' messages';
+      setTimeout(() => { if (talkHint && talkHint.textContent.startsWith('QUEUE FULL'))
+        talkHint.textContent = ''; }, 2000);
+      resetTalkUI();
+      return;
+    }
+    _chatQueue.push({ type: 'voice', blob, mime });
+    _renderQueueBadge();
+    if (talkHint) talkHint.textContent = 'VOICE QUEUED';
+    setTimeout(() => { if (talkHint && talkHint.textContent === 'VOICE QUEUED')
+      talkHint.textContent = ''; }, 1500);
+    resetTalkUI();
+    return;
+  }
+
+  await _postVoiceTurn(blob, mime);
+}
+
+async function _postVoiceTurn(blob, mime) {
+  _chatBusy = true;
+  state = 'thinking';
+  talkBtn.classList.add('processing');
+  talkHint.textContent = 'PROCESSING…';
+
   // 60s hard timeout so a hung server can't freeze the UI forever
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort('client-timeout'), 60000);
@@ -4785,6 +4815,10 @@ async function handleTalkEnd() {
     responseEl.textContent = 'Voice error: ' + msg;
     responseEl.classList.add('visible');
     resetTalkUI('ERROR \u2014 TAP TO RETRY');
+  } finally {
+    _chatBusy = false;
+    _renderQueueBadge();
+    if (_chatQueue.length > 0) _drainQueue();
   }
 }
 
@@ -4945,14 +4979,22 @@ async function _drainQueue() {
   if (_chatBusy || _chatQueue.length === 0) return;
   const next = _chatQueue.shift();
   _renderQueueBadge();
-  // Restore the queued message into the composer state so sendChat
-  // can pick it up via the same path. Set the input + attachments,
-  // then call sendChat which clears them again.
+
+  if (next.type === 'voice') {
+    // Voice item — already-recorded blob. Fire through the same
+    // /voice_turn path as a fresh recording would.
+    await new Promise(r => requestAnimationFrame(r));
+    _postVoiceTurn(next.blob, next.mime);
+    return;
+  }
+
+  // Chat item — restore composer state so sendChat picks it up via
+  // the same path a manual submit takes. Then call sendChat which
+  // clears the composer again.
   composerInp.value = next.text || '';
   composerAttachments = next.files || [];
   renderAttachments();
   autoGrow();
-  // Yield a frame so the composer visually updates before we fire
   await new Promise(r => requestAnimationFrame(r));
   sendChat();
 }
@@ -4972,7 +5014,7 @@ async function sendChat() {
         talkHint.textContent = ''; }, 2000);
       return;
     }
-    _chatQueue.push({ text, files: composerAttachments.slice() });
+    _chatQueue.push({ type: 'chat', text, files: composerAttachments.slice() });
     composerInp.value = '';
     composerAttachments = [];
     renderAttachments();
