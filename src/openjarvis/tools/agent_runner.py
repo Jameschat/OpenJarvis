@@ -234,6 +234,219 @@ DEFAULT_AGENTS: List[Dict[str, Any]] = [
         "color": "#c0a3ff",   # lilac
         "provider": "codex",
     },
+    # ---- Department heads (agency-agents integration, 2026-04-28) -------
+    # Each head is a Claude-provider coordinator that orchestrates the
+    # specialised subagents installed at ~/.claude/agents/ from the
+    # msitarzewski/agency-agents library (115 personas). The heads use
+    # Claude Code's native Task tool to dispatch work to specialists,
+    # collect their outputs, and integrate into a final deliverable.
+    # Pattern: operator → voice fast-path → department head → Task-dispatch
+    # 1..N specialists in parallel → head synthesises → writes to workspace.
+    {
+        "id": "engineering-head",
+        "name": "engineering-head",
+        "role": (
+            "You are Head of Engineering for J.A.R.V.I.S. Coordinate your "
+            "team of 29 engineering specialists (frontend-developer, backend-architect, "
+            "ai-engineer, devops-automator, mobile-app-builder, rapid-prototyper, "
+            "senior-developer, security-engineer, embedded-firmware-engineer, "
+            "incident-response-commander, solidity-smart-contract-engineer, "
+            "code-reviewer, database-optimizer, git-workflow-master, software-architect, "
+            "sre, data-engineer, technical-writer, threat-detection-engineer, "
+            "cms-developer, codebase-onboarding-engineer, autonomous-optimization-architect, "
+            "ai-data-remediation-engineer, email-intelligence-engineer, "
+            "voice-ai-integration-engineer, filament-optimization-specialist, "
+            "feishu-integration-developer, wechat-mini-program-developer) installed at "
+            "~/.claude/agents/. METHOD: read the request → identify which 1-N specialists "
+            "to dispatch → use the Task tool to delegate (parallel when possible) → "
+            "synthesise their outputs into a single integrated deliverable → write to "
+            "the project workspace as code/PLAN.md/HANDOFF.md. ANTI-PATTERNS: doing "
+            "specialist work yourself, sequential dispatch when parallel works, "
+            "skipping the synthesis step. You're the conductor, not a soloist."
+        ),
+        "model": _CLAUDE_MODEL or _ARCHITECT_MODEL,
+        "skills": ["coordinate", "engineering", "delegate"],
+        "color": "#4a7fff",   # dark electric blue
+        "provider": "claude",
+    },
+    {
+        "id": "design-head",
+        "name": "design-head",
+        "role": (
+            "You are Head of Design for J.A.R.V.I.S. Coordinate your team of 8 design "
+            "specialists (ui-designer, ux-researcher, ux-architect, brand-guardian, "
+            "visual-storyteller, whimsy-injector, image-prompt-engineer, "
+            "inclusive-visuals-specialist) installed at ~/.claude/agents/. Use the "
+            "Task tool to dispatch the right specialist(s) per request, collect their "
+            "deliverables, and synthesise into a unified design output. Don't draw / "
+            "research / write copy yourself — delegate to specialists, integrate, ship."
+        ),
+        "model": _CLAUDE_MODEL or _ARCHITECT_MODEL,
+        "skills": ["coordinate", "design", "delegate"],
+        "color": "#ff5e9c",   # hot pink
+        "provider": "claude",
+    },
+    {
+        "id": "marketing-head",
+        "name": "marketing-head",
+        "role": (
+            "You are Head of Marketing for J.A.R.V.I.S. Coordinate your team of 16 "
+            "marketing specialists (tiktok-strategist, instagram-curator, "
+            "linkedin-content-creator, twitter-engager, reddit-community-builder, "
+            "seo-specialist, ai-citation-strategist, agentic-search-optimizer, "
+            "growth-hacker, content-creator, social-media-strategist, "
+            "podcast-strategist, app-store-optimizer, carousel-growth-engine, "
+            "video-optimization-specialist, short-video-editing-coach) installed at "
+            "~/.claude/agents/. METHOD: read request → identify the 1-N specialists "
+            "whose channel/skill matches → Task-dispatch in parallel → integrate "
+            "outputs into a coherent campaign brief / content set / strategy doc. "
+            "Operator's primary niche is build-in-public AI content for TikTok / "
+            "YouTube Shorts / Instagram Reels — bias toward those channels unless "
+            "the request explicitly targets others."
+        ),
+        "model": _CLAUDE_MODEL or _ARCHITECT_MODEL,
+        "skills": ["coordinate", "marketing", "delegate"],
+        "color": "#ff9c4a",   # marketing orange
+        "provider": "claude",
+    },
+    {
+        "id": "product-head",
+        "name": "product-head",
+        "role": (
+            "You are Head of Product for J.A.R.V.I.S. Coordinate your team of 5 "
+            "product specialists (product-manager, sprint-prioritizer, "
+            "trend-researcher, feedback-synthesizer, behavioral-nudge-engine) "
+            "installed at ~/.claude/agents/. Use the Task tool to delegate specific "
+            "product work — feature triage, sprint planning, user-feedback analysis, "
+            "engagement nudges. Synthesise into product decisions, ranked backlogs, "
+            "or research summaries."
+        ),
+        "model": _CLAUDE_MODEL or _ARCHITECT_MODEL,
+        "skills": ["coordinate", "product", "delegate"],
+        "color": "#7ac8ff",   # sky blue
+        "provider": "claude",
+    },
+    {
+        "id": "pm-head",
+        "name": "pm-head",
+        "role": (
+            "You are Head of Project Management for J.A.R.V.I.S. — the Studio "
+            "Producer. Coordinate your team of 6 PM specialists (studio-producer, "
+            "project-shepherd, studio-operations, experiment-tracker, "
+            "senior-project-manager, jira-workflow-steward) installed at "
+            "~/.claude/agents/. Your job is keeping multi-team projects on rails: "
+            "scope, schedule, dependencies, ceremony cadence, retros. Use Task to "
+            "dispatch the right specialist per request. Don't run sprints yourself — "
+            "delegate to specialists, integrate, deliver schedules / status reports / "
+            "risk registers."
+        ),
+        "model": _CLAUDE_MODEL or _ARCHITECT_MODEL,
+        "skills": ["coordinate", "pm", "delegate"],
+        "color": "#ffd86b",   # warm gold
+        "provider": "claude",
+    },
+    {
+        "id": "testing-head",
+        "name": "testing-head",
+        "role": (
+            "You are Head of Testing & QA for J.A.R.V.I.S. Coordinate your team of 8 "
+            "testing specialists (evidence-collector, reality-checker, "
+            "test-results-analyzer, performance-benchmarker, api-tester, "
+            "tool-evaluator, workflow-optimizer, accessibility-auditor) installed at "
+            "~/.claude/agents/. Use Task to dispatch the right specialist(s) per "
+            "request. Synthesise into test plans, evidence bundles, performance "
+            "reports, or accessibility audits. This complements the existing in-team "
+            "qa-engineer / gpt-tester roles — those stay focused on unit/integration "
+            "tests; you handle the broader QA spectrum (a11y, perf, evidence, real-"
+            "world checks)."
+        ),
+        "model": _CLAUDE_MODEL or _ARCHITECT_MODEL,
+        "skills": ["coordinate", "testing", "qa", "delegate"],
+        "color": "#ff7a4a",   # orange-red
+        "provider": "claude",
+    },
+    {
+        "id": "support-head",
+        "name": "support-head",
+        "role": (
+            "You are Head of Support & Operations for J.A.R.V.I.S. Coordinate your "
+            "team of 6 support specialists (support-responder, analytics-reporter, "
+            "finance-tracker, infrastructure-maintainer, legal-compliance-checker, "
+            "executive-summary-generator) installed at ~/.claude/agents/. Handle "
+            "operator support requests, generate analytics summaries, infrastructure "
+            "health checks, exec briefings. Use Task to dispatch specialists; "
+            "integrate into a single support-grade response."
+        ),
+        "model": _CLAUDE_MODEL or _ARCHITECT_MODEL,
+        "skills": ["coordinate", "support", "ops", "delegate"],
+        "color": "#5ee0c0",   # mint teal
+        "provider": "claude",
+    },
+    {
+        "id": "finance-head",
+        "name": "finance-head",
+        "role": (
+            "You are Head of Finance for J.A.R.V.I.S. Coordinate your team of 5 "
+            "finance specialists (bookkeeper-controller, financial-analyst, "
+            "fpa-analyst, investment-researcher, tax-strategist) installed at "
+            "~/.claude/agents/. Handle bookkeeping, financial analysis, FP&A, "
+            "investment research, tax strategy. Operator is in Jersey (Channel "
+            "Islands) UK — flag tax/regulatory specifics where relevant. Use Task "
+            "to delegate; integrate into financial reports / analyses / strategy "
+            "memos."
+        ),
+        "model": _CLAUDE_MODEL or _ARCHITECT_MODEL,
+        "skills": ["coordinate", "finance", "delegate"],
+        "color": "#5ea069",   # forest green
+        "provider": "claude",
+    },
+    {
+        "id": "gamedev-head",
+        "name": "gamedev-head",
+        "role": (
+            "You are Head of Game Development for J.A.R.V.I.S. Coordinate your team "
+            "of 20 game-dev specialists installed at ~/.claude/agents/: cross-engine "
+            "(game-designer, level-designer, narrative-designer, technical-artist, "
+            "game-audio-engineer), Unity (unity-architect, unity-shader-graph-artist, "
+            "unity-multiplayer-engineer, unity-editor-tool-developer), Unreal "
+            "(unreal-systems-engineer, unreal-technical-artist, "
+            "unreal-multiplayer-architect, unreal-world-builder), Godot "
+            "(godot-gameplay-scripter, godot-multiplayer-engineer, "
+            "godot-shader-developer), Blender (blender-addon-engineer), Roblox "
+            "(roblox-systems-scripter, roblox-experience-designer, "
+            "roblox-avatar-creator). Operator's CursedTides project uses Unreal "
+            "Engine — bias toward Unreal specialists for that. Use Task to delegate "
+            "by engine + discipline; synthesise into design docs, technical specs, "
+            "or implementation plans."
+        ),
+        "model": _CLAUDE_MODEL or _ARCHITECT_MODEL,
+        "skills": ["coordinate", "gamedev", "delegate"],
+        "color": "#9c4aff",   # deep purple
+        "provider": "claude",
+    },
+    {
+        "id": "ops-head",
+        "name": "ops-head",
+        "role": (
+            "You are Chief of Staff for J.A.R.V.I.S. — the cross-departmental "
+            "orchestrator and the highest-level coordinator after the architect. "
+            "You have access to 12 specialised support agents (agents-orchestrator, "
+            "mcp-builder, document-generator, workflow-architect, developer-advocate, "
+            "specialized-chief-of-staff, model-qa, compliance-auditor, "
+            "recruitment-specialist, automation-governance-architect, "
+            "customer-service, language-translator) installed at ~/.claude/agents/. "
+            "Use them for cross-cutting work — complex workflows, governance, "
+            "translation, recruiting briefs, MCP server design. You can ALSO "
+            "Task-dispatch other department heads (engineering-head, design-head, "
+            "marketing-head, etc.) for multi-department initiatives. Use this when "
+            "a request spans two or more departments and needs a single coordinator."
+        ),
+        "model": _CLAUDE_MODEL or _ARCHITECT_MODEL,
+        "skills": ["coordinate", "cross-functional", "orchestrate"],
+        "color": "#a0b0c8",   # cool steel
+        "provider": "claude",
+    },
+
     # ---- Autonomous browser pilot (in-process Python agent) -------------
     # Unlike the claude/codex CLI agents, this one runs inside the Jarvis
     # process so it can use the Python ToolRegistry's browser_* tools
@@ -2613,6 +2826,129 @@ def _try_team_task(text: str) -> Optional[str]:
         "The architect is drawing up a plan and will delegate to backend, frontend, "
         "QA, review, and docs as needed. You'll see them light up on mission control."
     )
+
+
+# ---------------------------------------------------------------------------
+# Department routing — agency-agents integration (2026-04-28)
+# ---------------------------------------------------------------------------
+#
+# Voice fast-path that recognises explicit departmental phrasing and routes
+# to the right department head. Each head then Task-dispatches its team of
+# specialists installed at ~/.claude/agents/ from the agency-agents library.
+#
+# Pattern matched: "marketing department, plan a TikTok campaign for X"
+#                  "marketing, draft three hooks about Y"
+#                  "ask engineering to wire up Z"
+#                  "design team, give me a logo brief for W"
+#                  "for cursed tides, plan the inventory system" (→ gamedev)
+#
+# Falls through to None if no department phrase recognised — caller continues
+# down the fast-path chain (browser-pilot, team-task, claude_code, etc.).
+#
+
+_DEPARTMENT_TRIGGERS: List[Tuple[Tuple[str, ...], str, str]] = [
+    # (keywords, head_id, friendly_name)
+    (("engineering",        ),                    "engineering-head", "engineering"),
+    (("design",             ),                    "design-head",      "design"),
+    (("marketing",          ),                    "marketing-head",   "marketing"),
+    (("product",            ),                    "product-head",     "product"),
+    (("project management", "pm department",
+      "project manager", "pm team"),              "pm-head",          "project management"),
+    (("testing", "qa department", "qa team",
+      "quality assurance"),                       "testing-head",     "testing & QA"),
+    (("support", "ops department", "ops team",
+      "operations"),                              "support-head",     "support"),
+    (("finance", "accounting"),                   "finance-head",     "finance"),
+    (("game dev", "game development", "gamedev",
+      "cursed tides", "cursedtides", "ue5",
+      "unreal engine"),                           "gamedev-head",     "game dev"),
+    (("chief of staff", "ops head",
+      "cross-functional", "cross departmental"),  "ops-head",         "ops"),
+]
+
+# Phrases that must precede a department keyword to count as a routing intent.
+# Catches "marketing, ..." / "ask engineering to ..." / "for marketing, ..."
+# — but NOT "tell me about marketing" or "what is engineering" which are
+# information requests rather than dispatches.
+_DEPARTMENT_LEAD_PATTERNS = (
+    r"^\s*(?:hey jarvis,?\s+)?",  # optional invocation
+    r"(?:ask|tell|get|have|let|put|brief|spin up)\s+(?:the\s+)?",
+    r"(?:to\s+)?(?:the\s+)?",
+    r"^\s*for\s+(?:the\s+)?",
+    r"^\s*(?:hey\s+)?",
+)
+
+
+def _try_department(text: str) -> Optional[str]:
+    """Voice fast-path for departmental dispatch. Returns spoken ack or None."""
+    if not text or not text.strip():
+        return None
+    import re
+    norm = text.lower().strip()
+
+    for keywords, head_id, friendly in _DEPARTMENT_TRIGGERS:
+        for kw in keywords:
+            # Word-boundary match so "marketing" doesn't match "supermarketing".
+            # Three legal shapes:
+            #   "marketing, ..."             — comma after dept
+            #   "marketing team ..."         — explicit "team" / "department"
+            #   "ask marketing to ..."       — verb + dept + to
+            patterns = [
+                rf"\b{re.escape(kw)}\b\s*[,:]",
+                rf"\b{re.escape(kw)}\b\s+(?:team|department|head|dept)\b",
+                rf"\b(?:ask|tell|get|have|let|put|brief)\s+(?:the\s+)?{re.escape(kw)}\b",
+                rf"^\s*for\s+(?:the\s+)?{re.escape(kw)}\b",
+            ]
+            if any(re.search(p, norm) for p in patterns):
+                # Strip the routing prefix so the dispatched task only sees
+                # the actual ask, not "marketing,". This keeps the head's
+                # prompt focused.
+                desc = re.sub(
+                    rf"^.*?\b{re.escape(kw)}\b[,:\s]*"
+                    rf"(?:team|department|head|dept)?[,:\s]*",
+                    "", text, count=1, flags=re.IGNORECASE,
+                ).strip(" ,.;:!?")
+                desc = desc or text  # fall back to full text if strip emptied it
+
+                title = (desc[:80] + ("…" if len(desc) > 80 else "")) or friendly
+                prompt = (
+                    f"DEPARTMENT BRIEF — {friendly.upper()}\n"
+                    f"========================================\n"
+                    f"The operator's request: {desc}\n\n"
+                    f"YOU ARE the {friendly} department head. Your role and the\n"
+                    f"specialists you command are described in your system prompt.\n"
+                    f"This is a single-shot non-interactive run — there is no second\n"
+                    f"turn, no clarifying questions accepted. Do all of this NOW in\n"
+                    f"the current working directory.\n\n"
+                    f"METHOD:\n"
+                    f"1. Identify which 1-N specialists in your department best fit "
+                    f"the request.\n"
+                    f"2. Use the Task tool to dispatch them. Spawn in PARALLEL when "
+                    f"possible (multiple Task calls in one turn). Each Task's "
+                    f"subagent_type should match a specialist filename at "
+                    f"~/.claude/agents/ (without the .md extension), or fall back "
+                    f"to subagent_type='general-purpose' with a precise prompt that "
+                    f"references the specialist's role.\n"
+                    f"3. Collect their outputs.\n"
+                    f"4. Synthesise into a single integrated deliverable. Write it "
+                    f"as DELIVERABLE.md (or a more specific name) in the workspace.\n"
+                    f"5. Briefly summarise in stdout what you built and which "
+                    f"specialists contributed.\n\n"
+                    f"ANTI-PATTERNS: doing specialist work yourself, sequential "
+                    f"dispatch when parallel works, lifting verbatim outputs without "
+                    f"integrating, skipping the synthesis step.\n\n"
+                    f"START NOW. Make sensible defaults. Be concise, no preamble."
+                )
+                add_task(
+                    title=f"{friendly}: {title}",
+                    agent_id=head_id,
+                    prompt=prompt,
+                )
+                return (
+                    f"Briefing the {friendly} team now, sir. "
+                    f"They'll dispatch the right specialists and report back."
+                )
+    return None
 
 
 def kick_off_content_pipeline(topic_hint: Optional[str] = None) -> Dict[str, str]:

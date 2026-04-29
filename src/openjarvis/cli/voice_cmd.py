@@ -1394,6 +1394,18 @@ def voice(
         except Exception:
             pass
 
+        # Department dispatch — "marketing, ..." / "ask engineering to ..." /
+        # "for cursed tides ..." → routes to the matching department head.
+        # Sits before team-task so departmental phrases don't get sucked
+        # into the generic team-build flow.
+        try:
+            from openjarvis.tools.agent_runner import _try_department
+            r = _try_department(text)
+            if r:
+                return r
+        except Exception:
+            pass
+
         # Team task — must run before single-agent claude_code so "build me a project"
         # routes to the agent_runner team rather than a one-shot.
         try:
