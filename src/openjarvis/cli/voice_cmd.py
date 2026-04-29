@@ -1026,6 +1026,46 @@ def _try_sonos(text: str, console: Console, ui=None) -> Optional[str]:
     return f"Sonos issue, sir: {error_content}"
 
 
+_CHAT_OPEN_PATTERNS = (
+    r"\bopen (?:the |my |our )?(?:chat|chat history|conversation|messages|chat widget)\b",
+    r"\bshow (?:me )?(?:the |my |our )?(?:chat|chat history|conversation|messages)\b",
+    r"\bbring up (?:the |my |our )?(?:chat|chat history|conversation|messages)\b",
+    r"\b(?:i want to|let me|can i) (?:see|read|view) (?:the |my |our )?(?:chat|chat history|conversation)\b",
+)
+_CHAT_CLOSE_PATTERNS = (
+    r"\bclose (?:the |my |our )?(?:chat|chat history|conversation|messages|chat widget)\b",
+    r"\bhide (?:the |my |our )?(?:chat|chat history|conversation|messages)\b",
+    r"\bdismiss (?:the |my |our )?(?:chat|chat history|conversation)\b",
+)
+
+
+def _try_chat_widget(text: str) -> Optional[str]:
+    """Voice fast-path for opening / closing the right-edge chat widget.
+    Emits an SSE toggle event the HUD listens for; returns the spoken
+    acknowledgment (or None to fall through to other fast-paths)."""
+    if not text:
+        return None
+    import re
+    norm = text.lower().strip()
+    for pat in _CHAT_OPEN_PATTERNS:
+        if re.search(pat, norm):
+            try:
+                from openjarvis.cli.brain_server import emit_chat_widget_toggle
+                emit_chat_widget_toggle("open")
+            except Exception:
+                pass
+            return "Chat history is open, sir."
+    for pat in _CHAT_CLOSE_PATTERNS:
+        if re.search(pat, norm):
+            try:
+                from openjarvis.cli.brain_server import emit_chat_widget_toggle
+                emit_chat_widget_toggle("close")
+            except Exception:
+                pass
+            return "Chat closed."
+    return None
+
+
 _JARVIS_PERSONA = """\
 You are J.A.R.V.I.S. (Just A Rather Very Intelligent System), a sophisticated \
 AI assistant inspired by the AI from Iron Man. You serve as a personal assistant \
@@ -1315,6 +1355,16 @@ def voice(
             except Exception:
                 pass
 
+        # Chat widget — "open/close the chat" (purely UI, runs before
+        # everything since it's the cheapest check and doesn't touch any
+        # downstream services). Emits an SSE event the HUD listens for.
+        try:
+            r = _try_chat_widget(text)
+            if r:
+                return r
+        except Exception:
+            pass
+
         # Brain — remember / recall / today's journal — runs before everything else
         try:
             from openjarvis.tools.obsidian_brain import _try_brain
@@ -1437,6 +1487,28 @@ def voice(
                 from openjarvis.cli.jarvis_ui import JarvisState
                 ui.set_state(JarvisState.IDLE)
             return
+
+        # --- Fast-path: chat widget open/close ---
+        # "open the chat" / "show me our conversation" / "close the chat"
+        # — emits an SSE event the HUD listens for to slide the right-edge
+        # chat panel in or out. Cheapest check, runs first.
+        try:
+            chat_result = _try_chat_widget(text)
+            if chat_result:
+                console.print(f"[cyan]J.A.R.V.I.S.>[/cyan] {chat_result}")
+                if tts_backend:
+                    _speak_response(chat_result, tts_backend, config, ui, console)
+                elif ui:
+                    from openjarvis.cli.jarvis_ui import JarvisState
+                    ui.set_state(JarvisState.IDLE)
+                try:
+                    from openjarvis.tools.obsidian_brain import log_voice_turn
+                    log_voice_turn(text, chat_result)
+                except Exception:
+                    pass
+                return
+        except Exception:
+            pass
 
         # --- Fast-path: Obsidian brain (remember / recall / today's journal) ---
         # MUST come before team-task and claude_code so phrases like "remember

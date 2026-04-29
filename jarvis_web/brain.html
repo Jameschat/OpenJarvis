@@ -210,6 +210,169 @@ canvas { display: block; }
   #ops-banner .ob-sub, #ops-banner .ob-clock { display: none; }
 }
 
+/* Chat-widget toggle button on the ops banner — sits left of the
+   status pill. Tappable inside the otherwise pointer-events:none banner
+   via its own pointer-events:auto. */
+#ops-banner .ob-chat-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 24px;
+  margin-right: 10px;
+  border: 1px solid rgba(94,224,255,0.32);
+  border-radius: 4px;
+  background: rgba(8,30,46,0.55);
+  color: rgba(180,220,240,0.78);
+  cursor: pointer;
+  pointer-events: auto;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+#ops-banner .ob-chat-btn:hover {
+  background: rgba(94,224,255,0.15);
+  color: #d8f5ff;
+  border-color: rgba(94,224,255,0.55);
+}
+#ops-banner .ob-chat-btn.active {
+  background: rgba(94,224,255,0.25);
+  color: #e8f7ff;
+  border-color: rgba(94,224,255,0.7);
+  box-shadow: 0 0 8px rgba(94,224,255,0.35);
+}
+#ops-banner .ob-chat-btn svg { width: 14px; height: 14px; pointer-events: none; }
+
+/* ================================================================
+   Right-edge chat widget — slide-out from right, full viewport height,
+   shows the operator <-> Jarvis exchange history. Voice-toggleable
+   via "open the chat" / "close the chat" fast-path; manual toggle
+   via the ob-chat-btn in the ops banner. Source of truth for the
+   message stream is the server's _chat_history bus broadcast over
+   /chat_events.
+================================================================ */
+#hud-chat {
+  position: fixed;
+  top: 38px;          /* clear the 38px ops banner */
+  right: 0; bottom: 0;
+  width: 380px;
+  display: flex; flex-direction: column;
+  background:
+    linear-gradient(180deg, rgba(10,18,32,0.92), rgba(6,12,22,0.92));
+  border-left: 1px solid rgba(94,224,255,0.30);
+  box-shadow:
+    -8px 0 32px rgba(0,0,0,0.45),
+    inset 1px 0 0 rgba(94,224,255,0.12);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  z-index: 9;
+  /* Slide-out animation: starts off-screen, slides in when .open */
+  transform: translateX(100%);
+  transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+}
+#hud-chat.open { transform: translateX(0); }
+
+#hud-chat .hc-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 14px;
+  font-family: 'Consolas','SF Mono','Menlo',monospace;
+  font-size: 11px;
+  letter-spacing: 1.6px;
+  text-transform: uppercase;
+  color: #c5f0ff;
+  border-bottom: 1px solid rgba(94,224,255,0.18);
+  flex-shrink: 0;
+}
+#hud-chat .hc-head .hc-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: #5ee0e0;
+  box-shadow: 0 0 6px rgba(94,224,224,0.7);
+}
+#hud-chat .hc-head .hc-spacer { flex: 1; }
+#hud-chat .hc-head .hc-meta {
+  font-size: 10px;
+  color: rgba(180,220,240,0.55);
+  letter-spacing: 1.2px;
+}
+#hud-chat .hc-head .hc-close {
+  background: transparent;
+  border: 1px solid rgba(94,224,255,0.28);
+  color: rgba(180,220,240,0.75);
+  width: 22px; height: 22px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 14px; line-height: 1;
+  padding: 0;
+  transition: background 0.15s, color 0.15s;
+}
+#hud-chat .hc-head .hc-close:hover {
+  background: rgba(94,224,255,0.18); color: #e8f7ff;
+}
+
+#hud-chat .hc-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px 12px 18px 12px;
+  display: flex; flex-direction: column; gap: 10px;
+  scroll-behavior: smooth;
+}
+#hud-chat .hc-list::-webkit-scrollbar { width: 6px; }
+#hud-chat .hc-list::-webkit-scrollbar-thumb {
+  background: rgba(94,224,255,0.22);
+  border-radius: 3px;
+}
+#hud-chat .hc-empty {
+  padding: 60px 14px;
+  text-align: center;
+  color: rgba(160,190,220,0.45);
+  font-size: 12px;
+  letter-spacing: 0.5px;
+  line-height: 1.6;
+}
+
+/* Bubbles */
+.hc-bubble {
+  max-width: 88%;
+  padding: 8px 11px 9px 11px;
+  border-radius: 12px;
+  font-size: 13px;
+  line-height: 1.42;
+  word-wrap: break-word;
+  white-space: pre-wrap;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  position: relative;
+}
+.hc-bubble.op {
+  align-self: flex-end;
+  background: linear-gradient(135deg, rgba(60,140,235,0.85), rgba(40,110,210,0.78));
+  color: #f0f7ff;
+  border-bottom-right-radius: 4px;
+}
+.hc-bubble.jv {
+  align-self: flex-start;
+  background: rgba(20,40,52,0.78);
+  border: 1px solid rgba(94,224,224,0.28);
+  color: #d8f0f5;
+  border-bottom-left-radius: 4px;
+}
+.hc-bubble .hc-time {
+  display: block;
+  margin-top: 3px;
+  font-size: 9.5px;
+  letter-spacing: 0.6px;
+  font-family: 'Consolas','SF Mono','Menlo',monospace;
+  color: rgba(220,235,250,0.4);
+}
+.hc-bubble.op .hc-time { text-align: right; }
+
+/* Mobile — chat widget becomes a full-screen overlay so it's actually
+   readable on phones (rather than a thin slice off the right). */
+@media (max-width: 720px) {
+  #hud-chat {
+    top: 32px;          /* matches the smaller mobile ops-banner height */
+    left: 0; right: 0;
+    width: auto;
+    border-left: none;
+  }
+  #hud-chat .hc-list { padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 18px); }
+  .hc-bubble { font-size: 14px; max-width: 92%; }
+}
+
 /* Hide the old centred title — its job moved into #ops-banner.
    Re-enable by removing this rule if the centred Iron-Man title is missed. */
 #title-wrap { display: none !important; }
@@ -1864,11 +2027,31 @@ canvas { display: block; }
   <span class="ob-sep">·</span>
   <span class="ob-sub">Operations Center</span>
   <span class="ob-spacer"></span>
+  <button class="ob-chat-btn" id="ob-chat-btn" type="button" title="Open chat history">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+         stroke-linecap="round" stroke-linejoin="round">
+      <path d="M21 11.5a8.5 8.5 0 0 1-12.4 7.6L3 21l1.9-5.6A8.5 8.5 0 1 1 21 11.5Z"/>
+    </svg>
+  </button>
   <span class="ob-status" id="ob-status" data-state="idle">
     <span class="ob-dot"></span>
     <span id="ob-status-text">READY</span>
   </span>
   <span class="ob-clock" id="ob-clock">--:--:--</span>
+</div>
+
+<!-- Right-edge chat widget — slide-out, voice or button toggleable -->
+<div id="hud-chat" aria-hidden="true">
+  <div class="hc-head">
+    <span class="hc-dot"></span>
+    CHAT HISTORY
+    <span class="hc-spacer"></span>
+    <span class="hc-meta" id="hc-count">0</span>
+    <button class="hc-close" id="hc-close" type="button" title="Close (or say 'close the chat')">×</button>
+  </div>
+  <div class="hc-list" id="hc-list">
+    <div class="hc-empty">— no exchanges yet —<br>Say something to Jarvis or<br>type in the composer below.</div>
+  </div>
 </div>
 <div id="title-wrap">
   <div id="title">J . A . R . V . I . S .</div>
@@ -5602,6 +5785,121 @@ function updateRegionLabels() {
   }
 }
 
+// =====================================================================
+// Chat widget — right-edge slide-out, shows operator <-> Jarvis history.
+// Source of truth = server's _chat_history (broadcast over /chat_events).
+// Voice fast-paths "open the chat" / "close the chat" emit toggle events
+// that this code listens for and applies to #hud-chat's .open class.
+// =====================================================================
+const elHudChat   = document.getElementById('hud-chat');
+const elHcList    = document.getElementById('hc-list');
+const elHcCount   = document.getElementById('hc-count');
+const elHcClose   = document.getElementById('hc-close');
+const elObChatBtn = document.getElementById('ob-chat-btn');
+let _hcSeeded = false;          // seed only once per session
+let _hcCount  = 0;
+
+function _hcFmtTime(ts) {
+  if (!ts) return '';
+  const d = new Date(ts * 1000);
+  const h = d.getHours().toString().padStart(2,'0');
+  const m = d.getMinutes().toString().padStart(2,'0');
+  return h + ':' + m;
+}
+function addChatBubble(role, content, ts) {
+  if (!elHcList) return;
+  // First real bubble — wipe the empty-state placeholder
+  if (elHcList.firstElementChild && elHcList.firstElementChild.classList.contains('hc-empty')) {
+    elHcList.innerHTML = '';
+  }
+  const b = document.createElement('div');
+  b.className = 'hc-bubble ' + (role === 'operator' ? 'op' : 'jv');
+  // Plain-text content with newline preservation; escapeHtml is the
+  // shared helper defined elsewhere in this file (line ~3345).
+  const safe = escapeHtml(content || '');
+  const time = _hcFmtTime(ts);
+  b.innerHTML = safe + (time ? '<span class="hc-time">' + time + '</span>' : '');
+  elHcList.appendChild(b);
+  _hcCount++;
+  if (elHcCount) elHcCount.textContent = String(_hcCount);
+  // Auto-scroll to the bottom only if the user is already near the bottom
+  // — keeps the scroll position stable when they're reading older history.
+  const nearBottom = (elHcList.scrollHeight - elHcList.scrollTop - elHcList.clientHeight) < 80;
+  if (nearBottom) {
+    requestAnimationFrame(() => { elHcList.scrollTop = elHcList.scrollHeight; });
+  }
+}
+async function seedChatHistory() {
+  if (_hcSeeded) return;
+  _hcSeeded = true;
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const host = params.get('host') || window.location.host || 'localhost:7710';
+    const proto = window.location.protocol === 'https:' ? 'https' : 'http';
+    const r = await fetch(`${proto}://${host}/chat_history`, { credentials: 'include' });
+    if (!r.ok) return;
+    const data = await r.json();
+    const msgs = (data && data.messages) || [];
+    elHcList.innerHTML = '';
+    _hcCount = 0;
+    if (msgs.length === 0) {
+      elHcList.innerHTML = '<div class="hc-empty">— no exchanges yet —<br>Say something to Jarvis or<br>type in the composer below.</div>';
+      if (elHcCount) elHcCount.textContent = '0';
+      return;
+    }
+    for (const m of msgs) {
+      addChatBubble(m.role, m.content, m.ts);
+    }
+    requestAnimationFrame(() => { elHcList.scrollTop = elHcList.scrollHeight; });
+  } catch (_) {}
+}
+function openChat() {
+  if (!elHudChat) return;
+  elHudChat.classList.add('open');
+  elHudChat.setAttribute('aria-hidden', 'false');
+  if (elObChatBtn) elObChatBtn.classList.add('active');
+  seedChatHistory();
+}
+function closeChat() {
+  if (!elHudChat) return;
+  elHudChat.classList.remove('open');
+  elHudChat.setAttribute('aria-hidden', 'true');
+  if (elObChatBtn) elObChatBtn.classList.remove('active');
+}
+function toggleChat() {
+  if (!elHudChat) return;
+  if (elHudChat.classList.contains('open')) closeChat(); else openChat();
+}
+if (elObChatBtn) elObChatBtn.addEventListener('click', toggleChat);
+if (elHcClose)   elHcClose.addEventListener('click', closeChat);
+// Esc key closes the chat — convenient on desktop
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && elHudChat && elHudChat.classList.contains('open')) {
+    closeChat();
+  }
+});
+
+function connectChatSSE() {
+  const params = new URLSearchParams(window.location.search);
+  const host = params.get('host') || window.location.host || 'localhost:7710';
+  const proto = window.location.protocol === 'https:' ? 'https' : 'http';
+  const url = `${proto}://${host}/chat_events`;
+  const es = new EventSource(url);
+  es.onmessage = (ev) => {
+    try {
+      const e = JSON.parse(ev.data);
+      if (e.kind === 'msg') {
+        addChatBubble(e.role, e.content, e.ts);
+      } else if (e.kind === 'toggle') {
+        if (e.action === 'open') openChat();
+        else if (e.action === 'close') closeChat();
+        else if (e.action === 'toggle') toggleChat();
+      }
+    } catch (_) {}
+  };
+  es.onerror = () => { es.close(); setTimeout(connectChatSSE, 3000); };
+}
+
 // OPS BANNER — keeps the top-bar status pill + clock in sync. State pill
 // reads `state` (the global from connectSSE); clock is local. The banner's
 // CSS animates the dot pulse, we just mutate the data-state + label.
@@ -5923,6 +6221,7 @@ animate();
 connectSSE();
 connectOrchSSE();
 connectVaultSSE();
+connectChatSSE();
 // connectUnifiSSE removed — UniFi panel deleted from HUD
 flowLoop();
 loadMenu();

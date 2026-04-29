@@ -213,6 +213,101 @@ class _VaultEventBus:
             self._clients = [c for c in self._clients if c is not wfile]
 
 
+# ---------------------------------------------------------------------------
+# Chat history bus — feeds the right-edge slide-out chat widget in the HUD.
+# Rolling in-memory buffer of the last N exchanges; broadcasts new turns to
+# subscribed SSE clients. Cleared on Jarvis restart by design (per the
+# 2026-04-28 spec: A1 — current-session in-memory only). Cross-session
+# replay from Brain/Daily/ is a future-work add.
+# ---------------------------------------------------------------------------
+
+
+class _ChatHistoryBus:
+    """Thread-safe ring buffer of operator/jarvis exchanges + pub-sub.
+
+    Two event shapes broadcast:
+        {"kind": "msg", "role": "operator"|"jarvis", "content": ..., "ts": float}
+        {"kind": "toggle", "action": "open"|"close"}
+    """
+
+    MAX_TURNS = 200            # rolling cap; ~200 exchanges = ~30k chars typical
+
+    def __init__(self) -> None:
+        from collections import deque
+        self._lock = threading.Lock()
+        self._clients: List[Any] = []
+        self._buffer: "deque[Dict[str, Any]]" = deque(maxlen=self.MAX_TURNS)
+
+    def _broadcast(self, event: Dict[str, Any]) -> None:
+        msg = ("data: " + json.dumps(event) + "\n\n").encode("utf-8")
+        with self._lock:
+            dead = []
+            for wfile in self._clients:
+                try:
+                    wfile.write(msg)
+                    wfile.flush()
+                except Exception:
+                    dead.append(wfile)
+            for d in dead:
+                self._clients.remove(d)
+
+    def append_pair(self, operator_text: str, jarvis_text: str) -> None:
+        """Record one operator → jarvis exchange. Called from /chat and
+        /voice_turn after the response is finalised. Empty strings on
+        either side are skipped (e.g. an attachment-only message has no
+        operator text — we still record the response)."""
+        ts = time.time()
+        with self._lock:
+            if (operator_text or "").strip():
+                self._buffer.append({
+                    "role": "operator", "content": operator_text, "ts": ts,
+                })
+            if (jarvis_text or "").strip():
+                self._buffer.append({
+                    "role": "jarvis", "content": jarvis_text, "ts": ts,
+                })
+        # Emit each captured message as its own event so the widget
+        # animates them in one-by-one.
+        if (operator_text or "").strip():
+            self._broadcast({"kind": "msg", "role": "operator",
+                             "content": operator_text, "ts": ts})
+        if (jarvis_text or "").strip():
+            self._broadcast({"kind": "msg", "role": "jarvis",
+                             "content": jarvis_text, "ts": ts})
+
+    def emit_toggle(self, action: str) -> None:
+        """Emit a widget-open/close hint to all subscribed HUD clients.
+        Called from voice fast-path when the operator says 'open the chat'
+        or 'close the chat'. The HUD listens and toggles its panel.
+        Server holds no opinion about who's currently visible — this is
+        purely a hint, the HUD is the source of truth for visibility."""
+        if action not in ("open", "close", "toggle"):
+            return
+        self._broadcast({"kind": "toggle", "action": action, "ts": time.time()})
+
+    def snapshot(self) -> List[Dict[str, Any]]:
+        with self._lock:
+            return list(self._buffer)
+
+    def subscribe(self, wfile: Any) -> None:
+        with self._lock:
+            self._clients.append(wfile)
+
+    def unsubscribe(self, wfile: Any) -> None:
+        with self._lock:
+            self._clients = [c for c in self._clients if c is not wfile]
+
+
+_chat_history = _ChatHistoryBus()
+
+
+def emit_chat_widget_toggle(action: str) -> None:
+    """Public bridge for voice_cmd / fast-paths to nudge the HUD's chat
+    widget open or closed. Decoupled from _chat_history's internal class
+    so importers don't need to touch the bus directly."""
+    _chat_history.emit_toggle(action)
+
+
 _vault_bus = _VaultEventBus()
 
 
@@ -395,6 +490,18 @@ class _Handler(SimpleHTTPRequestHandler):
             self._handle_orch_sse()
         elif self.path.startswith("/vault_events"):
             self._handle_vault_sse()
+        elif self.path.startswith("/chat_events"):
+            self._handle_chat_sse()
+        elif self.path == "/chat_history":
+            # One-shot snapshot of the in-memory chat ring buffer. The HUD
+            # widget calls this on first open to seed past bubbles, then
+            # subscribes to /chat_events for live appends. Cleared on
+            # Jarvis restart by design.
+            try:
+                self._json_response(200, {"messages": _chat_history.snapshot()})
+            except Exception:
+                logger.exception("/chat_history failed")
+                self._json_response(500, {"error": "internal error", "ref": _err_ref()})
         elif self.path == "/vault":
             # one-shot snapshot of the recent ring buffer (for late joiners)
             try:
@@ -793,6 +900,15 @@ class _Handler(SimpleHTTPRequestHandler):
                 log_voice_turn(turn_text, response_text)
             except Exception:
                 logger.debug("daily journal capture failed", exc_info=True)
+
+            # Stream into the chat-widget bus (in-memory rolling buffer
+            # broadcast over /chat_events). turn_text already includes
+            # any attachment summary so the widget shows the same thing
+            # the daily journal records.
+            try:
+                _chat_history.append_pair(turn_text, response_text)
+            except Exception:
+                logger.debug("chat history append failed", exc_info=True)
 
             self._json_response(200, {
                 "transcript":   text,
@@ -1504,6 +1620,12 @@ class _Handler(SimpleHTTPRequestHandler):
             except Exception:
                 logger.debug("daily journal capture failed", exc_info=True)
 
+            # Stream into the chat-widget bus alongside the journal entry
+            try:
+                _chat_history.append_pair(transcript, response_text)
+            except Exception:
+                logger.debug("chat history append failed", exc_info=True)
+
             self._json_response(200, {
                 "transcript": transcript,
                 "response": response_text,
@@ -1589,6 +1711,28 @@ class _Handler(SimpleHTTPRequestHandler):
             _vault_bus.unsubscribe(self.wfile)
 
     # _handle_unifi_sse removed (UniFi bridge no longer active)
+
+    def _handle_chat_sse(self) -> None:
+        """SSE stream for the right-edge chat widget. Emits two event
+        kinds: msg (a new operator/jarvis exchange line) and toggle (a
+        widget-open/close hint from a voice fast-path)."""
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Connection", "keep-alive")
+        self.end_headers()
+        # No replay on subscribe — the widget seeds itself via the
+        # /chat_history one-shot, then live-appends from this stream.
+        # Avoids a double-render flicker when the widget opens.
+        _chat_history.subscribe(self.wfile)
+        try:
+            while True:
+                time.sleep(1)
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            pass
+        finally:
+            _chat_history.unsubscribe(self.wfile)
 
     def _handle_orch_sse(self) -> None:
         """SSE stream of orchestry agent/task state."""
