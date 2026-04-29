@@ -39,6 +39,15 @@ class VoiceTurnContext:
 
 _ctx = VoiceTurnContext()
 
+# Shared 503 message when the voice/chat pipeline lock is held by a
+# previous turn. Operator-readable — tells them what to do, not just
+# that something is busy. Used by /chat, /text_command, /voice_turn.
+_BUSY_MSG = (
+    "Brain busy on a previous turn — gpt-4o can hang 5–30s on complex "
+    "tool chains. Wait a few seconds and ask again. If this persists "
+    "for more than a minute, restart jarvis.bat."
+)
+
 # Serialize concurrent /voice_turn calls. faster-whisper's model isn't safe
 # to invoke from two threads at once — a second request arriving while the
 # first is still inside transcribe() can hang indefinitely. This lock ensures
@@ -796,10 +805,13 @@ class _Handler(SimpleHTTPRequestHandler):
         if _ctx.process_command is None:
             return self._json_response(503, {"error": "Voice pipeline not initialised."})
 
-        # Reuse the voice-turn lock so chat + mic + menu don't collide
-        acquired = _voice_turn_lock.acquire(timeout=30)
+        # Reuse the voice-turn lock so chat + mic + menu don't collide.
+        # 5s timeout (was 30s) — fail fast so the operator knows immediately
+        # that the brain is on a previous turn rather than staring at 30s
+        # of nothing.
+        acquired = _voice_turn_lock.acquire(timeout=5)
         if not acquired:
-            return self._json_response(503, {"error": "Busy — try again."})
+            return self._json_response(503, {"error": _BUSY_MSG})
         try:
             n = int(self.headers.get("Content-Length", 0))
             if n > 50_000_000:                  # 50 MB hard cap on the whole payload
@@ -953,10 +965,10 @@ class _Handler(SimpleHTTPRequestHandler):
             return
 
         # Reuse the voice-turn lock so a menu click doesn't collide with a
-        # concurrent mic turn.
-        acquired = _voice_turn_lock.acquire(timeout=30)
+        # concurrent mic turn. 5s timeout (was 30s) — fail-fast.
+        acquired = _voice_turn_lock.acquire(timeout=5)
         if not acquired:
-            self._json_response(503, {"error": "Busy — try again."})
+            self._json_response(503, {"error": _BUSY_MSG})
             return
         try:
             n = int(self.headers.get("Content-Length", 0))
@@ -1557,13 +1569,13 @@ class _Handler(SimpleHTTPRequestHandler):
             self._json_response(503, {"error": "Voice pipeline not initialised."})
             return
 
-        # Only one voice turn at a time. If another turn is already in flight,
-        # wait up to 30s for it to finish; if it doesn't, reject with 503 so
-        # the client can recover instead of hanging forever.
-        acquired = _voice_turn_lock.acquire(timeout=30)
+        # Only one voice turn at a time. 5s timeout (was 30s) — fail fast
+        # so the client gets an immediate signal rather than staring at
+        # 30s of nothing while a slow gpt-4o turn / dispatch chain finishes.
+        acquired = _voice_turn_lock.acquire(timeout=5)
         if not acquired:
-            logger.warning("/voice_turn rejected: another turn held the lock for >30s")
-            self._json_response(503, {"error": "Voice pipeline busy — try again."})
+            logger.warning("/voice_turn rejected: another turn held the lock for >5s")
+            self._json_response(503, {"error": _BUSY_MSG})
             return
         try:
             self._handle_voice_turn_locked()
