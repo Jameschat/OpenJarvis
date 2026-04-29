@@ -37,10 +37,14 @@ from openjarvis.cli.llm_fallback import (
 logger = logging.getLogger(__name__)
 
 # Cap loop iterations so a misbehaving model can't burn budget. Each
-# iteration is one round-trip to gpt-4o-mini plus zero or more tool runs.
-# 8 is enough for "search → fetch → recall → dispatch → reply" chains
-# while still bounding a runaway loop to ~30s and ~$0.05.
-MAX_TOOL_ITERATIONS = 8
+# iteration is one round-trip to the conversational LLM plus zero or
+# more tool runs. Bumped 8 -> 16 (2026-04-28) so multi-step autonomy
+# plans (calendar + sonos + lights + team-task chains, "plan a trip"-
+# style queries) don't hit the cap mid-execution. The brain is now
+# gpt-4o (was gpt-4o-mini) which is strong enough to converge in
+# fewer iterations on simple turns; the headroom matters for the rare
+# complex chain. Per-query ceiling still bounded to ~60s and ~£0.10.
+MAX_TOOL_ITERATIONS = 16
 
 
 # Addendum spliced in front of the operator's persona for tool-use turns.
