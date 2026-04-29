@@ -197,6 +197,37 @@ canvas { display: block; }
 #ops-banner .ob-status[data-state="thinking"] .ob-dot { background: #ffc060; box-shadow: 0 0 6px rgba(255,192,96,0.75); }
 #ops-banner .ob-status[data-state="speaking"] .ob-dot { background: #5ecfff; box-shadow: 0 0 6px rgba(94,207,255,0.75); }
 #ops-banner .ob-status[data-state="listening"] .ob-dot { background: #5ee0e0; box-shadow: 0 0 6px rgba(94,224,224,0.85); }
+/* Banner status pill pulses during processing so the operator sees the
+   brain is busy at a glance, not just by reading the elapsed timer. */
+#ops-banner .ob-status[data-state="thinking"] {
+  animation: opsBannerPulse 1.4s ease-in-out infinite;
+}
+@keyframes opsBannerPulse {
+  0%, 100% { box-shadow: 0 0 0 rgba(255,192,96,0); }
+  50%      { box-shadow: 0 0 10px rgba(255,192,96,0.45); }
+}
+/* Queue badge in the composer — visible when 1+ messages queued behind
+   the current in-flight turn. Click to clear the queue. */
+#composer-queue {
+  align-self: flex-end;
+  display: none;             /* JS toggles via .show when count > 0 */
+  padding: 3px 9px;
+  margin: 0 0 4px 0;
+  font-family: 'Consolas','SF Mono','Menlo',monospace;
+  font-size: 10px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: rgba(180,220,240,0.8);
+  background: rgba(8,30,46,0.7);
+  border: 1px solid rgba(94,224,255,0.35);
+  border-radius: 3px;
+  box-shadow: 0 0 8px rgba(94,224,255,0.18);
+  pointer-events: auto;
+  cursor: pointer;
+  user-select: none;
+}
+#composer-queue:hover { background: rgba(94,224,255,0.18); color: #e8f7ff; }
+#composer-queue.show { display: inline-block; }
 #ops-banner .ob-clock {
   margin-left: 14px;
   color: rgba(180,220,240,0.7);
@@ -2295,6 +2326,9 @@ canvas { display: block; }
 
 <!-- Chat composer — text input + attachments + mic, all-in-one -->
 <div id="composer-wrap">
+  <div id="composer-queue" title="Click to clear the queue">
+    <span id="composer-queue-text">0 queued</span>
+  </div>
   <div id="composer">
     <button id="attach-btn" title="Attach file" type="button">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -4872,10 +4906,83 @@ composerEl.addEventListener('drop', async (e) => {
 const CHAT_HISTORY_MAX = 12;
 let chatHistory = [];
 
+// Client-side message queue + processing-state tracker (Option A,
+// 2026-04-29). When a turn is in flight (`_chatBusy`), new submits
+// land in `_chatQueue` and fire automatically when the current turn
+// completes. Each turn still serialises through the server lock; the
+// queue just hides the contention from the operator.
+let _chatBusy = false;
+const _chatQueue = [];                  // {text, files, history_snapshot}
+const _CHAT_QUEUE_MAX = 3;              // depth cap — typing 50 questions =/= queueing 50
+
+const composerQueueEl = document.getElementById('composer-queue');
+const composerQueueText = document.getElementById('composer-queue-text');
+function _renderQueueBadge() {
+  if (!composerQueueEl) return;
+  const n = _chatQueue.length;
+  if (n === 0) {
+    composerQueueEl.classList.remove('show');
+    return;
+  }
+  composerQueueEl.classList.add('show');
+  if (composerQueueText) {
+    composerQueueText.textContent =
+      n + ' queued · waiting' + (_chatBusy ? ' on current turn' : '');
+  }
+}
+if (composerQueueEl) {
+  composerQueueEl.addEventListener('click', () => {
+    if (_chatQueue.length === 0) return;
+    _chatQueue.length = 0;
+    _renderQueueBadge();
+    if (talkHint) talkHint.textContent = 'QUEUE CLEARED';
+    setTimeout(() => { if (talkHint && talkHint.textContent === 'QUEUE CLEARED')
+      talkHint.textContent = ''; }, 1500);
+  });
+}
+
+async function _drainQueue() {
+  if (_chatBusy || _chatQueue.length === 0) return;
+  const next = _chatQueue.shift();
+  _renderQueueBadge();
+  // Restore the queued message into the composer state so sendChat
+  // can pick it up via the same path. Set the input + attachments,
+  // then call sendChat which clears them again.
+  composerInp.value = next.text || '';
+  composerAttachments = next.files || [];
+  renderAttachments();
+  autoGrow();
+  // Yield a frame so the composer visually updates before we fire
+  await new Promise(r => requestAnimationFrame(r));
+  sendChat();
+}
+
 async function sendChat() {
   const text = composerInp.value.trim();
   if (!text && composerAttachments.length === 0) return;
+
+  // QUEUE PATH — current turn is in flight. Snapshot the input,
+  // clear the composer so the operator can keep typing, fire later
+  // when _chatBusy clears.
+  if (_chatBusy) {
+    if (_chatQueue.length >= _CHAT_QUEUE_MAX) {
+      if (talkHint) talkHint.textContent =
+        'QUEUE FULL · max ' + _CHAT_QUEUE_MAX + ' messages';
+      setTimeout(() => { if (talkHint && talkHint.textContent.startsWith('QUEUE FULL'))
+        talkHint.textContent = ''; }, 2000);
+      return;
+    }
+    _chatQueue.push({ text, files: composerAttachments.slice() });
+    composerInp.value = '';
+    composerAttachments = [];
+    renderAttachments();
+    autoGrow();
+    _renderQueueBadge();
+    return;
+  }
+
   unlockAudio();
+  _chatBusy = true;
   sendBtn.disabled = true;
   state = 'thinking';
   talkHint.textContent = 'SENDING…';
@@ -4957,6 +5064,11 @@ async function sendChat() {
     resetTalkUI('SEND FAILED');
   } finally {
     sendBtn.disabled = false;
+    _chatBusy = false;
+    _renderQueueBadge();
+    // Drain the next queued message (if any). Fire-and-forget — recursion
+    // through sendChat will set _chatBusy again, queue further if needed.
+    if (_chatQueue.length > 0) _drainQueue();
   }
 }
 
@@ -6136,10 +6248,29 @@ const obStatus = document.getElementById('ob-status');
 const obStatusText = document.getElementById('ob-status-text');
 const obClock = document.getElementById('ob-clock');
 function _padN(n) { return n < 10 ? '0' + n : '' + n; }
+
+// Live elapsed-time display while the brain is processing. Tracks the
+// state transition into "thinking" and shows "PROCESSING · 3.2s" on
+// the banner pill so the operator sees how long the current turn has
+// been running. Resets when state leaves thinking.
+let _obLastState = null;
+let _obThinkingSince = 0;
 function updateOpsBanner() {
+  const st = state || 'idle';
+  if (st === 'thinking' && _obLastState !== 'thinking') {
+    _obThinkingSince = performance.now();
+  } else if (st !== 'thinking') {
+    _obThinkingSince = 0;
+  }
+  _obLastState = st;
   if (obStatus) {
-    obStatus.dataset.state = state || 'idle';
-    if (obStatusText) obStatusText.textContent = (STATUS_TEXT[state] || 'READY');
+    obStatus.dataset.state = st;
+    let label = STATUS_TEXT[st] || 'READY';
+    if (st === 'thinking' && _obThinkingSince) {
+      const elapsed = (performance.now() - _obThinkingSince) / 1000;
+      label = 'PROCESSING · ' + elapsed.toFixed(1) + 's';
+    }
+    if (obStatusText) obStatusText.textContent = label;
   }
   if (obClock) {
     const d = new Date();
@@ -6147,6 +6278,12 @@ function updateOpsBanner() {
   }
 }
 updateOpsBanner();
+// 250ms tick — only repaints the banner when state == thinking, so the
+// elapsed counter updates smoothly. Cheap; doesn't touch the heavier
+// 1Hz tick that re-renders schedule rows / uptime.
+setInterval(() => {
+  if ((state || 'idle') === 'thinking') updateOpsBanner();
+}, 250);
 
 // Tick the uptime + (cheap) re-render of live tasks even when no SSE event fires
 setInterval(() => {
