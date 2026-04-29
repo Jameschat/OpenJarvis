@@ -1723,6 +1723,56 @@ canvas { display: block; }
   0%,100% { box-shadow: 0 0 0 0 rgba(255,140,140,0.6); }
   50%     { box-shadow: 0 0 0 4px rgba(255,140,140,0); }
 }
+/* Department-grouped roster (added 2026-04-28 with the agency-agents
+   integration). Each department gets a thin header row with a chevron;
+   click the header to collapse the department's members. State persists
+   in localStorage so the operator's preferred collapse pattern survives
+   refresh. */
+.ap-dept-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 10px 5px 10px;
+  margin: 6px 0 2px 0;
+  font-family: 'Consolas','SF Mono','Menlo',monospace;
+  font-size: 9.5px;
+  letter-spacing: 1.6px;
+  text-transform: uppercase;
+  color: rgba(180,210,240,0.62);
+  border-left: 2px solid var(--dept-accent, rgba(120,180,240,0.35));
+  background: rgba(80,140,220,0.04);
+  cursor: pointer;
+  user-select: none;
+  border-radius: 3px;
+  transition: background 0.15s, color 0.15s;
+}
+.ap-dept-head:hover {
+  background: rgba(80,140,220,0.10);
+  color: rgba(220,235,255,0.85);
+}
+.ap-dept-head .ap-dept-chev {
+  display: inline-block;
+  transition: transform 0.18s ease;
+  font-size: 10px;
+  width: 10px;
+  color: rgba(160,200,240,0.7);
+}
+.ap-dept-head.collapsed .ap-dept-chev { transform: rotate(-90deg); }
+.ap-dept-head .ap-dept-name { flex: 1; }
+.ap-dept-head .ap-dept-count {
+  font-size: 9px;
+  color: rgba(160,200,240,0.5);
+}
+.ap-dept-members {
+  overflow: hidden;
+  max-height: 4000px;
+  transition: max-height 0.25s ease;
+}
+.ap-dept-head.collapsed + .ap-dept-members {
+  max-height: 0;
+}
+.ap-dept-members .ap-row {
+  margin-left: 8px;       /* slight indent so members visually nest under header */
+}
+
 #agents-list {
   flex: 1;
   overflow-y: auto;
@@ -5074,16 +5124,95 @@ function _agentDisplayKind(a) {
   return 'claude';
 }
 
+// Department metadata for the grouped roster. Order in this array is
+// the visible order of departments. Each entry: id (key), display name,
+// accent (CSS), members function (which agents belong here).
+const _DEPT_GROUPS = [
+  { id: 'strategy',      name: 'STRATEGY',           accent: '#b478ff',
+    pred: a => a.id === 'architect' },
+  { id: 'engineering',   name: 'ENGINEERING',        accent: '#4a7fff',
+    pred: a => a.id === 'engineering-head' ||
+              ['backend-dev','frontend-dev','qa-engineer','code-reviewer','docs-writer'].includes(a.id) },
+  { id: 'engineering-codex', name: 'ENGINEERING (CODEX)', accent: '#10a37f',
+    pred: a => ['gpt-architect','gpt-backend','gpt-frontend','gpt-tester'].includes(a.id) },
+  { id: 'design',        name: 'DESIGN',             accent: '#ff5e9c',
+    pred: a => a.id === 'design-head' },
+  { id: 'marketing',     name: 'MARKETING',          accent: '#ff9c4a',
+    pred: a => a.id === 'marketing-head' },
+  { id: 'content',       name: 'CONTENT',            accent: '#ff6b9d',
+    pred: a => ['content-researcher','script-writer','producer'].includes(a.id) },
+  { id: 'product',       name: 'PRODUCT',            accent: '#7ac8ff',
+    pred: a => a.id === 'product-head' },
+  { id: 'pm',            name: 'PROJECT MGMT',       accent: '#ffd86b',
+    pred: a => a.id === 'pm-head' },
+  { id: 'testing',       name: 'TESTING & QA',       accent: '#ff7a4a',
+    pred: a => a.id === 'testing-head' },
+  { id: 'support',       name: 'SUPPORT',            accent: '#5ee0c0',
+    pred: a => a.id === 'support-head' },
+  { id: 'finance',       name: 'FINANCE',            accent: '#5ea069',
+    pred: a => a.id === 'finance-head' },
+  { id: 'gamedev',       name: 'GAME DEV',           accent: '#9c4aff',
+    pred: a => a.id === 'gamedev-head' },
+  { id: 'cross',         name: 'CROSS-FUNCTIONAL',   accent: '#a0b0c8',
+    pred: a => a.id === 'ops-head' || a.id === 'browser-pilot' },
+  { id: 'sessions',      name: 'LIVE SESSIONS',      accent: '#5ecfff',
+    pred: a => a.kind === 'claude-session' },
+  { id: 'subagents',     name: 'SUB-AGENTS',         accent: '#ffb84d',
+    pred: a => a.kind === 'subagent' },
+];
+
+// Persisted collapse state — keyed by dept.id. Defaults: cross-functional
+// + live-sessions + sub-agents collapsed (they're noisier and less
+// frequently the operator's focus).
+function _loadDeptCollapsed() {
+  try {
+    const raw = localStorage.getItem('jarvis.depts.collapsed');
+    if (raw) return new Set(JSON.parse(raw));
+  } catch (_) {}
+  return new Set([]);
+}
+function _saveDeptCollapsed(set) {
+  try { localStorage.setItem('jarvis.depts.collapsed', JSON.stringify([...set])); }
+  catch (_) {}
+}
+let _deptCollapsed = _loadDeptCollapsed();
+
+function _renderAgentRow(a) {
+  const provKind = _agentDisplayKind(a);
+  const accent = a.color || '#5ee0a1';
+  const stats = (a.tasks_completed || 0) + ' done' +
+                (a.tasks_failed ? ' · ' + a.tasks_failed + ' failed' : '');
+  const taskHtml = a.current_task
+    ? '<div class="ap-task">▸ ' + escapeHtml(a.current_task) + '</div>' : '';
+  const btnText = (a.status === 'running') ? 'BUSY' : 'SPAWN';
+  const cls = 'ap-row ' + (a.status === 'running' ? 'running' :
+                           (a.status === 'failed' ? 'failed' : 'idle'));
+  const dispatchable = (a.kind === 'builtin' && a.status !== 'running');
+  return '<div class="' + cls + '" data-id="' + escapeHtml(a.id) +
+         '" style="--accent:' + accent + '">' +
+    '<span class="ap-dot"></span>' +
+    '<div class="ap-body">' +
+      '<div class="ap-name">' + escapeHtml(a.name) +
+        ' <span class="ap-prov ' + provKind + '">' + provKind + '</span>' +
+      '</div>' +
+      '<div class="ap-meta">' + (a.model || '—') + ' · ' + stats + '</div>' +
+      taskHtml +
+    '</div>' +
+    (a.kind === 'builtin'
+      ? '<button class="ap-spawn-btn" ' +
+          (dispatchable ? '' : 'disabled') +
+          ' data-spawn-id="' + escapeHtml(a.id) + '"' +
+          ' data-spawn-name="' + escapeHtml(a.name) + '"' +
+          ' data-spawn-color="' + escapeHtml(accent) + '">' +
+          btnText +
+        '</button>'
+      : '<span></span>') +
+  '</div>';
+}
+
 function renderAgentsPanel() {
   if (!agentsList) return;
   const list = [...agentCards.values()].map(rec => rec.data);
-  // Order: built-ins first (alpha), then sessions, then subagents
-  list.sort((a, b) => {
-    const ka = (a.kind === 'builtin') ? 0 : (a.kind === 'claude-session' ? 1 : 2);
-    const kb = (b.kind === 'builtin') ? 0 : (b.kind === 'claude-session' ? 1 : 2);
-    if (ka !== kb) return ka - kb;
-    return (a.name || '').localeCompare(b.name || '');
-  });
 
   const running = list.filter(a => a.status === 'running').length;
   const total   = list.length;
@@ -5097,41 +5226,72 @@ function renderAgentsPanel() {
     return;
   }
 
-  const rows = list.map(a => {
-    const provKind = _agentDisplayKind(a);
-    const accent = a.color || '#5ee0a1';
-    const stats = (a.tasks_completed || 0) + ' done' +
-                  (a.tasks_failed ? ' · ' + a.tasks_failed + ' failed' : '');
-    const taskHtml = a.current_task
-      ? '<div class="ap-task">▸ ' + escapeHtml(a.current_task) + '</div>' : '';
-    const btnText = (a.status === 'running') ? 'BUSY' : 'SPAWN';
-    const cls = 'ap-row ' + (a.status === 'running' ? 'running' : (a.status === 'failed' ? 'failed' : 'idle'));
-    // Only built-ins are dispatchable directly. Sessions/subagents are
-    // already running on someone else's hook timeline — disable the button.
-    const dispatchable = (a.kind === 'builtin' && a.status !== 'running');
-    return '<div class="' + cls + '" data-id="' + escapeHtml(a.id) + '" style="--accent:' + accent + '">' +
-      '<span class="ap-dot"></span>' +
-      '<div class="ap-body">' +
-        '<div class="ap-name">' + escapeHtml(a.name) +
-          ' <span class="ap-prov ' + provKind + '">' + provKind + '</span>' +
-        '</div>' +
-        '<div class="ap-meta">' + (a.model || '—') + ' · ' + stats + '</div>' +
-        taskHtml +
-      '</div>' +
-      (a.kind === 'builtin'
-        ? '<button class="ap-spawn-btn" ' +
-            (dispatchable ? '' : 'disabled') +
-            ' data-spawn-id="' + escapeHtml(a.id) + '"' +
-            ' data-spawn-name="' + escapeHtml(a.name) + '"' +
-            ' data-spawn-color="' + escapeHtml(accent) + '">' +
-            btnText +
-          '</button>'
-        : '<span></span>') +
-    '</div>';
-  }).join('');
+  // Bucket every agent into the FIRST matching department. Whatever
+  // doesn't match any predicate falls into 'other' so it's still
+  // visible (useful for spotting agents the grouping doesn't yet know
+  // about — e.g. when a future agent is added but this map isn't updated).
+  const buckets = new Map();   // deptId -> [agents]
+  for (const dept of _DEPT_GROUPS) buckets.set(dept.id, []);
+  buckets.set('other', []);
+  for (const a of list) {
+    let placed = false;
+    for (const dept of _DEPT_GROUPS) {
+      if (dept.pred(a)) { buckets.get(dept.id).push(a); placed = true; break; }
+    }
+    if (!placed) buckets.get('other').push(a);
+  }
 
-  agentsList.innerHTML = rows;
-  // Wire spawn buttons
+  const allDepts = _DEPT_GROUPS.concat([
+    { id: 'other', name: 'OTHER', accent: '#888', pred: () => false },
+  ]);
+
+  const html = [];
+  for (const dept of allDepts) {
+    const members = buckets.get(dept.id) || [];
+    if (members.length === 0) continue;
+    members.sort((a, b) => {
+      // Heads first within their dept, then alpha
+      const ah = a.id.endsWith('-head') ? 0 : 1;
+      const bh = b.id.endsWith('-head') ? 0 : 1;
+      if (ah !== bh) return ah - bh;
+      return (a.name || '').localeCompare(b.name || '');
+    });
+    const collapsed = _deptCollapsed.has(dept.id);
+    const runHere = members.filter(a => a.status === 'running').length;
+    const countLabel = runHere > 0
+      ? (runHere + '/' + members.length + ' running')
+      : (members.length + '');
+    html.push(
+      '<div class="ap-dept-head' + (collapsed ? ' collapsed' : '') + '"' +
+        ' data-dept-id="' + dept.id + '"' +
+        ' style="--dept-accent: ' + dept.accent + '"' +
+        ' title="Click to collapse / expand">' +
+        '<span class="ap-dept-chev">▾</span>' +
+        '<span class="ap-dept-name">' + dept.name + '</span>' +
+        '<span class="ap-dept-count">' + countLabel + '</span>' +
+      '</div>' +
+      '<div class="ap-dept-members">' +
+        members.map(_renderAgentRow).join('') +
+      '</div>'
+    );
+  }
+
+  agentsList.innerHTML = html.join('');
+  // Wire dept-header collapse toggles
+  for (const head of agentsList.querySelectorAll('.ap-dept-head[data-dept-id]')) {
+    head.addEventListener('click', () => {
+      const id = head.getAttribute('data-dept-id');
+      if (_deptCollapsed.has(id)) {
+        _deptCollapsed.delete(id);
+        head.classList.remove('collapsed');
+      } else {
+        _deptCollapsed.add(id);
+        head.classList.add('collapsed');
+      }
+      _saveDeptCollapsed(_deptCollapsed);
+    });
+  }
+  // Wire spawn buttons (same as before — selectors unchanged)
   for (const btn of agentsList.querySelectorAll('.ap-spawn-btn[data-spawn-id]')) {
     btn.addEventListener('click', () => openSpawnFor(
       btn.getAttribute('data-spawn-id'),
