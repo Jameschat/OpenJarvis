@@ -587,13 +587,26 @@ def _try_lights(text: str, console: Console, ui=None) -> Optional[str]:
         return re.search(r"(?<!\w)" + re.escape(phrase) + r"(?!\w)", hay) is not None
 
     has_light_word = any(_has_term(w, lower) for w in _LIGHT_TRIGGERS)
-    has_action_word = any(_has_term(w, lower) for w in _ACTION_TRIGGERS)
+    # "off" / "on" alone count as actions only when they appear in the
+    # last 3 tokens — that's the imperative shape ("all lights off",
+    # "kitchen on") and avoids false positives from non-imperative uses
+    # ("I'm on the way to the kitchen", "the deal is off").
+    last_tokens = lower.split()[-3:]
+    has_action_word = (any(_has_term(w, lower) for w in _ACTION_TRIGGERS) or
+                       "off" in last_tokens or "on" in last_tokens)
     has_colour_word = any(_has_term(w, lower) for w in _COLOUR_TRIGGERS)
 
-    # A bare action verb ("set", "dim") with no light or colour word is
-    # not a lights command — could be "set the table", "dim view", etc.
-    # Require at least one light-domain signal alongside the action.
-    if not (has_light_word or has_colour_word):
+    # MUST have a light/lamp/room word — colour-word-alone is too loose.
+    # The previous "light_word OR colour_word" check let "purple pepe
+    # crypto current price" set every light purple (2026-04-29 — operator
+    # report). Same shape for "red sox score", "blue jays game", etc.
+    # Anything without an explicit lighting domain word goes to the LLM,
+    # which can decide whether to use the hue tool.
+    if not has_light_word:
+        return None
+    # Also need an action OR colour to be a real command (not e.g. just
+    # "the kitchen smells nice" which would trip on "kitchen" alone).
+    if not (has_action_word or has_colour_word):
         return None
 
     # Parse action
