@@ -916,6 +916,19 @@ class _Registry:
             except Exception:
                 logger.exception("agent_plan: mark_finished callback failed (non-fatal)")
 
+        # Outcome capture (Phase L-1, 2026-04-29) — every finished task
+        # gets a structured JSON record at ~/.openjarvis/outcomes/<date>/
+        # for L-2 retrospective + future learning loops. Best-effort,
+        # non-fatal — outcome failure must NEVER break task completion.
+        try:
+            from openjarvis.tools import outcomes
+            agent_spec_local = next(
+                (a for a in DEFAULT_AGENTS if a.get("id") == t.agent_id), None
+            )
+            outcomes.record_agent_task(t, agent_spec=agent_spec_local)
+        except Exception:
+            logger.debug("outcomes: record_agent_task failed (non-fatal)", exc_info=True)
+
     def record_failure_mode(self, agent_id: str, kind: str) -> None:
         """Bump a failure-mode counter on the agent's lifetime stats.
         Autonomy-improvement #4 (2026-04-27). Thread-safe — takes the

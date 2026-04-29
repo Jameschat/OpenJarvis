@@ -1138,6 +1138,18 @@ def _try_chat_widget(text: str) -> Optional[str]:
     return None
 
 
+# Outcome capture for fast-path hits (Phase L-1 of the learning loop,
+# 2026-04-29). Each _try_* dispatch site calls this immediately before
+# returning a hit so we get a structured record at
+# ~/.openjarvis/outcomes/<date>/. Best-effort, never raises.
+def _record_fp(name: str, text: str, result: str) -> None:
+    try:
+        from openjarvis.tools.outcomes import record_fast_path
+        record_fast_path(name, text, result)
+    except Exception:
+        pass
+
+
 _JARVIS_PERSONA = """\
 You are J.A.R.V.I.S. (Just A Rather Very Intelligent System), a sophisticated \
 AI assistant inspired by the AI from Iron Man. You serve as a personal assistant \
@@ -1464,6 +1476,7 @@ def voice(
             try:
                 r = fn(text, nc, None)
                 if r:
+                    _record_fp(fn.__name__, text, r)
                     return r
             except Exception:
                 pass
@@ -1474,6 +1487,7 @@ def voice(
         try:
             r = _try_chat_widget(text)
             if r:
+                _record_fp("_try_chat_widget", text, r)
                 return r
         except Exception:
             pass
@@ -1483,6 +1497,7 @@ def voice(
             from openjarvis.tools.obsidian_brain import _try_brain
             r = _try_brain(text)
             if r:
+                _record_fp("_try_brain", text, r)
                 return r
         except Exception:
             pass
@@ -1492,6 +1507,7 @@ def voice(
             from openjarvis.tools.agent_runner import _try_content_pipeline
             r = _try_content_pipeline(text)
             if r:
+                _record_fp("_try_content_pipeline", text, r)
                 return r
         except Exception:
             pass
@@ -1503,6 +1519,7 @@ def voice(
             from openjarvis.tools.browser_pilot import _try_browse
             r = _try_browse(text)
             if r:
+                _record_fp("_try_browse", text, r)
                 return r
         except Exception:
             pass
@@ -1515,6 +1532,7 @@ def voice(
             from openjarvis.tools.agent_runner import _try_department
             r = _try_department(text)
             if r:
+                _record_fp("_try_department", text, r)
                 return r
         except Exception:
             pass
@@ -1525,6 +1543,7 @@ def voice(
             from openjarvis.tools.agent_runner import _try_team_task
             r = _try_team_task(text)
             if r:
+                _record_fp("_try_team_task", text, r)
                 return r
         except Exception:
             pass
@@ -1533,6 +1552,7 @@ def voice(
             from openjarvis.tools.claude_code import _try_code
             r = _try_code(text, nc, None)
             if r:
+                _record_fp("_try_code", text, r)
                 return r
         except Exception:
             pass
@@ -1596,6 +1616,7 @@ def voice(
         # --- Fast-path: time / date ---
         time_result = _try_time(text, console, ui)
         if time_result:
+            _record_fp("_try_time", text, time_result)
             if tts_backend:
                 _speak_response(time_result, tts_backend, config, ui, console)
             elif ui:
@@ -1606,6 +1627,7 @@ def voice(
         # --- Fast-path: macro commands ---
         macro_result = _try_macro(text, console, ui)
         if macro_result:
+            _record_fp("_try_macro", text, macro_result)
             if tts_backend:
                 _speak_response(macro_result, tts_backend, config, ui, console)
             elif ui:
@@ -1620,6 +1642,7 @@ def voice(
         try:
             chat_result = _try_chat_widget(text)
             if chat_result:
+                _record_fp("_try_chat_widget", text, chat_result)
                 console.print(f"[cyan]J.A.R.V.I.S.>[/cyan] {chat_result}")
                 if tts_backend:
                     _speak_response(chat_result, tts_backend, config, ui, console)
@@ -1643,6 +1666,7 @@ def voice(
             from openjarvis.tools.obsidian_brain import _try_brain
             brain_result = _try_brain(text)
             if brain_result:
+                _record_fp("_try_brain", text, brain_result)
                 console.print(f"[cyan]J.A.R.V.I.S.>[/cyan] {brain_result}")
                 if tts_backend:
                     _speak_response(brain_result, tts_backend, config, ui, console)
@@ -1664,6 +1688,7 @@ def voice(
             from openjarvis.tools.agent_runner import _try_content_pipeline
             content_result = _try_content_pipeline(text)
             if content_result:
+                _record_fp("_try_content_pipeline", text, content_result)
                 console.print(f"[cyan]J.A.R.V.I.S.>[/cyan] {content_result}")
                 if tts_backend:
                     _speak_response(content_result, tts_backend, config, ui, console)
@@ -1683,6 +1708,7 @@ def voice(
             from openjarvis.tools.browser_pilot import _try_browse
             browse_result = _try_browse(text)
             if browse_result:
+                _record_fp("_try_browse", text, browse_result)
                 console.print(f"[cyan]J.A.R.V.I.S.>[/cyan] {browse_result}")
                 if tts_backend:
                     _speak_response(browse_result, tts_backend, config, ui, console)
@@ -1693,6 +1719,25 @@ def voice(
         except Exception:
             logger.exception("browser-pilot fast-path failed")
 
+        # --- Fast-path: department dispatch ("marketing, ...", "ask
+        # engineering to ...", "for cursed tides ...") — routes to dept
+        # heads. Was missing on the desktop voice path before L-1; added
+        # 2026-04-29 alongside outcome capture. MUST come before team-task.
+        try:
+            from openjarvis.tools.agent_runner import _try_department
+            dept_result = _try_department(text)
+            if dept_result:
+                _record_fp("_try_department", text, dept_result)
+                console.print(f"[cyan]J.A.R.V.I.S.>[/cyan] {dept_result}")
+                if tts_backend:
+                    _speak_response(dept_result, tts_backend, config, ui, console)
+                elif ui:
+                    from openjarvis.cli.jarvis_ui import JarvisState
+                    ui.set_state(JarvisState.IDLE)
+                return
+        except Exception:
+            logger.exception("department fast-path failed")
+
         # --- Fast-path: team task ("spin up a team", "have the agents build X") ---
         # Routes straight to the in-process agent_runner, dispatching to the
         # architect who plans and delegates to the rest of the team. This
@@ -1702,6 +1747,7 @@ def voice(
             from openjarvis.tools.agent_runner import _try_team_task
             team_result = _try_team_task(text)
             if team_result:
+                _record_fp("_try_team_task", text, team_result)
                 console.print(f"[cyan]J.A.R.V.I.S.>[/cyan] {team_result}")
                 if tts_backend:
                     _speak_response(team_result, tts_backend, config, ui, console)
@@ -1716,6 +1762,7 @@ def voice(
         from openjarvis.tools.claude_code import _try_code
         code_result = _try_code(text, console, ui)
         if code_result:
+            _record_fp("_try_code", text, code_result)
             if tts_backend:
                 _speak_response(code_result, tts_backend, config, ui, console)
             elif ui:
@@ -1726,6 +1773,7 @@ def voice(
         # --- Fast-path: Sonos commands ---
         sonos_result = _try_sonos(text, console, ui)
         if sonos_result:
+            _record_fp("_try_sonos", text, sonos_result)
             if tts_backend:
                 _speak_response(sonos_result, tts_backend, config, ui, console)
             elif ui:
@@ -1736,6 +1784,7 @@ def voice(
         # --- Fast-path: light commands ---
         light_result = _try_lights(text, console, ui)
         if light_result:
+            _record_fp("_try_lights", text, light_result)
             if tts_backend:
                 _speak_response(light_result, tts_backend, config, ui, console)
             elif ui:
@@ -1746,6 +1795,7 @@ def voice(
         # --- Fast-path: calendar commands ---
         cal_result = _try_calendar(text, console, ui)
         if cal_result:
+            _record_fp("_try_calendar", text, cal_result)
             if tts_backend:
                 _speak_response(cal_result, tts_backend, config, ui, console)
             elif ui:

@@ -519,6 +519,11 @@ class _Handler(SimpleHTTPRequestHandler):
             self._handle_vault_sse()
         elif self.path.startswith("/chat_events"):
             self._handle_chat_sse()
+        elif self.path.startswith("/agent_stats"):
+            # /agent_stats[?id=<agent_id>][&days=N] — outcome-aggregated
+            # stats per agent or all agents. Backed by Phase L-1
+            # outcomes module (~/.openjarvis/outcomes/<date>/*.json).
+            self._handle_agent_stats_get()
         elif self.path.startswith("/briefing"):
             # Briefing reader endpoint — /briefing or /briefing?date=YYYY-MM-DD.
             # Returns the AI-pulse note from Brain/Knowledge/ for the
@@ -1747,6 +1752,38 @@ class _Handler(SimpleHTTPRequestHandler):
             _vault_bus.unsubscribe(self.wfile)
 
     # _handle_unifi_sse removed (UniFi bridge no longer active)
+
+    def _handle_agent_stats_get(self) -> None:
+        """GET /agent_stats[?id=<agent_id>][&days=N] — return outcome-
+        aggregated stats from Phase L-1 outcomes module.
+        Without ?id= → returns {agent_id: stats} for every agent that
+        produced an outcome in the window. With ?id= → just that agent.
+        Default window is 30 days, capped at 365."""
+        try:
+            from openjarvis.tools import outcomes
+        except Exception:
+            return self._json_response(503, {"error": "outcomes not initialised"})
+        from urllib.parse import urlparse, parse_qs
+        q = parse_qs(urlparse(self.path).query)
+        try:
+            days = max(1, min(365, int((q.get("days") or ["30"])[0])))
+        except (ValueError, TypeError):
+            days = 30
+        agent_id = (q.get("id") or [None])[0]
+        try:
+            if agent_id:
+                self._json_response(200, {
+                    "stats": outcomes.agent_stats(agent_id, window_days=days),
+                    "window_days": days,
+                })
+            else:
+                self._json_response(200, {
+                    "by_agent": outcomes.all_agent_stats(window_days=days),
+                    "window_days": days,
+                })
+        except Exception:
+            logger.exception("/agent_stats failed")
+            self._json_response(500, {"error": "internal error", "ref": _err_ref()})
 
     def _handle_briefing_get(self) -> None:
         """GET /briefing[?date=YYYY-MM-DD] — return one AI-pulse briefing
