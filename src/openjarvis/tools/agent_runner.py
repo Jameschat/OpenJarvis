@@ -483,6 +483,28 @@ DEFAULT_AGENTS: List[Dict[str, Any]] = [
 
 
 # ---------------------------------------------------------------------------
+# Department -> head id mapping (Phase 3 of agency-agents integration,
+# 2026-04-28). Public constant so other modules (tool_use, agent_plan)
+# can resolve a department slug to its head's agent_id without
+# duplicating the table. Keys must match the `enum` in tool_use's
+# dispatch_department schema and agent_plan's create_plan step.department.
+# ---------------------------------------------------------------------------
+
+DEPT_TO_HEAD: Dict[str, str] = {
+    "engineering": "engineering-head",
+    "design":      "design-head",
+    "marketing":   "marketing-head",
+    "product":     "product-head",
+    "pm":          "pm-head",
+    "testing":     "testing-head",
+    "support":     "support-head",
+    "finance":     "finance-head",
+    "gamedev":     "gamedev-head",
+    "ops":         "ops-head",
+}
+
+
+# ---------------------------------------------------------------------------
 # Department-head cross-dispatch addendum (Phase 2C of agency-agents
 # integration, 2026-04-28). Appended to every *-head agent's role at
 # module load so heads know they can Task-dispatch peer heads when work

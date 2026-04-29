@@ -250,6 +250,18 @@ def _known_agent_ids() -> set:
         return set()
 
 
+def _known_departments() -> Dict[str, str]:
+    """Pull the department -> head_id table from agent_runner. Lazy
+    import so agent_plan stays importable in environments where
+    agent_runner is unavailable (returns empty dict and the dept
+    feature is silently disabled)."""
+    try:
+        from openjarvis.tools.agent_runner import DEPT_TO_HEAD
+        return dict(DEPT_TO_HEAD)
+    except Exception:
+        return {}
+
+
 def _validate_steps(steps: List[Dict[str, Any]]) -> None:
     if not isinstance(steps, list) or not steps:
         raise PlanValidationError("steps must be a non-empty list")
@@ -257,17 +269,46 @@ def _validate_steps(steps: List[Dict[str, Any]]) -> None:
         raise PlanValidationError(f"too many steps ({len(steps)}); soft cap is {MAX_STEPS}")
     seen_ids: set = set()
     valid_agents = _known_agent_ids()
+    dept_to_head = _known_departments()
     for i, s in enumerate(steps):
         if not isinstance(s, dict):
             raise PlanValidationError(f"step {i}: must be a dict")
-        for required in ("id", "agent", "title", "prompt"):
+        for required in ("id", "title", "prompt"):
             if not s.get(required):
                 raise PlanValidationError(f"step {i}: missing required field {required!r}")
         sid = s["id"]
         if sid in seen_ids:
             raise PlanValidationError(f"duplicate step id {sid!r}")
         seen_ids.add(sid)
-        if valid_agents and s["agent"] not in valid_agents:
+        # Phase-3 plan-aware orchestration (2026-04-28): a step may
+        # specify EITHER `agent` (a registered agent_id) OR `department`
+        # (a slug from agent_runner.DEPT_TO_HEAD). When `department` is
+        # set we auto-fill `agent` with the head's id so downstream
+        # dispatch is unchanged. The `department` field is preserved on
+        # disk for display + intent — plan.md mirrors it, and
+        # plan_summary surfaces it.
+        has_agent = bool(s.get("agent"))
+        has_dept = bool(s.get("department"))
+        if not has_agent and not has_dept:
+            raise PlanValidationError(
+                f"step {sid!r}: must specify either 'agent' (a registered "
+                f"agent_id) or 'department' (one of: "
+                f"{sorted(dept_to_head.keys()) if dept_to_head else 'unavailable'})"
+            )
+        if has_dept:
+            dep = s["department"]
+            if dept_to_head and dep not in dept_to_head:
+                raise PlanValidationError(
+                    f"step {sid!r}: unknown department {dep!r}; "
+                    f"valid: {sorted(dept_to_head.keys())}"
+                )
+            # Auto-resolve to the head's agent_id if `agent` not set.
+            # If both are set, `agent` wins (operator was explicit) and
+            # `department` becomes display-only metadata.
+            if not has_agent and dept_to_head:
+                s["agent"] = dept_to_head[dep]
+                has_agent = True
+        if has_agent and valid_agents and s["agent"] not in valid_agents:
             raise PlanValidationError(
                 f"step {sid!r}: unknown agent {s['agent']!r}; "
                 f"valid: {sorted(valid_agents)}"
@@ -326,8 +367,16 @@ def _write_plan_md(project_id: str, plan: Dict[str, Any]) -> None:
         glyph = status_glyph.get(s.get("status","pending"), "?")
         deps = ", ".join(s.get("depends_on") or []) or "-"
         task_id = s.get("task_id") or "-"
+        # Show department prefix when the step was routed via a dept
+        # head (Phase 3 plan-aware orchestration). Reads as e.g.
+        # "marketing → marketing-head" rather than just the head id.
+        dep = s.get("department")
+        agent_label = (
+            f"{dep} → {s.get('agent','?')}"
+            if dep else s.get('agent','?')
+        )
         lines.append(
-            f"- [{glyph}] **{s.get('id','?')}** · {s.get('agent','?')} · "
+            f"- [{glyph}] **{s.get('id','?')}** · {agent_label} · "
             f"{s.get('title','')}  (deps: {deps}, task: `{task_id}`)"
         )
     plan_md_path(project_id).write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -354,6 +403,10 @@ def create_plan(project_id: str, *, goal: str, steps: List[Dict[str, Any]],
         norm_steps.append({
             "id":           str(s["id"]),
             "agent":        str(s["agent"]),
+            # Department is optional — preserved when set so plan.md / HUD
+            # can show "marketing — Draft hooks" rather than just the
+            # head's id. Display-only metadata; dispatch always uses .agent.
+            "department":   (str(s["department"]) if s.get("department") else None),
             "title":        str(s.get("title", ""))[:120],
             "prompt":       str(s.get("prompt", "")),
             "depends_on":   [str(d) for d in (s.get("depends_on") or [])],

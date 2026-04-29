@@ -367,7 +367,15 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
                 "creating, immediately call dispatch_agent for the first ready step "
                 "(passing plan_step_id). On subsequent turns, call get_plan first to "
                 "see where you left off rather than re-deciding the breakdown. Don't "
-                "use for single-shot requests."
+                "use for single-shot requests.\n\n"
+                "EACH STEP routes to either a specific agent OR a department. Set "
+                "`department` (preferred for domain-specific work — marketing / "
+                "design / engineering / product / pm / testing / support / finance / "
+                "gamedev / ops) when you want the dept head to pick the specific "
+                "specialist; the head will Task-dispatch to its team. Set `agent` "
+                "when you need a specific agent_id (e.g. browser-pilot, architect, "
+                "or one of the existing dev team like backend-dev). At least one of "
+                "the two MUST be set per step. If both are set, `agent` wins."
             ),
             "parameters": {
                 "type": "object",
@@ -378,18 +386,41 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
                         "description": "One-sentence statement of what 'done' means."},
                     "steps": {
                         "type": "array",
-                        "description": "2+ ordered steps. Each step is one agent dispatch.",
+                        "description": "2+ ordered steps. Each step is one dispatch (specific agent OR department head).",
                         "items": {
                             "type": "object",
                             "properties": {
-                                "id": {"type": "string", "description": "Short slug unique within plan, e.g. 's1'."},
-                                "agent": {"type": "string", "description": "Agent id from list_agents."},
-                                "title": {"type": "string", "description": "Short label (~60 chars)."},
-                                "prompt": {"type": "string", "description": "Self-contained instruction for dispatch_agent."},
+                                "id": {"type": "string",
+                                    "description": "Short slug unique within plan, e.g. 's1'."},
+                                "agent": {"type": "string",
+                                    "description": (
+                                        "Agent id from list_agents (e.g. 'browser-pilot', "
+                                        "'architect', 'backend-dev'). EITHER `agent` OR "
+                                        "`department` must be provided. Use this for "
+                                        "specific agents that aren't department-routed."
+                                    )},
+                                "department": {
+                                    "type": "string",
+                                    "enum": [
+                                        "engineering", "design", "marketing", "product",
+                                        "pm", "testing", "support", "finance",
+                                        "gamedev", "ops",
+                                    ],
+                                    "description": (
+                                        "Route this step to a department head, who will "
+                                        "Task-dispatch the right specialist. Prefer this "
+                                        "over `agent` for domain-specific work where you "
+                                        "don't need a specific agent_id."
+                                    ),
+                                },
+                                "title": {"type": "string",
+                                    "description": "Short label (~60 chars)."},
+                                "prompt": {"type": "string",
+                                    "description": "Self-contained instruction for the dispatched agent / head."},
                                 "depends_on": {"type": "array", "items": {"type": "string"},
                                     "description": "Step ids this step waits for."},
                             },
-                            "required": ["id", "agent", "title", "prompt"],
+                            "required": ["id", "title", "prompt"],
                         },
                     },
                 },
@@ -758,17 +789,44 @@ def _tool_dispatch_agent(agent: str, prompt: str, title: str,
     return json.dumps(out)
 
 
+# Friendly display names for each department slug. The slug -> head_id
+# mapping itself lives in agent_runner.DEPT_TO_HEAD (shared with
+# agent_plan); this table is purely for friendly task titles + spoken
+# acknowledgements.
+_DEPARTMENT_FRIENDLY = {
+    "engineering": "engineering",
+    "design":      "design",
+    "marketing":   "marketing",
+    "product":     "product",
+    "pm":          "project management",
+    "testing":     "testing & QA",
+    "support":     "support",
+    "finance":     "finance",
+    "gamedev":     "game dev",
+    "ops":         "ops",
+}
+
+
+def _resolve_department(dep: str) -> Optional[Tuple[str, str]]:
+    """Return (head_agent_id, friendly_name) or None for unknown dept."""
+    try:
+        from openjarvis.tools.agent_runner import DEPT_TO_HEAD
+    except Exception:
+        return None
+    head = DEPT_TO_HEAD.get(dep)
+    if not head:
+        return None
+    return head, _DEPARTMENT_FRIENDLY.get(dep, dep)
+
+
+# Back-compat shim for any callers that imported the old internal name.
+# Will be removed in a future cleanup pass.
 _DEPARTMENT_TO_HEAD = {
-    "engineering": ("engineering-head", "engineering"),
-    "design":      ("design-head",      "design"),
-    "marketing":   ("marketing-head",   "marketing"),
-    "product":     ("product-head",     "product"),
-    "pm":          ("pm-head",          "project management"),
-    "testing":     ("testing-head",     "testing & QA"),
-    "support":     ("support-head",     "support"),
-    "finance":     ("finance-head",     "finance"),
-    "gamedev":     ("gamedev-head",     "game dev"),
-    "ops":         ("ops-head",         "ops"),
+    k: (v, _DEPARTMENT_FRIENDLY.get(k, k))
+    for k, v in (
+        __import__("openjarvis.tools.agent_runner", fromlist=["DEPT_TO_HEAD"])
+        .DEPT_TO_HEAD.items()
+    )
 }
 
 
@@ -781,15 +839,16 @@ def _tool_dispatch_department(department: str, goal: str, title: str) -> str:
     from openjarvis.tools import agent_runner
     dep = (department or "").strip().lower()
     g = (goal or "").strip()
-    if dep not in _DEPARTMENT_TO_HEAD:
+    resolved = _resolve_department(dep)
+    if not resolved:
         return json.dumps({
             "ok": False,
             "error": f"unknown department {dep!r}",
-            "valid_departments": list(_DEPARTMENT_TO_HEAD.keys()),
+            "valid_departments": list(agent_runner.DEPT_TO_HEAD.keys()),
         })
     if len(g) < 6:
         return json.dumps({"ok": False, "error": "goal too short — be specific"})
-    head_id, friendly = _DEPARTMENT_TO_HEAD[dep]
+    head_id, friendly = resolved
     t = (title or g)[:80]
     prompt = (
         f"DEPARTMENT BRIEF — {friendly.upper()}\n"
