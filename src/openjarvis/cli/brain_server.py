@@ -275,15 +275,25 @@ class _ChatHistoryBus:
             self._broadcast({"kind": "msg", "role": "jarvis",
                              "content": jarvis_text, "ts": ts})
 
-    def emit_toggle(self, action: str) -> None:
+    def emit_toggle(self, action: str, target: str = "chat") -> None:
         """Emit a widget-open/close hint to all subscribed HUD clients.
-        Called from voice fast-path when the operator says 'open the chat'
-        or 'close the chat'. The HUD listens and toggles its panel.
+        Called from voice fast-paths when the operator says 'open the
+        chat' / 'close the chat' / 'open the activity log' etc. The HUD
+        listens and toggles the right panel based on `target`.
         Server holds no opinion about who's currently visible — this is
-        purely a hint, the HUD is the source of truth for visibility."""
+        purely a hint, the HUD is the source of truth for visibility.
+
+        target: "chat" (default) | "log"
+        action: "open" | "close" | "toggle"
+        """
         if action not in ("open", "close", "toggle"):
             return
-        self._broadcast({"kind": "toggle", "action": action, "ts": time.time()})
+        if target not in ("chat", "log"):
+            return
+        self._broadcast({
+            "kind": "toggle", "target": target, "action": action,
+            "ts": time.time(),
+        })
 
     def snapshot(self) -> List[Dict[str, Any]]:
         with self._lock:
@@ -305,7 +315,15 @@ def emit_chat_widget_toggle(action: str) -> None:
     """Public bridge for voice_cmd / fast-paths to nudge the HUD's chat
     widget open or closed. Decoupled from _chat_history's internal class
     so importers don't need to touch the bus directly."""
-    _chat_history.emit_toggle(action)
+    _chat_history.emit_toggle(action, target="chat")
+
+
+def emit_ui_toggle(target: str, action: str) -> None:
+    """Generalised version of emit_chat_widget_toggle that supports
+    multiple HUD targets. Currently 'chat' and 'log' are recognised by
+    the HUD; adding more targets is a one-line addition in the HUD's
+    connectChatSSE handler."""
+    _chat_history.emit_toggle(action, target=target)
 
 
 _vault_bus = _VaultEventBus()

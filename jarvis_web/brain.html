@@ -210,9 +210,11 @@ canvas { display: block; }
   #ops-banner .ob-sub, #ops-banner .ob-clock { display: none; }
 }
 
-/* Chat-widget toggle button on the ops banner — sits left of the
-   status pill. Tappable inside the otherwise pointer-events:none banner
-   via its own pointer-events:auto. */
+/* HUD-toggle buttons on the ops banner — sit left of the status pill.
+   Tappable inside the otherwise pointer-events:none banner via their
+   own pointer-events:auto. The same .ob-chat-btn class is reused for
+   the activity-log toggle since they share styling — only the icon
+   and the action differ. */
 #ops-banner .ob-chat-btn {
   display: inline-flex; align-items: center; justify-content: center;
   width: 28px; height: 24px;
@@ -237,6 +239,12 @@ canvas { display: block; }
   box-shadow: 0 0 8px rgba(94,224,255,0.35);
 }
 #ops-banner .ob-chat-btn svg { width: 14px; height: 14px; pointer-events: none; }
+
+/* Activity log — hideable. Toggled by the log icon in the ops banner
+   AND by voice ("open / close the activity log"). State persists in
+   localStorage under jarvis.log.hidden so the operator's preferred
+   layout survives refreshes. */
+#hud-log.hud-hidden { display: none !important; }
 
 /* ================================================================
    Right-edge chat widget — slide-out from right, full viewport height,
@@ -2077,6 +2085,14 @@ canvas { display: block; }
   <span class="ob-sep">·</span>
   <span class="ob-sub">Operations Center</span>
   <span class="ob-spacer"></span>
+  <button class="ob-chat-btn" id="ob-log-btn" type="button" title="Toggle activity log">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+         stroke-linecap="round" stroke-linejoin="round">
+      <line x1="4"  y1="6"  x2="20" y2="6"/>
+      <line x1="4"  y1="12" x2="20" y2="12"/>
+      <line x1="4"  y1="18" x2="14" y2="18"/>
+    </svg>
+  </button>
   <button class="ob-chat-btn" id="ob-chat-btn" type="button" title="Open chat history">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
          stroke-linecap="round" stroke-linejoin="round">
@@ -6051,14 +6067,67 @@ function connectChatSSE() {
       if (e.kind === 'msg') {
         addChatBubble(e.role, e.content, e.ts);
       } else if (e.kind === 'toggle') {
-        if (e.action === 'open') openChat();
-        else if (e.action === 'close') closeChat();
-        else if (e.action === 'toggle') toggleChat();
+        // Targeted toggle. Backwards-compatible: when target is missing
+        // (older server) we assume "chat" so the previously-shipped
+        // chat-widget voice toggles keep working.
+        const target = e.target || 'chat';
+        if (target === 'chat') {
+          if (e.action === 'open') openChat();
+          else if (e.action === 'close') closeChat();
+          else if (e.action === 'toggle') toggleChat();
+        } else if (target === 'log') {
+          if (e.action === 'open') openLog();
+          else if (e.action === 'close') closeLog();
+          else if (e.action === 'toggle') toggleLog();
+        }
       }
     } catch (_) {}
   };
   es.onerror = () => { es.close(); setTimeout(connectChatSSE, 3000); };
 }
+
+// =====================================================================
+// Activity log toggle — same pattern as the chat widget. Voice fast-path
+// "open / close the activity log" emits an SSE toggle that the
+// connectChatSSE handler routes here. Manual toggle via the log icon
+// in the ops banner. State persists in localStorage so the operator's
+// preferred layout survives a refresh.
+// =====================================================================
+const elHudLog    = document.getElementById('hud-log');
+const elObLogBtn  = document.getElementById('ob-log-btn');
+
+function _logIsHidden() {
+  try { return localStorage.getItem('jarvis.log.hidden') === '1'; }
+  catch (_) { return false; }
+}
+function _setLogHidden(hidden) {
+  try { localStorage.setItem('jarvis.log.hidden', hidden ? '1' : '0'); }
+  catch (_) {}
+}
+function openLog() {
+  if (!elHudLog) return;
+  elHudLog.classList.remove('hud-hidden');
+  if (elObLogBtn) elObLogBtn.classList.add('active');
+  _setLogHidden(false);
+}
+function closeLog() {
+  if (!elHudLog) return;
+  elHudLog.classList.add('hud-hidden');
+  if (elObLogBtn) elObLogBtn.classList.remove('active');
+  _setLogHidden(true);
+}
+function toggleLog() {
+  if (!elHudLog) return;
+  if (elHudLog.classList.contains('hud-hidden')) openLog(); else closeLog();
+}
+// Restore last state on init — defaults to OPEN if never set
+if (_logIsHidden()) {
+  closeLog();
+} else {
+  // Mark the button as active so the visual matches the open state
+  if (elObLogBtn) elObLogBtn.classList.add('active');
+}
+if (elObLogBtn) elObLogBtn.addEventListener('click', toggleLog);
 
 // OPS BANNER — keeps the top-bar status pill + clock in sync. State pill
 // reads `state` (the global from connectSSE); clock is local. The banner's

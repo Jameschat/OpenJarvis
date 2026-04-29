@@ -1037,29 +1037,61 @@ _CHAT_CLOSE_PATTERNS = (
     r"\bhide (?:the |my |our )?(?:chat|chat history|conversation|messages)\b",
     r"\bdismiss (?:the |my |our )?(?:chat|chat history|conversation)\b",
 )
+_LOG_OPEN_PATTERNS = (
+    r"\bopen (?:the )?(?:activity (?:log|feed)|log|event log|system log)\b",
+    r"\bshow (?:me )?(?:the )?(?:activity (?:log|feed)|log|event log|system log)\b",
+    r"\bbring up (?:the )?(?:activity (?:log|feed)|log|event log)\b",
+)
+_LOG_CLOSE_PATTERNS = (
+    r"\bclose (?:the )?(?:activity (?:log|feed)|log|event log|system log)\b",
+    r"\bhide (?:the )?(?:activity (?:log|feed)|log|event log|system log)\b",
+    r"\bdismiss (?:the )?(?:activity (?:log|feed)|log|event log)\b",
+)
 
 
 def _try_chat_widget(text: str) -> Optional[str]:
-    """Voice fast-path for opening / closing the right-edge chat widget.
-    Emits an SSE toggle event the HUD listens for; returns the spoken
-    acknowledgment (or None to fall through to other fast-paths)."""
+    """Voice fast-path for opening / closing the right-edge chat widget
+    AND the bottom-left activity log. Emits an SSE toggle event the HUD
+    listens for; returns the spoken acknowledgment (or None to fall
+    through to other fast-paths). Kept under the name _try_chat_widget
+    for back-compat with callers wired in 2026-04-28; despite the name
+    it now handles both targets."""
     if not text:
         return None
     import re
     norm = text.lower().strip()
+    # Order matters: check log patterns first so "open the activity log"
+    # doesn't get a partial match against "open the ... chat" patterns
+    # (it doesn't, but the explicit ordering documents intent).
+    for pat in _LOG_OPEN_PATTERNS:
+        if re.search(pat, norm):
+            try:
+                from openjarvis.cli.brain_server import emit_ui_toggle
+                emit_ui_toggle("log", "open")
+            except Exception:
+                pass
+            return "Activity log is open."
+    for pat in _LOG_CLOSE_PATTERNS:
+        if re.search(pat, norm):
+            try:
+                from openjarvis.cli.brain_server import emit_ui_toggle
+                emit_ui_toggle("log", "close")
+            except Exception:
+                pass
+            return "Activity log hidden."
     for pat in _CHAT_OPEN_PATTERNS:
         if re.search(pat, norm):
             try:
-                from openjarvis.cli.brain_server import emit_chat_widget_toggle
-                emit_chat_widget_toggle("open")
+                from openjarvis.cli.brain_server import emit_ui_toggle
+                emit_ui_toggle("chat", "open")
             except Exception:
                 pass
             return "Chat history is open, sir."
     for pat in _CHAT_CLOSE_PATTERNS:
         if re.search(pat, norm):
             try:
-                from openjarvis.cli.brain_server import emit_chat_widget_toggle
-                emit_chat_widget_toggle("close")
+                from openjarvis.cli.brain_server import emit_ui_toggle
+                emit_ui_toggle("chat", "close")
             except Exception:
                 pass
             return "Chat closed."
