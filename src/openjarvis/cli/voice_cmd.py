@@ -1047,6 +1047,17 @@ _LOG_CLOSE_PATTERNS = (
     r"\bhide (?:the )?(?:activity (?:log|feed)|log|event log|system log)\b",
     r"\bdismiss (?:the )?(?:activity (?:log|feed)|log|event log)\b",
 )
+_BRIEFING_OPEN_PATTERNS = (
+    r"\bopen (?:the |today'?s |my )?(?:daily )?(?:briefing|brief|ai pulse|pulse|morning brief)\b",
+    r"\bshow (?:me )?(?:the |today'?s |my )?(?:daily )?(?:briefing|brief|ai pulse|pulse|morning brief)\b",
+    r"\b(?:read|catch me up on) (?:the |today'?s |my )?(?:briefing|brief|ai pulse)\b",
+    r"\bwhat'?s (?:in |on )?(?:today'?s |the )?(?:briefing|brief|ai pulse)\b",
+)
+_BRIEFING_CLOSE_PATTERNS = (
+    r"\bclose (?:the |today'?s )?(?:daily )?(?:briefing|brief|ai pulse|pulse)\b",
+    r"\bhide (?:the |today'?s )?(?:daily )?(?:briefing|brief|ai pulse|pulse)\b",
+    r"\bdismiss (?:the |today'?s )?(?:briefing|brief|ai pulse)\b",
+)
 
 
 def _try_chat_widget(text: str) -> Optional[str]:
@@ -1063,6 +1074,22 @@ def _try_chat_widget(text: str) -> Optional[str]:
     # Order matters: check log patterns first so "open the activity log"
     # doesn't get a partial match against "open the ... chat" patterns
     # (it doesn't, but the explicit ordering documents intent).
+    for pat in _BRIEFING_OPEN_PATTERNS:
+        if re.search(pat, norm):
+            try:
+                from openjarvis.cli.brain_server import emit_ui_toggle
+                emit_ui_toggle("briefing", "open")
+            except Exception:
+                pass
+            return "Daily briefing is open, sir."
+    for pat in _BRIEFING_CLOSE_PATTERNS:
+        if re.search(pat, norm):
+            try:
+                from openjarvis.cli.brain_server import emit_ui_toggle
+                emit_ui_toggle("briefing", "close")
+            except Exception:
+                pass
+            return "Briefing closed."
     for pat in _LOG_OPEN_PATTERNS:
         if re.search(pat, norm):
             try:

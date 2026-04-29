@@ -292,12 +292,12 @@ class _ChatHistoryBus:
         Server holds no opinion about who's currently visible — this is
         purely a hint, the HUD is the source of truth for visibility.
 
-        target: "chat" (default) | "log"
+        target: "chat" (default) | "log" | "briefing"
         action: "open" | "close" | "toggle"
         """
         if action not in ("open", "close", "toggle"):
             return
-        if target not in ("chat", "log"):
+        if target not in ("chat", "log", "briefing"):
             return
         self._broadcast({
             "kind": "toggle", "target": target, "action": action,
@@ -519,6 +519,12 @@ class _Handler(SimpleHTTPRequestHandler):
             self._handle_vault_sse()
         elif self.path.startswith("/chat_events"):
             self._handle_chat_sse()
+        elif self.path.startswith("/briefing"):
+            # Briefing reader endpoint — /briefing or /briefing?date=YYYY-MM-DD.
+            # Returns the AI-pulse note from Brain/Knowledge/ for the
+            # requested date (defaults to most-recent), plus a list of
+            # available dates so the HUD widget can populate a dropdown.
+            self._handle_briefing_get()
         elif self.path == "/chat_history":
             # One-shot snapshot of the in-memory chat ring buffer. The HUD
             # widget calls this on first open to seed past bubbles, then
@@ -1741,6 +1747,66 @@ class _Handler(SimpleHTTPRequestHandler):
             _vault_bus.unsubscribe(self.wfile)
 
     # _handle_unifi_sse removed (UniFi bridge no longer active)
+
+    def _handle_briefing_get(self) -> None:
+        """GET /briefing[?date=YYYY-MM-DD] — return one AI-pulse briefing
+        from Brain/Knowledge/ plus a list of all available dates so the
+        HUD widget can offer a dropdown of past briefings.
+
+        File pattern: '<YYYY-MM-DD> - AI pulse.md' produced daily 06:00 by
+        the ai-researcher agent. If date= isn't supplied (or no exact
+        match), falls back to most-recent available."""
+        try:
+            from openjarvis.tools.obsidian_brain import KNOWLEDGE_DIR
+        except Exception:
+            return self._json_response(503, {"error": "vault not initialised"})
+        if not KNOWLEDGE_DIR.exists():
+            return self._json_response(200, {
+                "available": [], "date": None, "content": "",
+                "note": "Knowledge dir not yet created.",
+            })
+
+        # Discover available pulses. Pattern is "<YYYY-MM-DD> - AI pulse.md".
+        # Sort newest-first by the date in the filename.
+        import re
+        pulse_re = re.compile(r"^(\d{4}-\d{2}-\d{2}) - AI pulse\.md$", re.IGNORECASE)
+        available: List[Dict[str, Any]] = []
+        for p in KNOWLEDGE_DIR.iterdir():
+            if not p.is_file():
+                continue
+            m = pulse_re.match(p.name)
+            if not m:
+                continue
+            available.append({"date": m.group(1), "filename": p.name})
+        available.sort(key=lambda x: x["date"], reverse=True)
+
+        # Pick which one to return
+        from urllib.parse import urlparse, parse_qs
+        q = parse_qs(urlparse(self.path).query)
+        wanted = (q.get("date") or [None])[0]
+        chosen = None
+        if wanted:
+            chosen = next((a for a in available if a["date"] == wanted), None)
+        if chosen is None and available:
+            chosen = available[0]
+
+        content = ""
+        if chosen:
+            try:
+                # Defence-in-depth: never read outside KNOWLEDGE_DIR even if
+                # filenames-from-disk look fine. Construct the path explicitly
+                # from the validated date string + suffix.
+                target = KNOWLEDGE_DIR / f"{chosen['date']} - AI pulse.md"
+                if target.is_file() and target.resolve().is_relative_to(KNOWLEDGE_DIR.resolve()):
+                    content = target.read_text(encoding="utf-8")
+            except Exception:
+                logger.exception("briefing read failed for %s", chosen)
+
+        return self._json_response(200, {
+            "available": available,
+            "date": chosen["date"] if chosen else None,
+            "content": content,
+        })
 
     def _handle_chat_sse(self) -> None:
         """SSE stream for the right-edge chat widget. Emits two event
