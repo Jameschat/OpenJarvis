@@ -286,6 +286,79 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "dispatch_department",
+            "description": (
+                "Spawn a department head on a goal — the head will Task-"
+                "dispatch its specialists (from ~/.claude/agents/) in "
+                "parallel, collect their outputs, and synthesise a single "
+                "deliverable. PREFER this over dispatch_agent when the "
+                "operator's ask is domain-specific and benefits from "
+                "specialist expertise:\n"
+                "  - marketing: TikTok / Instagram / LinkedIn / Twitter / "
+                "Reddit / SEO / podcast / growth / content / app-store. "
+                "Bias toward this for any 'campaign', 'hooks', 'strategy', "
+                "'audience', 'engagement', 'content series' ask.\n"
+                "  - design: UI / UX / brand / visual / logo / mockups / "
+                "wireframes / accessibility-of-visuals / image prompts.\n"
+                "  - engineering: anything beyond a single-file dev task — "
+                "system architecture, security review, multi-component "
+                "wiring, devops, embedded, blockchain, mobile, AI "
+                "engineering, technical writing.\n"
+                "  - product: feature triage, sprint prioritisation, "
+                "trend research, feedback synthesis, behavioural nudges.\n"
+                "  - pm: sprint planning, roadmap, project status, retros.\n"
+                "  - testing: a11y audits, perf benchmarks, evidence "
+                "collection, API testing, tool evaluation. (For unit / "
+                "integration tests on existing code, use dispatch_agent "
+                "with agent='qa-engineer' instead.)\n"
+                "  - support: analytics summaries, infra health, exec "
+                "briefings, response templates.\n"
+                "  - finance: bookkeeping, FP&A, investment research, "
+                "tax (operator is in Jersey, UK).\n"
+                "  - gamedev: anything game-related — particularly Unreal "
+                "Engine for the operator's CursedTides project.\n"
+                "  - ops: cross-departmental coordination — when the goal "
+                "spans 2+ departments and needs a single coordinator. ops "
+                "can also dispatch other heads.\n\n"
+                "DON'T use this for: simple chat replies, one-off code "
+                "edits (use dispatch_agent), web research / video briefs "
+                "(use dispatch_browser_pilot). DON'T use it for vague "
+                "asks where no specialist would obviously help."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "department": {
+                        "type": "string",
+                        "enum": [
+                            "engineering", "design", "marketing", "product",
+                            "pm", "testing", "support", "finance",
+                            "gamedev", "ops",
+                        ],
+                        "description": "Which department to dispatch to.",
+                    },
+                    "goal": {
+                        "type": "string",
+                        "description": (
+                            "Natural-language goal. Be specific about the "
+                            "deliverable, target audience/platform/stack, "
+                            "and any constraints. The head reads this and "
+                            "routes to specialists, so include enough "
+                            "context for them to pick correctly."
+                        ),
+                    },
+                    "title": {
+                        "type": "string",
+                        "description": "Short label (~60 chars) for the task in the HUD.",
+                    },
+                },
+                "required": ["department", "goal", "title"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "create_plan",
             "description": (
                 "Persist a multi-step execution plan for a project so future turns "
@@ -683,6 +756,87 @@ def _tool_dispatch_agent(agent: str, prompt: str, title: str,
     if plan_warning:
         out["plan_warning"] = plan_warning
     return json.dumps(out)
+
+
+_DEPARTMENT_TO_HEAD = {
+    "engineering": ("engineering-head", "engineering"),
+    "design":      ("design-head",      "design"),
+    "marketing":   ("marketing-head",   "marketing"),
+    "product":     ("product-head",     "product"),
+    "pm":          ("pm-head",          "project management"),
+    "testing":     ("testing-head",     "testing & QA"),
+    "support":     ("support-head",     "support"),
+    "finance":     ("finance-head",     "finance"),
+    "gamedev":     ("gamedev-head",     "game dev"),
+    "ops":         ("ops-head",         "ops"),
+}
+
+
+def _tool_dispatch_department(department: str, goal: str, title: str) -> str:
+    """Spawn a department head on a goal. The head Task-dispatches its
+    specialist roster (installed at ~/.claude/agents/ from the
+    msitarzewski/agency-agents library), collects outputs, and synthesises
+    a single deliverable. Mirrors voice fast-path _try_department but
+    callable from the conversational LLM brain mid-conversation."""
+    from openjarvis.tools import agent_runner
+    dep = (department or "").strip().lower()
+    g = (goal or "").strip()
+    if dep not in _DEPARTMENT_TO_HEAD:
+        return json.dumps({
+            "ok": False,
+            "error": f"unknown department {dep!r}",
+            "valid_departments": list(_DEPARTMENT_TO_HEAD.keys()),
+        })
+    if len(g) < 6:
+        return json.dumps({"ok": False, "error": "goal too short — be specific"})
+    head_id, friendly = _DEPARTMENT_TO_HEAD[dep]
+    t = (title or g)[:80]
+    prompt = (
+        f"DEPARTMENT BRIEF — {friendly.upper()}\n"
+        f"========================================\n"
+        f"The operator's request: {g}\n\n"
+        f"YOU ARE the {friendly} department head. Your role and the "
+        f"specialists you command are described in your system prompt. "
+        f"This is a single-shot non-interactive run — there is no second "
+        f"turn, no clarifying questions accepted. Do all of this NOW in "
+        f"the current working directory.\n\n"
+        f"METHOD:\n"
+        f"1. Identify which 1-N specialists in your department best fit "
+        f"the request.\n"
+        f"2. Use the Task tool to dispatch them. Spawn in PARALLEL when "
+        f"possible (multiple Task calls in one turn).\n"
+        f"3. Collect their outputs.\n"
+        f"4. Synthesise into a single integrated deliverable. Write it "
+        f"as DELIVERABLE.md (or a more specific name) in the workspace.\n"
+        f"5. Briefly summarise in stdout what you built and which "
+        f"specialists contributed.\n\n"
+        f"ANTI-PATTERNS: doing specialist work yourself, sequential "
+        f"dispatch when parallel works, lifting verbatim outputs without "
+        f"integrating, skipping the synthesis step.\n\n"
+        f"START NOW. Make sensible defaults. Be concise, no preamble."
+    )
+    try:
+        task_id = agent_runner.add_task(
+            title=f"{friendly}: {t}",
+            agent_id=head_id,
+            prompt=prompt,
+            priority=20,    # operator-spoken intent priority
+        )
+    except Exception as exc:
+        logger.exception("dispatch_department failed")
+        return json.dumps({"ok": False, "error": f"dispatch failed: {exc}"})
+    return json.dumps({
+        "ok": True,
+        "task_id": task_id,
+        "department": dep,
+        "head": head_id,
+        "note": (
+            f"{friendly.title()} department head is now coordinating "
+            f"specialists. Operator does not need to wait — the deliverable "
+            f"will land in the task workspace, and the head will summarise "
+            f"on completion."
+        ),
+    })
 
 
 def _tool_dispatch_browser_pilot(goal: str, title: str) -> str:
@@ -1296,6 +1450,7 @@ _TOOL_DISPATCH = {
     "list_agents": _tool_list_agents,
     "dispatch_agent": _tool_dispatch_agent,
     "dispatch_browser_pilot": _tool_dispatch_browser_pilot,
+    "dispatch_department": _tool_dispatch_department,
     "web_search": _tool_web_search,
     "github_search": _tool_github_search,
     "hackernews_search": _tool_hackernews_search,
