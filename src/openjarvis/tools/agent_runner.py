@@ -447,6 +447,14 @@ DEFAULT_AGENTS: List[Dict[str, Any]] = [
         "provider": "claude",
     },
 
+    # NOTE: department-head role prompts get a shared cross-dispatch
+    # addendum appended programmatically just below the DEFAULT_AGENTS
+    # definition (see _DEPT_COORD_HINT). This teaches every head that
+    # it can Task-dispatch a peer head when work obviously spans
+    # disciplines (marketing -> design for assets, engineering ->
+    # testing for QA, product -> pm for sprint cadence, etc.) without
+    # having to bounce through ops-head every time.
+
     # ---- Autonomous browser pilot (in-process Python agent) -------------
     # Unlike the claude/codex CLI agents, this one runs inside the Jarvis
     # process so it can use the Python ToolRegistry's browser_* tools
@@ -472,6 +480,36 @@ DEFAULT_AGENTS: List[Dict[str, Any]] = [
         "python_entry": "openjarvis.tools.browser_pilot:run_task",
     },
 ]
+
+
+# ---------------------------------------------------------------------------
+# Department-head cross-dispatch addendum (Phase 2C of agency-agents
+# integration, 2026-04-28). Appended to every *-head agent's role at
+# module load so heads know they can Task-dispatch peer heads when work
+# obviously spans disciplines, without bouncing through ops-head.
+#
+# Done programmatically (not in each role literal) so the wording stays
+# DRY and any future head added to DEFAULT_AGENTS picks it up for free.
+# ---------------------------------------------------------------------------
+
+_DEPT_COORD_HINT = (
+    "\n\nCROSS-DEPARTMENT DISPATCH: when your work obviously needs another "
+    "department's input — marketing wants design assets, engineering wants "
+    "a QA pass from testing, product wants pm to set sprint cadence, finance "
+    "wants compliance review from support — you may Task-dispatch the "
+    "matching peer head directly (engineering-head, design-head, marketing-"
+    "head, product-head, pm-head, testing-head, support-head, finance-head, "
+    "gamedev-head) instead of routing through ops-head. Use this only when "
+    "the cross-dept handoff is OBVIOUS from the request — don't volunteer "
+    "extra departments speculatively. ops-head is still the right call when "
+    "the operator explicitly asks for cross-functional coordination, or "
+    "when 3+ departments need to coordinate."
+)
+
+for _agent in DEFAULT_AGENTS:
+    if isinstance(_agent.get("id"), str) and _agent["id"].endswith("-head") and _agent["id"] != "ops-head":
+        _agent["role"] = (_agent.get("role") or "") + _DEPT_COORD_HINT
+del _agent  # don't leak the loop var into module namespace
 
 
 # ---------------------------------------------------------------------------
