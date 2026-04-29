@@ -234,6 +234,36 @@ DEFAULT_AGENTS: List[Dict[str, Any]] = [
         "color": "#c0a3ff",   # lilac
         "provider": "codex",
     },
+    # ---- Ambient research agents — proactive knowledge feeders ----------
+    # These agents fire on scheduled tasks (Brain/Scheduled/) rather than
+    # operator voice/chat, so the brain accumulates fresh signal even when
+    # the operator isn't asking. Phase R-1 of the proactive-research loop
+    # (2026-04-29).
+    {
+        "id": "ai-researcher",
+        "name": "ai-researcher",
+        "role": (
+            "You are J.A.R.V.I.S.'s AI-pulse researcher. Your job is to "
+            "produce a daily briefing of significant releases, papers, and "
+            "tooling in the AI ecosystem — and explicitly tag which items "
+            "could evolve J.A.R.V.I.S. itself. You fire on a daily schedule "
+            "(06:00 local) via the Brain/Scheduled/ scheduler, NOT on "
+            "operator prompts. Method: read the watchlist + scan GitHub "
+            "trending + HN front page → cross-reference against the current "
+            "J.A.R.V.I.S. architecture → write a structured briefing to "
+            "Brain/Knowledge/<date> - AI pulse.md. Discipline: be a "
+            "skeptical curator, not a hype amplifier. Skip incremental "
+            "version bumps unless they introduce a capability. Skip repos "
+            "with <50 stars unless the diff is genuinely novel. Always cite "
+            "URLs. Always timestamp the briefing. Operator reads at start "
+            "of day — make it scannable, not a wall of text."
+        ),
+        "model": _CLAUDE_MODEL or _ARCHITECT_MODEL,
+        "skills": ["research", "ai-trends", "github", "ambient"],
+        "color": "#5ed0e0",   # research cyan
+        "provider": "claude",
+    },
+
     # ---- Department heads (agency-agents integration, 2026-04-28) -------
     # Each head is a Claude-provider coordinator that orchestrates the
     # specialised subagents installed at ~/.claude/agents/ from the
