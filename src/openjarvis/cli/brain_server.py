@@ -1957,6 +1957,19 @@ def start_brain_server(open_browser: bool = True) -> None:
     except Exception:
         logger.exception("orch bridge failed to start")
 
+    # Start the graphify daily-rebuild thread (Path B follow-up,
+    # 2026-04-29). Fires every midnight, walks the vault subset via the
+    # in-process vault_graph extractor, writes graph.json. Replaces the
+    # broken external graphify CLI invocation. Operator can override the
+    # fire time via OPENJARVIS_GRAPHIFY_REBUILD_HOUR / _MINUTE env vars.
+    try:
+        from openjarvis.cli import graphify_bridge
+        rebuild_hour = int(os.environ.get("OPENJARVIS_GRAPHIFY_REBUILD_HOUR", "0"))
+        rebuild_minute = int(os.environ.get("OPENJARVIS_GRAPHIFY_REBUILD_MINUTE", "0"))
+        graphify_bridge.start_daily_rebuild(hour=rebuild_hour, minute=rebuild_minute)
+    except Exception:
+        logger.exception("graphify daily-rebuild failed to start")
+
     # UniFi bridge no longer started — operator removed it from the HUD.
     # unifi_bridge.py remains on disk if it's wanted back.
 

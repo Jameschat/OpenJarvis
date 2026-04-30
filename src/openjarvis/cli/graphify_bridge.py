@@ -341,6 +341,9 @@ def explain(node: str) -> Dict[str, Any]:
 
 _writes_since_refresh = 0
 _last_refresh_started: float = 0.0
+# _refresh_proc retained for back-compat with staleness() readers but is
+# always None now — refresh() runs synchronously via vault_graph rather
+# than spawning a subprocess. See refresh() docstring.
 _refresh_proc: Any = None
 _refresh_lock = threading.Lock()
 
@@ -415,18 +418,28 @@ def _stage_vault_subset() -> int:
 
 
 def refresh(blocking: bool = False) -> Dict[str, Any]:
-    """Kick off graphify against the vault subset in a background
-    subprocess. Returns immediately unless blocking=True. Resets the
-    write-staleness counter optimistically (it'll be accurate by the
-    time the subprocess finishes)."""
-    global _writes_since_refresh, _last_refresh_started, _refresh_proc
-    import subprocess
-    import sys
+    """Rebuild the vault graph synchronously via the in-process
+    `vault_graph` extractor (Path B of the graphify-broken-deferred
+    resolution, 2026-04-29). Replaces the previous spawn of an external
+    `graphify <path>` CLI which is no longer valid since graphifyy
+    shifted to a code-only API.
+
+    Returns a stats dict. `blocking` is retained as a kwarg for
+    backwards compatibility with existing callers but the extractor
+    is fast (~0.3s on a 2k-file vault) so it always runs synchronously."""
+    global _writes_since_refresh, _last_refresh_started, _cache, _cache_mtime
     import time
 
     with _refresh_lock:
-        if _refresh_proc and _refresh_proc.poll() is None:
-            return {"started": False, "reason": "refresh already in progress"}
+        try:
+            from openjarvis.tools import vault_graph
+        except Exception as exc:
+            logger.exception("graphify_bridge: vault_graph import failed")
+            return {"started": False, "reason": f"vault_graph import failed: {exc}"}
+
+        # Stage the vault subset (existing behaviour — keeps the source
+        # snapshot in Brain-Graphs/source/ for compatibility with any
+        # external tooling that still reads from there).
         try:
             file_count = _stage_vault_subset()
         except Exception as exc:
@@ -435,50 +448,108 @@ def refresh(blocking: bool = False) -> Dict[str, Any]:
         if file_count == 0:
             return {"started": False, "reason": "no files in staging — check vault path / subfolders"}
 
-        # Find the graphify executable. uv tool install put it under
-        # ~/.local/bin on Windows, plus 'graphify' should be on PATH if
-        # the user ran update-shell.
-        candidates = [
-            os.environ.get("OPENJARVIS_GRAPHIFY_BIN", ""),
-            str(Path.home() / ".local" / "bin" / "graphify.exe"),
-            str(Path.home() / ".local" / "bin" / "graphify"),
-            "graphify",
-        ]
-        exe = next((c for c in candidates if c and (Path(c).exists() if "/" in c or "\\" in c else True)), "graphify")
-
-        # Run from the parent of graphify-out so outputs land in the
-        # expected location.
-        cwd = _graphify_dir().parent
-        cwd.mkdir(parents=True, exist_ok=True)
-        log_path = _graphify_dir().parent / "refresh.log"
-        try:
-            log_fh = log_path.open("ab")
-            _refresh_proc = subprocess.Popen(
-                [exe, str(_staging_dir())],
-                cwd=str(cwd),
-                stdout=log_fh,
-                stderr=log_fh,
-                creationflags=0x08000000 if sys.platform == "win32" else 0,
-            )
-        except Exception as exc:
-            logger.exception("graphify_bridge: failed to spawn refresh")
-            return {"started": False, "reason": f"spawn failed: {exc}"}
-
         _last_refresh_started = time.time()
         _writes_since_refresh = 0
 
-    if blocking:
+        # Build directly from the staged source. Output to graphify-out/
+        # so the existing /graphify routes + HUD button find graph.json.
         try:
-            _refresh_proc.wait(timeout=600)
+            stats = vault_graph.build_graph(
+                vault_root=_staging_dir(),
+                output_path=_graph_file(),
+            )
+        except Exception as exc:
+            logger.exception("graphify_bridge: vault_graph build failed")
+            return {"started": False, "reason": f"build failed: {exc}"}
+
+        # Invalidate the in-process cache so the next read picks up the
+        # newly-written graph immediately.
+        _cache = None
+        _cache_mtime = 0
+
+        # Append a one-line summary to refresh.log so the operator can
+        # see when rebuilds happened without reopening graph.json.
+        try:
+            log_path = _graphify_dir().parent / "refresh.log"
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            with log_path.open("a", encoding="utf-8") as fh:
+                fh.write(
+                    f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] "
+                    f"vault_graph: {stats.get('nodes', 0)} nodes, "
+                    f"{stats.get('edges', 0)} edges, "
+                    f"{stats.get('communities', 0)} communities, "
+                    f"{stats.get('duration_seconds', 0)}s\n"
+                )
         except Exception:
             pass
+
     return {
-        "started": True,
+        "started":      True,
         "files_staged": file_count,
-        "log": str(log_path),
-        "blocking": blocking,
+        "stats":        stats,
+        "blocking":     True,   # always synchronous now
     }
 
 
 __all__ = ["status", "query", "path", "explain",
-           "note_vault_write", "staleness", "refresh"]
+           "note_vault_write", "staleness", "refresh",
+           "start_daily_rebuild", "stop_daily_rebuild"]
+
+
+# ---------------------------------------------------------------------------
+# Daily scheduled rebuild (Path B follow-up, 2026-04-29). Operator wants
+# the graph kept fresh every midnight without depending on the heavier
+# agent-runner scheduler (which is hardcoded to dispatch to agents). One
+# small dedicated thread that wakes at the configured hour:minute, fires
+# refresh(), and goes back to sleep.
+# ---------------------------------------------------------------------------
+
+_daily_thread: Any = None
+_daily_stop = threading.Event()
+
+
+def start_daily_rebuild(hour: int = 0, minute: int = 0) -> Dict[str, Any]:
+    """Background thread that fires refresh() daily at the given local
+    time. Default 00:00 (midnight). Idempotent — second call returns
+    the existing thread's status without spawning a duplicate."""
+    global _daily_thread
+    if _daily_thread is not None and _daily_thread.is_alive():
+        return {"started": False, "reason": "daily rebuild thread already running"}
+
+    from datetime import datetime, timedelta
+    import time
+
+    def _loop() -> None:
+        logger.info("graphify daily-rebuild thread started; firing at %02d:%02d local",
+                    hour, minute)
+        while not _daily_stop.is_set():
+            now = datetime.now()
+            target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+            if target <= now:
+                target += timedelta(days=1)
+            sleep_s = max(1.0, (target - now).total_seconds())
+            # _daily_stop.wait returns True if set during the wait —
+            # exit cleanly on shutdown rather than firing a final rebuild.
+            if _daily_stop.wait(sleep_s):
+                return
+            try:
+                logger.info("graphify daily-rebuild firing")
+                stats = refresh(blocking=True)
+                logger.info("graphify daily-rebuild result: %s", stats)
+            except Exception:
+                logger.exception("graphify daily-rebuild crashed (continuing)")
+            # Loop again to compute next target — the next iteration will
+            # roll forward by 24h via the target-already-passed branch.
+
+    _daily_stop.clear()
+    _daily_thread = threading.Thread(
+        target=_loop, daemon=True, name="graphify-daily-rebuild"
+    )
+    _daily_thread.start()
+    return {"started": True, "fire_at": f"{hour:02d}:{minute:02d}"}
+
+
+def stop_daily_rebuild() -> None:
+    """Idempotent shutdown — sets the stop event so the rebuild thread
+    exits at its next wait boundary."""
+    _daily_stop.set()
