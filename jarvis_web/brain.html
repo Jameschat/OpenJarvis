@@ -531,6 +531,280 @@ canvas { display: block; }
 }
 .hc-bubble.op .hc-time { text-align: right; }
 
+/* HUD subtitle — film-style caption that appears bottom-centre on
+   every spoken exchange. The bridge between Jarvis's voice and the
+   operator being able to *read* what was just said without opening
+   the chat sidebar. Auto-hides on a duration scaled to text length. */
+#hud-subtitle {
+  position: fixed;
+  bottom: 110px;
+  left: 50%;
+  transform: translateX(-50%) translateY(14px);
+  width: min(820px, 90vw);
+  max-height: 38vh;
+  z-index: 7500;
+  padding: 16px 22px 12px 22px;
+  background: linear-gradient(180deg, rgba(18,28,46,0.94) 0%, rgba(10,18,32,0.94) 100%);
+  border: 1px solid rgba(110,180,255,0.4);
+  border-radius: 12px;
+  box-shadow: 0 18px 50px rgba(0,0,0,0.6),
+              0 0 0 1px rgba(110,180,255,0.08) inset,
+              0 0 70px rgba(110,180,255,0.18);
+  color: rgba(225,240,255,0.96);
+  font-family: inherit;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  overflow: hidden;
+  transition: opacity 280ms ease, transform 320ms cubic-bezier(.2,.9,.3,1);
+}
+#hud-subtitle.show {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(-50%) translateY(0);
+}
+#hud-subtitle .hs-role {
+  font-size: 9.5px;
+  letter-spacing: 1.6px;
+  text-transform: uppercase;
+  color: rgba(150,200,255,0.65);
+  margin-bottom: 6px;
+  font-family: 'Consolas','SF Mono','Menlo',monospace;
+}
+#hud-subtitle.op .hs-role { color: rgba(255,200,150,0.65); }
+#hud-subtitle .hs-text {
+  font-size: 16px;
+  line-height: 1.5;
+  letter-spacing: 0.1px;
+  max-height: 28vh;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+#hud-subtitle .hs-text::-webkit-scrollbar { width: 5px; }
+#hud-subtitle .hs-text::-webkit-scrollbar-thumb {
+  background: rgba(110,180,255,0.35); border-radius: 3px;
+}
+#hud-subtitle .hs-foot {
+  margin-top: 8px;
+  font-size: 9.5px;
+  letter-spacing: 0.6px;
+  color: rgba(150,200,255,0.4);
+  font-family: 'Consolas','SF Mono','Menlo',monospace;
+}
+#hud-subtitle:hover { border-color: rgba(110,180,255,0.6); }
+@media (max-width: 720px) {
+  #hud-subtitle {
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 130px);
+    width: 94vw;
+    padding: 12px 16px 10px 16px;
+  }
+  #hud-subtitle .hs-text { font-size: 14px; max-height: 32vh; }
+}
+
+/* HUD overlay — prominent foreground card for visual widgets that
+   the operator asked to *see*, not just have in chat history. Maps,
+   images, weather. Front-and-centre, dismissable, auto-fades after
+   a long timeout if ignored. */
+#hud-overlay {
+  position: fixed;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%) scale(0.92);
+  width: min(640px, 88vw);
+  max-height: 78vh;
+  z-index: 8000;
+  background: linear-gradient(180deg, rgba(18,28,46,0.96) 0%, rgba(10,18,32,0.96) 100%);
+  border: 1px solid rgba(110,180,255,0.35);
+  border-radius: 14px;
+  box-shadow: 0 30px 80px rgba(0,0,0,0.55), 0 0 0 1px rgba(110,180,255,0.12) inset, 0 0 60px rgba(110,180,255,0.18);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 220ms ease, transform 260ms cubic-bezier(.2,.9,.3,1);
+  overflow: hidden;
+  font-family: inherit;
+  color: rgba(220,235,250,0.95);
+}
+#hud-overlay.open {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+  pointer-events: auto;
+}
+#hud-overlay .ho-head {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 14px;
+  font-size: 12px; letter-spacing: 1px; text-transform: uppercase;
+  color: rgba(190,220,255,0.92);
+  background: rgba(110,180,255,0.08);
+  border-bottom: 1px solid rgba(110,180,255,0.18);
+}
+#hud-overlay .ho-head .ho-title { flex: 1; font-weight: 600; }
+#hud-overlay .ho-head .ho-close {
+  background: transparent; border: 1px solid rgba(110,180,255,0.35);
+  color: rgba(190,220,255,0.85);
+  width: 26px; height: 26px; border-radius: 6px; cursor: pointer;
+  font-size: 14px; line-height: 1;
+}
+#hud-overlay .ho-head .ho-close:hover { background: rgba(110,180,255,0.18); color: #fff; }
+#hud-overlay .ho-body { padding: 0; }
+#hud-overlay .ho-map {
+  display: block; width: 100%; height: min(520px, 60vh);
+  border: none; background: #0a1422;
+}
+#hud-overlay img.ho-img {
+  display: block; width: 100%; max-height: 60vh; object-fit: contain;
+  background: #0a1422;
+}
+#hud-overlay .ho-foot {
+  padding: 10px 14px;
+  font-size: 11.5px;
+  color: rgba(200,220,240,0.7);
+  border-top: 1px solid rgba(110,180,255,0.15);
+  display: flex; gap: 14px; flex-wrap: wrap;
+}
+#hud-overlay .ho-foot a {
+  color: rgba(150,200,255,0.95);
+  text-decoration: none;
+  border-bottom: 1px dotted rgba(150,200,255,0.4);
+}
+#hud-overlay .ho-foot a:hover { color: #aee0ff; }
+#hud-overlay-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(2,6,12,0.55);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  z-index: 7999;
+  opacity: 0; pointer-events: none;
+  transition: opacity 200ms ease;
+}
+#hud-overlay-backdrop.open { opacity: 1; pointer-events: auto; }
+@media (max-width: 720px) {
+  #hud-overlay { width: 96vw; }
+  #hud-overlay iframe.ho-map { height: 50vh; }
+}
+
+/* Widget cards rendered below jarvis bubbles by the SSE
+   `kind:'widget'` side-channel. Map / image / link / weather. */
+.hc-widget {
+  align-self: stretch;
+  margin: 4px 0 8px 0;
+  background: linear-gradient(180deg, rgba(20,32,52,0.65) 0%, rgba(12,22,38,0.65) 100%);
+  border: 1px solid rgba(110,180,255,0.25);
+  border-radius: 10px;
+  overflow: hidden;
+  font-family: inherit;
+  color: rgba(220,235,250,0.92);
+  box-shadow: 0 6px 18px rgba(0,0,0,0.35), 0 0 0 1px rgba(110,180,255,0.05) inset;
+}
+.hc-widget .hc-widget-head {
+  padding: 8px 10px;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  color: rgba(190,220,255,0.9);
+  border-bottom: 1px solid rgba(110,180,255,0.15);
+  background: rgba(110,180,255,0.06);
+}
+.hc-widget .hc-widget-foot {
+  padding: 6px 10px;
+  font-size: 10.5px;
+  letter-spacing: 0.3px;
+  color: rgba(200,220,240,0.65);
+  border-top: 1px solid rgba(110,180,255,0.12);
+}
+.hc-widget .hc-widget-foot a {
+  color: rgba(150,200,255,0.95);
+  text-decoration: none;
+  border-bottom: 1px dotted rgba(150,200,255,0.4);
+}
+.hc-widget .hc-widget-foot a:hover { color: #aee0ff; }
+.hc-widget-map {
+  display: block;
+  width: 100%;
+  height: 220px;
+  border: none;
+  background: #0a1422;
+}
+.hc-widget-img {
+  display: block;
+  width: 100%;
+  max-height: 320px;
+  object-fit: cover;
+  background: #0a1422;
+}
+.hc-widget-link { display: block; padding: 10px 12px; text-decoration: none; color: inherit; }
+.hc-widget-link:hover { background: rgba(110,180,255,0.06); }
+.hc-widget-link .hc-widget-head { padding: 0; border: none; background: none; }
+.hc-widget-link .hc-widget-foot { padding: 4px 0 0 0; border: none; }
+.hc-widget-link .hc-widget-url {
+  margin-top: 4px;
+  font-family: 'Consolas','SF Mono','Menlo',monospace;
+  font-size: 10px;
+  color: rgba(150,200,255,0.6);
+  word-break: break-all;
+}
+.hc-widget-temp {
+  font-size: 28px;
+  font-weight: 200;
+  letter-spacing: 1px;
+  text-align: center;
+  padding: 16px 10px 6px 10px;
+  color: #cfe7ff;
+  font-family: 'Consolas','SF Mono','Menlo',monospace;
+}
+
+/* Results widget — list of clickable cards from web/github/HN search.
+   Each card hosts a title, snippet, meta line, and host. */
+.hc-widget-results {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: rgba(110,180,255,0.08);
+}
+.hc-widget-results .hc-result {
+  display: block;
+  padding: 10px 12px;
+  background: rgba(12,22,38,0.7);
+  text-decoration: none;
+  color: rgba(220,235,250,0.92);
+  border: none;
+  transition: background 120ms ease;
+}
+.hc-widget-results .hc-result:hover {
+  background: rgba(110,180,255,0.12);
+}
+.hc-widget-results .hc-result-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  color: rgba(170,220,255,0.95);
+  line-height: 1.35;
+}
+.hc-widget-results .hc-result-snippet {
+  margin-top: 4px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: rgba(200,220,240,0.72);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.hc-widget-results .hc-result-meta {
+  margin-top: 5px;
+  font-size: 10px;
+  letter-spacing: 0.3px;
+  color: rgba(150,200,255,0.7);
+  font-family: 'Consolas','SF Mono','Menlo',monospace;
+}
+.hc-widget-results .hc-result-host {
+  margin-top: 3px;
+  font-size: 9.5px;
+  letter-spacing: 0.4px;
+  color: rgba(150,200,255,0.5);
+  font-family: 'Consolas','SF Mono','Menlo',monospace;
+  text-transform: lowercase;
+}
+
 /* Mobile — chat widget becomes a full-screen overlay so it's actually
    readable on phones (rather than a thin slice off the right). */
 @media (max-width: 720px) {
@@ -2226,6 +2500,52 @@ canvas { display: block; }
   .agent-card { font-size: 11px; }
 }
 </style>
+
+<!-- Leaflet — slim map renderer for dark-mode map widgets. CartoDB
+     Dark Matter tiles ship the same palette family the HUD uses. -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin="">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+        crossorigin=""></script>
+<style>
+/* Leaflet defaults are tuned for light maps — recolour controls + popups
+   to match the J.A.R.V.I.S. cyan-edge dark glass scheme. */
+.leaflet-container {
+  background: #0a1422;
+  outline: none;
+  font-family: inherit;
+}
+.leaflet-control-zoom a {
+  background: rgba(18,28,46,0.92) !important;
+  color: rgba(190,220,255,0.92) !important;
+  border: 1px solid rgba(110,180,255,0.35) !important;
+}
+.leaflet-control-zoom a:hover { background: rgba(110,180,255,0.18) !important; color: #fff !important; }
+.leaflet-control-attribution {
+  background: rgba(10,18,32,0.78) !important;
+  color: rgba(190,220,255,0.55) !important;
+  font-size: 9.5px !important;
+  padding: 2px 6px !important;
+  border-radius: 0 0 0 6px !important;
+}
+.leaflet-control-attribution a { color: rgba(150,200,255,0.85) !important; }
+/* Cyan pulse marker so it reads as Jarvis, not stock-Leaflet blue. */
+.j-marker {
+  width: 16px; height: 16px;
+  margin-left: -8px; margin-top: -8px;
+  background: rgba(120,210,255,0.95);
+  border: 2px solid #0a1422;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px rgba(120,210,255,0.55), 0 0 18px rgba(120,210,255,0.85);
+  animation: jMarkerPulse 1800ms ease-in-out infinite;
+}
+@keyframes jMarkerPulse {
+  0%, 100% { box-shadow: 0 0 0 2px rgba(120,210,255,0.45), 0 0 14px rgba(120,210,255,0.65); }
+  50%      { box-shadow: 0 0 0 5px rgba(120,210,255,0.20), 0 0 26px rgba(120,210,255,0.95); }
+}
+</style>
 </head>
 <body>
 
@@ -2281,6 +2601,33 @@ canvas { display: block; }
 </div>
 
 <!-- Right-edge daily-briefing widget — slide-out, voice or button toggleable -->
+<!-- HUD subtitle — film-style caption overlay that surfaces every
+     spoken exchange front-and-centre. Without this, Jarvis's reply
+     vanishes after the audio plays unless the operator manually
+     opens the right-edge chat panel. The subtitle is the bridge
+     between speech and visual presence. -->
+<div id="hud-subtitle" aria-live="polite">
+  <div class="hs-role" id="hs-role">J.A.R.V.I.S.</div>
+  <div class="hs-text" id="hs-text"></div>
+  <div class="hs-foot">
+    <span class="hs-hint">Tap to open chat history · Esc to dismiss</span>
+  </div>
+</div>
+
+<!-- HUD overlay — front-and-centre card for visual widgets that the
+     operator asked to *see* (maps, images). Backdrop dims the scene
+     behind it. Esc / click-backdrop / × button to dismiss. A copy
+     also lands in the chat history panel for later browsing. -->
+<div id="hud-overlay-backdrop" aria-hidden="true"></div>
+<div id="hud-overlay" role="dialog" aria-modal="false" aria-hidden="true">
+  <div class="ho-head">
+    <span class="ho-title" id="ho-title">—</span>
+    <button class="ho-close" id="ho-close" type="button" title="Close (Esc)">×</button>
+  </div>
+  <div class="ho-body" id="ho-body"></div>
+  <div class="ho-foot" id="ho-foot"></div>
+</div>
+
 <div id="hud-briefing" aria-hidden="true">
   <div class="hb-head">
     <span class="hb-dot"></span>
@@ -4918,8 +5265,10 @@ async function _postVoiceTurn(blob, mime) {
       transcriptEl.classList.add('visible');
     }
     if (data.response) {
-      setResponseText(data.response);
-      responseEl.classList.add('visible');
+      // Subtitle is driven from the JSON return so we have a guaranteed
+      // visual reply even if SSE drops. Chat bubbles flow through SSE
+      // only — adding them from JSON too produced 3-copy duplicates.
+      try { showSubtitle('jarvis', data.response); } catch (_) {}
     }
 
     if (data.audio_b64) {
@@ -5225,8 +5574,9 @@ async function sendChat() {
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const data = await r.json();
     if (data.response) {
-      setResponseText(data.response);
-      responseEl.classList.add('visible');
+      // Subtitle replaces the legacy responseEl bubble — don't show
+      // both at once. Chat bubbles flow through SSE only.
+      try { showSubtitle('jarvis', data.response); } catch (_) {}
       // Append this turn to the rolling history so the next /chat has
       // context. We keep what the operator actually typed (not the
       // file-augmented effective prompt).
@@ -5386,8 +5736,8 @@ async function runMenuCommand(text, el) {
     const data = await resp.json();
 
     if (data.response) {
-      setResponseText(data.response);
-      responseEl.classList.add('visible');
+      // Subtitle replaces legacy responseEl. Chat bubbles via SSE only.
+      try { showSubtitle('jarvis', data.response); } catch (_) {}
     }
 
     if (data.audio_b64) {
@@ -6293,8 +6643,35 @@ function _hcFmtTime(ts) {
   const m = d.getMinutes().toString().padStart(2,'0');
   return h + ':' + m;
 }
+// Dedupe layer — three paths can all deliver the same exchange:
+// (1) voice_cmd's _record_fp/_emit_chat_pair → SSE,
+// (2) brain_server's /voice_turn or /chat → SSE,
+// (3) JSON-return-body fallback in the fetch handler.
+// Track every sig we've rendered in the last 5s and reject repeats.
+const _recentBubbles = new Map();
 function addChatBubble(role, content, ts) {
-  if (!elHcList) return;
+  if (!elHcList) {
+    console.warn('[BUBBLE] elHcList is null — cannot render');
+    return;
+  }
+  const sig = role + '|' + (content || '');
+  const now = Date.now();
+  // Purge entries older than 5s so re-asking the same thing later
+  // (e.g. "what time is it" twice 30s apart) still renders both.
+  for (const [k, t] of _recentBubbles) {
+    if (now - t > 5000) _recentBubbles.delete(k);
+  }
+  if (_recentBubbles.has(sig)) {
+    return;
+  }
+  _recentBubbles.set(sig, now);
+  // Auto-open the chat panel on every Jarvis reply so the operator
+  // can read the response and click any widget links without having
+  // to manually toggle the panel. They can manually close it any
+  // time; we won't force it back open until the NEXT reply.
+  if (role === 'jarvis' && elHudChat && !elHudChat.classList.contains('open')) {
+    try { openChat(); } catch (_) {}
+  }
   // First real bubble — wipe the empty-state placeholder
   if (elHcList.firstElementChild && elHcList.firstElementChild.classList.contains('hc-empty')) {
     elHcList.innerHTML = '';
@@ -6309,6 +6686,11 @@ function addChatBubble(role, content, ts) {
   elHcList.appendChild(b);
   _hcCount++;
   if (elHcCount) elHcCount.textContent = String(_hcCount);
+  // If a tool emitted a widget before the jarvis bubble landed,
+  // attach it now.
+  if (role !== 'operator') {
+    try { _drainPendingWidgets(); } catch (_) {}
+  }
   // Auto-scroll to the bottom only if the user is already near the bottom
   // — keeps the scroll position stable when they're reading older history.
   const nearBottom = (elHcList.scrollHeight - elHcList.scrollTop - elHcList.clientHeight) < 80;
@@ -6319,6 +6701,13 @@ function addChatBubble(role, content, ts) {
 async function seedChatHistory() {
   if (_hcSeeded) return;
   _hcSeeded = true;
+  // If SSE has already delivered live content into elHcList while the
+  // panel was hidden (bubbles + their attached widgets), DO NOT wipe.
+  // The server's /chat_history only buffers message bubbles, not the
+  // widgets that arrived alongside them — re-rendering would silently
+  // drop maps/images/cards that were already attached. Honour the
+  // live SSE state when we have it.
+  if (_hcCount > 0) return;
   try {
     const params = new URLSearchParams(window.location.search);
     const host = params.get('host') || window.location.host || 'localhost:7710';
@@ -6366,17 +6755,409 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
+// =====================================================================
+// HUD subtitle — film-style caption surfacing every voice/chat
+// exchange front-and-centre. Without this, Jarvis's reply vanishes
+// after audio plays unless the operator manually opens the right-
+// edge chat panel. Tap subtitle → opens chat history for full
+// context + clickable widgets. Esc dismisses.
+// =====================================================================
+const elHudSubtitle = document.getElementById('hud-subtitle');
+const elHsRole = document.getElementById('hs-role');
+const elHsText = document.getElementById('hs-text');
+let _subtitleTimer = null;
+
+function showSubtitle(role, text) {
+  if (!elHudSubtitle || !elHsText) return;
+  const t = (text || '').toString();
+  if (!t.trim()) return;
+  if (_subtitleTimer) { clearTimeout(_subtitleTimer); _subtitleTimer = null; }
+  if (elHsRole) {
+    elHsRole.textContent = role === 'operator' ? 'OPERATOR' : 'J.A.R.V.I.S.';
+  }
+  elHudSubtitle.classList.toggle('op', role === 'operator');
+  elHsText.textContent = t;
+  elHsText.scrollTop = 0;
+  elHudSubtitle.classList.add('show');
+  // No auto-hide for jarvis replies — operator wanted the reply
+  // visible until they're done reading. The next reply replaces this
+  // one; click subtitle / Esc to dismiss manually. Operator
+  // utterances still auto-hide briefly so the next reply isn't
+  // delayed in display.
+  if (role === 'operator') {
+    _subtitleTimer = setTimeout(hideSubtitle, 4000);
+  }
+}
+
+function hideSubtitle() {
+  if (!elHudSubtitle) return;
+  elHudSubtitle.classList.remove('show');
+  if (_subtitleTimer) { clearTimeout(_subtitleTimer); _subtitleTimer = null; }
+}
+
+if (elHudSubtitle) {
+  // Click subtitle → open chat history so the operator can scroll
+  // back, click links in result widgets, or copy text. Subtitle
+  // dismisses; chat panel takes over.
+  elHudSubtitle.addEventListener('click', () => {
+    hideSubtitle();
+    if (typeof openChat === 'function') openChat();
+  });
+}
+// Self-test: prove the new code is loaded by flashing the subtitle on
+// page boot. If the operator doesn't see this on hard-refresh, the
+// browser is serving a stale brain.html and the rest of the new code
+// won't run either.
+console.log('[jarvis] subtitle init: el=%o showSubtitle=%s',
+  elHudSubtitle, typeof showSubtitle);
+if (elHudSubtitle) {
+  setTimeout(() => {
+    try {
+      showSubtitle('jarvis',
+        'HUD ready. Subtitles will appear here on every reply.');
+    } catch (e) { console.error('[jarvis] subtitle self-test failed', e); }
+  }, 1200);
+}
+// Diagnostic exposure removed — the addChatBubble wrapper caused
+// infinite recursion (function decls in <script> become globals, so
+// window.addChatBubble *is* the local — wrapping it creates a self-
+// referential call). showSubtitle is still globally reachable from
+// its own declaration; no need to re-export.
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && elHudSubtitle && elHudSubtitle.classList.contains('show')) {
+    hideSubtitle();
+  }
+});
+
+// =====================================================================
+// Voice ack playback. Server emits {kind:'speak_now', audio_b64} on
+// the chat SSE stream at the start of every turn ("On it, sir.") so
+// the operator hears something while the LLM tool chain runs.
+// Browsers require a user gesture before audio plays — we suppress
+// the warning quietly when the page hasn't been clicked yet; first
+// real interaction unlocks the autoplay budget.
+// =====================================================================
+let _ackAudio = null;
+function playAckAudio(b64) {
+  if (!b64) return;
+  try {
+    if (_ackAudio) { try { _ackAudio.pause(); } catch (_) {} }
+    _ackAudio = new Audio('data:audio/mpeg;base64,' + b64);
+    _ackAudio.volume = 0.85;
+    const p = _ackAudio.play();
+    if (p && typeof p.catch === 'function') p.catch(() => { /* autoplay-blocked is fine */ });
+  } catch (_) { /* ignore */ }
+}
+
+// =====================================================================
+// Widget renderer. Server emits {kind:'widget', widget:{type, data}}
+// as a side-channel from tools (maps_locate, weather_card, image_card,
+// link_card). Inserts a card *below* the most recent jarvis bubble in
+// the chat list, so the visual answer travels with the spoken reply.
+// If no jarvis bubble exists yet (widget arrived first), we queue it
+// and attach to the next bubble that lands.
+// =====================================================================
+let _pendingWidgets = [];          // [{spec, ts}, ...]
+
+function renderWidget(spec, ts) {
+  if (!spec || !spec.type) return;
+  // ---- 1. Front-and-centre HUD overlay so the operator SEES it
+  //         immediately, not buried in a sidebar. Maps + images are
+  //         the visual ones; link/weather still live in chat only.
+  if (spec.type === 'map' || spec.type === 'image') {
+    showHudOverlay(spec);
+  }
+  // ---- 2. Also drop a copy in the chat panel for history. If the
+  //         jarvis bubble hasn't landed yet (widget arrived first),
+  //         queue it and attach when the bubble shows up.
+  if (!elHcList) { _pendingWidgets.push({spec, ts}); return; }
+  let host = null;
+  const bubbles = elHcList.querySelectorAll('.hc-bubble.jv');
+  if (bubbles.length) host = bubbles[bubbles.length - 1];
+  if (!host) { _pendingWidgets.push({spec, ts}); return; }
+  const card = _buildWidgetCard(spec);
+  if (!card) return;
+  host.insertAdjacentElement('afterend', card);
+  const nearBottom = (elHcList.scrollHeight - elHcList.scrollTop - elHcList.clientHeight) < 200;
+  if (nearBottom) requestAnimationFrame(() => { elHcList.scrollTop = elHcList.scrollHeight; });
+  // Auto-open the chat panel for chat-only widget types — link /
+  // weather / results don't get a foreground HUD overlay, so the
+  // operator can't see them otherwise. Map / image already opened
+  // their own overlay above so we skip those here.
+  const chatOnly = (spec.type === 'link' || spec.type === 'weather' || spec.type === 'results');
+  if (chatOnly && elHudChat && !elHudChat.classList.contains('open')) {
+    openChat();
+  }
+}
+
+// =====================================================================
+// HUD overlay — prominent front-and-centre card for visual widgets.
+// This is what makes Jarvis FEEL responsive when you ask for a map:
+// the map appears in the foreground rather than buried in a chat
+// panel that may or may not be open. Dismissable by Esc, ×, click-
+// outside, or by saying "close the map" (handled in voice fast-path,
+// future work).
+// =====================================================================
+const elHudOverlay = document.getElementById('hud-overlay');
+const elHudOverlayBackdrop = document.getElementById('hud-overlay-backdrop');
+const elHoTitle = document.getElementById('ho-title');
+const elHoBody  = document.getElementById('ho-body');
+const elHoFoot  = document.getElementById('ho-foot');
+const elHoClose = document.getElementById('ho-close');
+
+function showHudOverlay(spec) {
+  if (!elHudOverlay || !elHoBody) return;
+  const d = spec.data || {};
+  if (spec.type === 'map') {
+    const lat = parseFloat(d.lat), lon = parseFloat(d.lon);
+    if (Number.isNaN(lat) || Number.isNaN(lon)) return;
+    const zoom = parseInt(d.zoom || 13, 10);
+    const label = d.label || (lat.toFixed(4) + ', ' + lon.toFixed(4));
+    if (elHoTitle) elHoTitle.textContent = '📍 ' + label;
+    // Tear down any previous Leaflet instance hosted in this panel
+    // before swapping the body — re-using the same node id leaks
+    // tiles + event handlers otherwise.
+    if (elHudOverlay._leafletMap) {
+      try { elHudOverlay._leafletMap.remove(); } catch (_) {}
+      elHudOverlay._leafletMap = null;
+    }
+    elHoBody.innerHTML = '<div class="ho-map" id="ho-map-host"></div>';
+    const mapHost = document.getElementById('ho-map-host');
+    // Defer init one frame — Leaflet needs the host in the DOM with
+    // a measurable size, and the overlay is mid-CSS-transition into
+    // its final box.
+    requestAnimationFrame(() => {
+      const m = _buildLeafletMap(mapHost, lat, lon, zoom, label);
+      if (m) elHudOverlay._leafletMap = m;
+    });
+    if (elHoFoot) {
+      elHoFoot.innerHTML =
+        '<a href="https://www.openstreetmap.org/?mlat=' + lat + '&mlon=' + lon +
+          '#map=' + zoom + '/' + lat + '/' + lon +
+          '" target="_blank" rel="noopener">Open in OpenStreetMap</a>' +
+        '<a href="https://www.google.com/maps?q=' + lat + ',' + lon +
+          '" target="_blank" rel="noopener">Google Maps</a>';
+    }
+  } else if (spec.type === 'image') {
+    if (!d.url) return;
+    if (elHoTitle) elHoTitle.textContent = d.caption || 'Image';
+    elHoBody.innerHTML = '<img class="ho-img" src="' + escapeHtml(d.url) +
+      '" alt="' + escapeHtml(d.caption || '') + '">';
+    if (elHoFoot) elHoFoot.innerHTML = d.caption ? escapeHtml(d.caption) : '';
+  } else {
+    return;
+  }
+  elHudOverlay.classList.add('open');
+  elHudOverlay.setAttribute('aria-hidden', 'false');
+  if (elHudOverlayBackdrop) {
+    elHudOverlayBackdrop.classList.add('open');
+    elHudOverlayBackdrop.setAttribute('aria-hidden', 'false');
+  }
+}
+
+function hideHudOverlay() {
+  if (elHudOverlay) {
+    elHudOverlay.classList.remove('open');
+    elHudOverlay.setAttribute('aria-hidden', 'true');
+    // Drop the Leaflet instance — keeps tile fetches from continuing
+    // in the background and prevents double-init when the overlay
+    // is reopened for a different place.
+    if (elHudOverlay._leafletMap) {
+      try { elHudOverlay._leafletMap.remove(); } catch (_) {}
+      elHudOverlay._leafletMap = null;
+    }
+  }
+  if (elHudOverlayBackdrop) {
+    elHudOverlayBackdrop.classList.remove('open');
+    elHudOverlayBackdrop.setAttribute('aria-hidden', 'true');
+  }
+}
+
+if (elHoClose) elHoClose.addEventListener('click', hideHudOverlay);
+if (elHudOverlayBackdrop) elHudOverlayBackdrop.addEventListener('click', hideHudOverlay);
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && elHudOverlay && elHudOverlay.classList.contains('open')) {
+    hideHudOverlay();
+  }
+});
+
+function _drainPendingWidgets() {
+  if (!_pendingWidgets.length) return;
+  const drained = _pendingWidgets.splice(0);
+  for (const w of drained) renderWidget(w.spec, w.ts);
+}
+
+function _buildWidgetCard(spec) {
+  const wrap = document.createElement('div');
+  wrap.className = 'hc-widget hc-widget-' + spec.type;
+  try {
+    if (spec.type === 'map')        return _renderMapWidget(wrap, spec.data || {});
+    if (spec.type === 'image')      return _renderImageWidget(wrap, spec.data || {});
+    if (spec.type === 'link')       return _renderLinkWidget(wrap, spec.data || {});
+    if (spec.type === 'weather')    return _renderWeatherWidget(wrap, spec.data || {});
+    if (spec.type === 'results')    return _renderResultsWidget(wrap, spec.data || {});
+  } catch (e) { /* fall through */ }
+  // Unknown type — render JSON as text so the operator sees something
+  // instead of nothing.
+  wrap.textContent = JSON.stringify(spec, null, 2);
+  return wrap;
+}
+
+function _renderResultsWidget(wrap, d) {
+  const hits = Array.isArray(d.hits) ? d.hits : [];
+  if (!hits.length) return null;
+  const title = d.title || 'Results';
+  const sourceIcon = d.source === 'github' ? '🐙'
+                  : d.source === 'hackernews' ? '🟧'
+                  : d.source === 'web' ? '🌐'
+                  : '🔍';
+  let html = '<div class="hc-widget-head">' + sourceIcon + ' ' + escapeHtml(title) + '</div>';
+  html += '<div class="hc-widget-results">';
+  for (const h of hits) {
+    if (!h || !h.url) continue;
+    html += '<a class="hc-result" href="' + escapeHtml(h.url) +
+            '" target="_blank" rel="noopener">' +
+            '<div class="hc-result-title">' + escapeHtml(h.title || h.url) + '</div>';
+    if (h.snippet) {
+      html += '<div class="hc-result-snippet">' + escapeHtml(h.snippet) + '</div>';
+    }
+    if (h.meta) {
+      html += '<div class="hc-result-meta">' + escapeHtml(h.meta) + '</div>';
+    }
+    try {
+      const u = new URL(h.url);
+      html += '<div class="hc-result-host">' + escapeHtml(u.hostname.replace(/^www\./, '')) + '</div>';
+    } catch (_) {}
+    html += '</a>';
+  }
+  html += '</div>';
+  wrap.innerHTML = html;
+  return wrap;
+}
+
+// Shared Leaflet builder. Renders CartoDB Dark Matter tiles and a
+// pulsing cyan Jarvis marker. Returns the leaflet map instance so
+// the caller can resize/destroy as needed (we do invalidateSize on
+// open since chat-panel maps init while their host is hidden).
+function _buildLeafletMap(container, lat, lon, zoom, label) {
+  if (typeof L === 'undefined') return null;
+  try {
+    const map = L.map(container, {
+      center: [lat, lon], zoom: zoom,
+      zoomControl: true, attributionControl: true,
+      preferCanvas: true, fadeAnimation: false,
+    });
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+      attribution: '© OpenStreetMap · © CARTO',
+      subdomains: 'abcd',
+      maxZoom: 19,
+    }).addTo(map);
+    L.marker([lat, lon], {
+      icon: L.divIcon({ className: 'j-marker', iconSize: [16, 16] }),
+      title: label || '',
+    }).addTo(map);
+    // Tile loading needs a layout pass — without this, maps inside
+    // hidden / animating containers render as a single blank tile.
+    setTimeout(() => { try { map.invalidateSize(); } catch (_) {} }, 60);
+    setTimeout(() => { try { map.invalidateSize(); } catch (_) {} }, 320);
+    return map;
+  } catch (_) { return null; }
+}
+
+function _renderMapWidget(wrap, d) {
+  // Lat/lon required. Optional zoom (default 13), label, address.
+  const lat = parseFloat(d.lat);
+  const lon = parseFloat(d.lon);
+  if (Number.isNaN(lat) || Number.isNaN(lon)) return null;
+  const zoom = parseInt(d.zoom || 13, 10);
+  const label = d.label || d.address || (lat.toFixed(4) + ', ' + lon.toFixed(4));
+  const mapHost = document.createElement('div');
+  mapHost.className = 'hc-widget-map';
+  wrap.innerHTML =
+    '<div class="hc-widget-head">📍 ' + escapeHtml(label) + '</div>';
+  wrap.appendChild(mapHost);
+  const foot = document.createElement('div');
+  foot.className = 'hc-widget-foot';
+  foot.innerHTML =
+    '<a href="https://www.openstreetmap.org/?mlat=' + lat + '&mlon=' + lon +
+      '#map=' + zoom + '/' + lat + '/' + lon +
+      '" target="_blank" rel="noopener">Open in OpenStreetMap</a>' +
+    ' · ' +
+    '<a href="https://www.google.com/maps?q=' + lat + ',' + lon +
+      '" target="_blank" rel="noopener">Google Maps</a>';
+  wrap.appendChild(foot);
+  // Leaflet must init AFTER the host is in the DOM. Defer one frame.
+  requestAnimationFrame(() => { _buildLeafletMap(mapHost, lat, lon, zoom, label); });
+  return wrap;
+}
+
+function _renderImageWidget(wrap, d) {
+  if (!d.url) return null;
+  const cap = d.caption ? '<div class="hc-widget-foot">' + escapeHtml(d.caption) + '</div>' : '';
+  wrap.innerHTML =
+    '<img class="hc-widget-img" src="' + escapeHtml(d.url) + '" alt="' +
+      escapeHtml(d.caption || '') + '" loading="lazy">' + cap;
+  return wrap;
+}
+
+function _renderLinkWidget(wrap, d) {
+  if (!d.url) return null;
+  const title = d.title || d.url;
+  const desc = d.description || '';
+  wrap.innerHTML =
+    '<a class="hc-widget-link" href="' + escapeHtml(d.url) +
+      '" target="_blank" rel="noopener">' +
+      '<div class="hc-widget-head">' + escapeHtml(title) + '</div>' +
+      (desc ? '<div class="hc-widget-foot">' + escapeHtml(desc) + '</div>' : '') +
+      '<div class="hc-widget-url">' + escapeHtml(d.url) + '</div>' +
+    '</a>';
+  return wrap;
+}
+
+function _renderWeatherWidget(wrap, d) {
+  const place = d.location || d.place || 'Weather';
+  const temp = (d.temp_c != null) ? Math.round(d.temp_c) + '°C' : (d.temp || '—');
+  const cond = d.condition || d.description || '';
+  wrap.innerHTML =
+    '<div class="hc-widget-head">🌤 ' + escapeHtml(place) + '</div>' +
+    '<div class="hc-widget-temp">' + escapeHtml(String(temp)) + '</div>' +
+    (cond ? '<div class="hc-widget-foot">' + escapeHtml(cond) + '</div>' : '');
+  return wrap;
+}
+
 function connectChatSSE() {
   const params = new URLSearchParams(window.location.search);
   const host = params.get('host') || window.location.host || 'localhost:7710';
   const proto = window.location.protocol === 'https:' ? 'https' : 'http';
   const url = `${proto}://${host}/chat_events`;
+  console.log('[CHATSSE] connecting to', url);
   const es = new EventSource(url);
+  es.onopen = () => console.log('[CHATSSE] open readyState=', es.readyState);
   es.onmessage = (ev) => {
+    console.log('[CHATSSE] msg', (ev.data || '').slice(0, 200));
+    let e;
+    try { e = JSON.parse(ev.data); }
+    catch (err) { console.error('[CHATSSE] parse failed', err); return; }
     try {
-      const e = JSON.parse(ev.data);
       if (e.kind === 'msg') {
         addChatBubble(e.role, e.content, e.ts);
+        // Also surface jarvis replies as subtitles, in case the operator
+        // arrived via the menu / phone client and the local fallbacks
+        // didn't fire.
+        if (e.role === 'jarvis') {
+          try { showSubtitle('jarvis', e.content); } catch (_) {}
+        }
+      } else if (e.kind === 'speak_now') {
+        // Pre-synth voice ack from server ("On it, sir.") — plays
+        // while the LLM tool chain runs so the operator hears
+        // something instead of staring at 5-30s of silence.
+        playAckAudio(e.audio_b64);
+      } else if (e.kind === 'widget') {
+        // Side-channel widget render request from a tool (e.g.
+        // maps_locate emits {kind:widget, widget:{type:'map',...}}).
+        // Renders below the most recent jarvis bubble, or queues if
+        // the bubble hasn't arrived yet.
+        renderWidget(e.widget, e.ts);
       } else if (e.kind === 'toggle') {
         // Targeted toggle. Backwards-compatible: when target is missing
         // (older server) we assume "chat" so the previously-shipped
@@ -6396,9 +7177,17 @@ function connectChatSSE() {
           else if (e.action === 'toggle') toggleBriefing();
         }
       }
-    } catch (_) {}
+    } catch (err) {
+      // No more silent swallow — log so we can actually see what
+      // breaks bubble rendering.
+      console.error('[CHATSSE] handler error for', e && e.kind, err);
+    }
   };
-  es.onerror = () => { es.close(); setTimeout(connectChatSSE, 3000); };
+  es.onerror = (err) => {
+    console.warn('[CHATSSE] error readyState=', es.readyState, err);
+    es.close();
+    setTimeout(connectChatSSE, 3000);
+  };
 }
 
 // =====================================================================

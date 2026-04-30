@@ -54,6 +54,57 @@ _BUSY_MSG = (
 # each turn runs to completion before the next begins.
 _voice_turn_lock = threading.Lock()
 
+# Lock acquire timeout. Was 5s (fail-fast). With voice acks now playing
+# "Working on it" inside the lock, fast-fail is no longer needed —
+# concurrent requests sit on the lock long enough for the previous turn
+# to finish naturally. 30s covers a normal gpt-4o tool chain; beyond
+# that we 503 with the busy message + a busy ack so the operator hears
+# something rather than staring at a stuck UI.
+_LOCK_ACQUIRE_TIMEOUT_S = 30
+
+# Tool-chain wall-clock deadline. process_command can in theory run for
+# minutes if the LLM chains web_search → fetch_url → dispatch_agent →
+# etc. We let it run up to this long, then return a fallback voice
+# response. The worker thread isn't killed (Python can't cooperatively
+# kill a thread without rewriting process_command); it keeps running in
+# the background and its result lands in the vault as a journal entry,
+# but the HTTP turn unblocks the operator. Accepted trade-off.
+_PROCESS_DEADLINE_S = 25
+
+
+def _run_with_deadline(fn: Callable[[str], str], arg: str,
+                       deadline_s: float) -> "Optional[str]":
+    """Run ``fn(arg)`` on a daemon thread; return its result, or ``None``
+    if the deadline elapses first.
+
+    On timeout the worker keeps running (we can't kill it safely), but
+    the caller stops waiting and returns a fallback response to the
+    user. Background work may eventually write to the vault — that's
+    intentional. Operator can grep ``Brain/Daily/`` for late results.
+
+    Re-raises any exception the worker raised, so the handler's
+    existing try/except still sees them.
+    """
+    import threading as _threading
+    box: List[Any] = []
+    err_box: List[BaseException] = []
+
+    def _runner() -> None:
+        try:
+            box.append(fn(arg))
+        except BaseException as exc:                # noqa: BLE001
+            err_box.append(exc)
+
+    t = _threading.Thread(target=_runner, daemon=True,
+                          name="process_command-deadline")
+    t.start()
+    t.join(timeout=deadline_s)
+    if t.is_alive():
+        return None
+    if err_box:
+        raise err_box[0]
+    return box[0] if box else ""
+
 
 # ---------------------------------------------------------------------------
 # PIN gate — protects the public-tunnel endpoints from random visitors
@@ -136,6 +187,28 @@ def set_voice_context(
     _ctx.tts_backend = tts_backend
     _ctx.config = config
     _ctx.process_command = process_command
+    # Wire the voice-ack module so /chat /text_command /voice_turn can
+    # play "On it, sir" while the LLM tool chain runs (5-30s window
+    # was previously silent — most-cited frustration with the pipeline).
+    try:
+        from openjarvis.cli import voice_ack
+        digest = getattr(config, "digest", None)
+        voice_ack.configure(
+            tts_backend,
+            voice_id=(getattr(digest, "voice_id", None) or "fable"),
+            speed=(getattr(digest, "voice_speed", None) or 1.0),
+        )
+        voice_ack.warmup_async()
+    except Exception:
+        logger.debug("voice_ack configure failed", exc_info=True)
+    # Intent-classifier centroid build runs in the background on first
+    # startup (~150ms one OpenAI call). Subsequent runs hit the disk
+    # cache. Keeps the very first turn from paying the embedding cost.
+    try:
+        from openjarvis.cli import intent_classifier
+        intent_classifier.warmup_async()
+    except Exception:
+        logger.debug("intent_classifier warmup failed", exc_info=True)
 
 
 class _BrainState:
@@ -250,6 +323,7 @@ class _ChatHistoryBus:
     def _broadcast(self, event: Dict[str, Any]) -> None:
         msg = ("data: " + json.dumps(event) + "\n\n").encode("utf-8")
         with self._lock:
+            n_clients = len(self._clients)
             dead = []
             for wfile in self._clients:
                 try:
@@ -259,6 +333,15 @@ class _ChatHistoryBus:
                     dead.append(wfile)
             for d in dead:
                 self._clients.remove(d)
+            n_alive = len(self._clients)
+        # Loud diagnostic — operator pastes terminal output if chat
+        # history stays empty. Tag is grep-friendly.
+        kind = event.get("kind", "?")
+        try:
+            print(f"[CHATBUS] broadcast kind={kind} clients={n_clients}->{n_alive}",
+                  flush=True)
+        except Exception:
+            pass
 
     def append_pair(self, operator_text: str, jarvis_text: str) -> None:
         """Record one operator → jarvis exchange. Called from /chat and
@@ -266,6 +349,11 @@ class _ChatHistoryBus:
         either side are skipped (e.g. an attachment-only message has no
         operator text — we still record the response)."""
         ts = time.time()
+        try:
+            print(f"[CHATBUS] append_pair op={len(operator_text or '')}c "
+                  f"jv={len(jarvis_text or '')}c", flush=True)
+        except Exception:
+            pass
         with self._lock:
             if (operator_text or "").strip():
                 self._buffer.append({
@@ -283,6 +371,37 @@ class _ChatHistoryBus:
         if (jarvis_text or "").strip():
             self._broadcast({"kind": "msg", "role": "jarvis",
                              "content": jarvis_text, "ts": ts})
+
+    def emit_widget(self, widget: Dict[str, Any]) -> None:
+        """Push a widget render request to all subscribed HUD clients.
+
+        Side-channel for tools that produce visual output alongside a
+        text reply (maps_locate → map widget, weather → weather card,
+        image_search → image card, link_card → link preview).
+
+        The HUD attaches the widget below the most recent jarvis chat
+        bubble, so the visual answer travels with the spoken reply.
+        Tools call this directly; the LLM still sees a normal string
+        result describing what happened. This avoids widening the
+        return type of every tool/process_command call site.
+
+        Schema (caller's responsibility to fill correctly):
+            {"type": "map", "data": {"lat": 51.5, "lon": -0.1,
+                                     "label": "London"}}
+            {"type": "image", "data": {"url": "...", "caption": "..."}}
+            {"type": "link", "data": {"url": "...", "title": "...",
+                                      "description": "..."}}
+            {"type": "weather", "data": {"location": "London",
+                                          "temp_c": 12,
+                                          "condition": "Cloudy"}}
+        """
+        if not isinstance(widget, dict) or not widget.get("type"):
+            return
+        self._broadcast({
+            "kind": "widget",
+            "widget": widget,
+            "ts": time.time(),
+        })
 
     def emit_toggle(self, action: str, target: str = "chat") -> None:
         """Emit a widget-open/close hint to all subscribed HUD clients.
@@ -311,13 +430,42 @@ class _ChatHistoryBus:
     def subscribe(self, wfile: Any) -> None:
         with self._lock:
             self._clients.append(wfile)
+            n = len(self._clients)
+        try:
+            print(f"[CHATBUS] +subscribe clients={n}", flush=True)
+        except Exception:
+            pass
 
     def unsubscribe(self, wfile: Any) -> None:
         with self._lock:
             self._clients = [c for c in self._clients if c is not wfile]
+            n = len(self._clients)
+        try:
+            print(f"[CHATBUS] -unsubscribe clients={n}", flush=True)
+        except Exception:
+            pass
 
 
 _chat_history = _ChatHistoryBus()
+
+
+def emit_widget(widget_type: str, data: Dict[str, Any]) -> None:
+    """Public helper for tools to render a widget in the chat panel.
+
+    Called from any tool that produces visual output alongside its
+    text reply. The widget lands below the next jarvis chat bubble.
+    Non-fatal: if the bus is missing or the HUD has no subscribers,
+    we silently no-op so the tool's text result still flows back to
+    the LLM and gets spoken.
+
+    Example:
+        emit_widget("map", {"lat": 51.5074, "lon": -0.1278,
+                            "label": "London, UK", "zoom": 12})
+    """
+    try:
+        _chat_history.emit_widget({"type": widget_type, "data": data or {}})
+    except Exception:
+        logger.debug("emit_widget failed", exc_info=True)
 
 
 def emit_chat_widget_toggle(action: str) -> None:
@@ -817,11 +965,17 @@ class _Handler(SimpleHTTPRequestHandler):
             return self._json_response(503, {"error": "Voice pipeline not initialised."})
 
         # Reuse the voice-turn lock so chat + mic + menu don't collide.
-        # 5s timeout (was 30s) — fail fast so the operator knows immediately
-        # that the brain is on a previous turn rather than staring at 30s
-        # of nothing.
-        acquired = _voice_turn_lock.acquire(timeout=5)
+        # 30s wait (was 5s) — paired with voice_ack.emit_busy so the
+        # operator hears that the brain is on a previous turn instead
+        # of getting a 503 that races their fingers. Beyond 30s we do
+        # 503 + busy ack so the UI isn't stuck forever.
+        acquired = _voice_turn_lock.acquire(timeout=_LOCK_ACQUIRE_TIMEOUT_S)
         if not acquired:
+            try:
+                from openjarvis.cli import voice_ack
+                voice_ack.emit_busy()
+            except Exception:
+                pass
             return self._json_response(503, {"error": _BUSY_MSG})
         try:
             n = int(self.headers.get("Content-Length", 0))
@@ -913,7 +1067,32 @@ class _Handler(SimpleHTTPRequestHandler):
 
             # --- Pipeline ---
             _brain_state.update(state="thinking")
-            response_text = _ctx.process_command(effective) or ""
+            # Voice ack: "On it, sir." plays immediately while the LLM
+            # tool chain runs (5-30s). Without this the operator sees
+            # silence and assumes the request was lost.
+            try:
+                from openjarvis.cli import voice_ack
+                voice_ack.emit_thinking()
+            except Exception:
+                pass
+            _raw = _run_with_deadline(
+                _ctx.process_command, effective,
+                deadline_s=_PROCESS_DEADLINE_S,
+            )
+            if _raw is None:
+                # Deadline elapsed — soft fallback so the operator
+                # gets a response instead of staring at a stuck UI.
+                try:
+                    from openjarvis.cli import voice_ack
+                    voice_ack.emit_timeout()
+                except Exception:
+                    pass
+                response_text = (
+                    "That's running long, sir — I'll keep working on "
+                    "it and write what I find to your vault."
+                )
+            else:
+                response_text = _raw or ""
 
             # TTS for the response
             audio_b64 = ""
@@ -942,10 +1121,11 @@ class _Handler(SimpleHTTPRequestHandler):
             except Exception:
                 logger.debug("daily journal capture failed", exc_info=True)
 
-            # Stream into the chat-widget bus (in-memory rolling buffer
-            # broadcast over /chat_events). turn_text already includes
-            # any attachment summary so the widget shows the same thing
-            # the daily journal records.
+            # Belt-and-braces: also feed the chat bus from here.
+            # voice_cmd's _record_fp / LLM-return paths normally fire
+            # first, but a silent failure there would leave the panel
+            # empty. The HUD's Map-based 5s dedupe collapses both
+            # broadcasts into a single rendered bubble per side.
             try:
                 _chat_history.append_pair(turn_text, response_text)
             except Exception:
@@ -976,9 +1156,14 @@ class _Handler(SimpleHTTPRequestHandler):
             return
 
         # Reuse the voice-turn lock so a menu click doesn't collide with a
-        # concurrent mic turn. 5s timeout (was 30s) — fail-fast.
-        acquired = _voice_turn_lock.acquire(timeout=5)
+        # concurrent mic turn. 30s wait + voice_ack on busy/timeout.
+        acquired = _voice_turn_lock.acquire(timeout=_LOCK_ACQUIRE_TIMEOUT_S)
         if not acquired:
+            try:
+                from openjarvis.cli import voice_ack
+                voice_ack.emit_busy()
+            except Exception:
+                pass
             self._json_response(503, {"error": _BUSY_MSG})
             return
         try:
@@ -991,7 +1176,27 @@ class _Handler(SimpleHTTPRequestHandler):
                 return
 
             _brain_state.update(state="thinking")
-            response_text = _ctx.process_command(text) or ""
+            try:
+                from openjarvis.cli import voice_ack
+                voice_ack.emit_thinking()
+            except Exception:
+                pass
+            _raw = _run_with_deadline(
+                _ctx.process_command, text,
+                deadline_s=_PROCESS_DEADLINE_S,
+            )
+            if _raw is None:
+                try:
+                    from openjarvis.cli import voice_ack
+                    voice_ack.emit_timeout()
+                except Exception:
+                    pass
+                response_text = (
+                    "That's running long, sir — I'll keep working on "
+                    "it and write what I find to your vault."
+                )
+            else:
+                response_text = _raw or ""
 
             audio_b64 = ""
             if _ctx.tts_backend is not None and response_text and not response_text.startswith("__"):
@@ -1580,12 +1785,17 @@ class _Handler(SimpleHTTPRequestHandler):
             self._json_response(503, {"error": "Voice pipeline not initialised."})
             return
 
-        # Only one voice turn at a time. 5s timeout (was 30s) — fail fast
-        # so the client gets an immediate signal rather than staring at
-        # 30s of nothing while a slow gpt-4o turn / dispatch chain finishes.
-        acquired = _voice_turn_lock.acquire(timeout=5)
+        # Only one voice turn at a time. 30s wait (was 5s) — paired
+        # with voice_ack.emit_busy so the operator hears that the brain
+        # is on a previous turn rather than getting a silent 503.
+        acquired = _voice_turn_lock.acquire(timeout=_LOCK_ACQUIRE_TIMEOUT_S)
         if not acquired:
-            logger.warning("/voice_turn rejected: another turn held the lock for >5s")
+            logger.warning("/voice_turn rejected: lock held >30s")
+            try:
+                from openjarvis.cli import voice_ack
+                voice_ack.emit_busy()
+            except Exception:
+                pass
             self._json_response(503, {"error": _BUSY_MSG})
             return
         try:
@@ -1634,7 +1844,30 @@ class _Handler(SimpleHTTPRequestHandler):
                 return
 
             # --- 2. Process command (no wake word needed — user pressed the button) ---
-            response_text = _ctx.process_command(transcript) or ""
+            # Voice ack: "On it, sir." plays immediately. Without this,
+            # the operator stares at 5-30s of silence while the LLM
+            # tool chain runs and assumes nothing happened.
+            try:
+                from openjarvis.cli import voice_ack
+                voice_ack.emit_thinking()
+            except Exception:
+                pass
+            _raw = _run_with_deadline(
+                _ctx.process_command, transcript,
+                deadline_s=_PROCESS_DEADLINE_S,
+            )
+            if _raw is None:
+                try:
+                    from openjarvis.cli import voice_ack
+                    voice_ack.emit_timeout()
+                except Exception:
+                    pass
+                response_text = (
+                    "That's running long, sir — I'll keep working on "
+                    "it and write what I find to your vault."
+                )
+            else:
+                response_text = _raw or ""
 
             # --- 3. TTS ---
             audio_b64 = ""
@@ -1661,7 +1894,7 @@ class _Handler(SimpleHTTPRequestHandler):
             except Exception:
                 logger.debug("daily journal capture failed", exc_info=True)
 
-            # Stream into the chat-widget bus alongside the journal entry
+            # Belt-and-braces append (HUD dedupe collapses to one bubble).
             try:
                 _chat_history.append_pair(transcript, response_text)
             except Exception:

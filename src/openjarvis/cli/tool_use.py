@@ -497,13 +497,15 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
             "name": "github_search",
             "description": (
                 "Search GitHub repositories via the public REST API. "
-                "Returns up to 10 repos sorted by stars with name, owner, "
-                "URL, description, star count, and last-push date. Use "
-                "for any code/library/SDK research — far more reliable "
-                "than scraping a web search and surfaces the actual "
-                "popular repos. Example: github_search('tiktok "
-                "automation') returns the most-starred TikTok automation "
-                "repos."
+                "MANDATORY for any 'what's new on github / trending repos / "
+                "tools on github / popular libraries' style question — DO "
+                "NOT answer from training data, the data goes stale daily. "
+                "Also renders a clickable results card in the chat panel "
+                "so the operator can SEE the repos, not just hear about "
+                "them. Returns up to 10 repos sorted by stars with name, "
+                "URL, description, star count, language, last-push date. "
+                "Example queries: 'AI agents', 'tiktok automation', "
+                "'language:python topic:llm', 'voice assistant'."
             ),
             "parameters": {
                 "type": "object",
@@ -528,10 +530,13 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
             "name": "hackernews_search",
             "description": (
                 "Search Hacker News via the Algolia API for stories and "
-                "comments matching a query. Returns up to 10 hits with "
-                "title, URL, points, comment count, and date. Use to find "
-                "community discussion about products, libraries, "
-                "techniques — a strong independent signal vs vendor pages."
+                "comments matching a query. MANDATORY for any 'what's on HN "
+                "/ hacker news today / HN front page' style question — DO "
+                "NOT answer from training data. Renders a clickable results "
+                "card in the chat panel. Returns up to 10 hits with title, "
+                "URL, points, comment count, and date. Use to find "
+                "community discussion about products, libraries, techniques "
+                "— a strong independent signal vs vendor pages."
             ),
             "parameters": {
                 "type": "object",
@@ -662,6 +667,39 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
                     },
                 },
                 "required": ["url"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "maps_locate",
+            "description": (
+                "Geocode a place / address / landmark and render a map "
+                "card in the chat panel. USE THIS for any 'where is X', "
+                "'show me X on a map', 'find the location of X', "
+                "'find X near me' style request. Returns a one-line "
+                "text summary you can speak; the visual map is "
+                "rendered as a side-channel widget below the chat "
+                "bubble. Powered by OpenStreetMap Nominatim, no API "
+                "key. Examples: 'Buckingham Palace', "
+                "'123 Main St, Boston', 'Starbucks Times Square', "
+                "'Eiffel Tower'."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Place name, address, or landmark to locate.",
+                    },
+                    "zoom": {
+                        "type": "integer",
+                        "description": "Map zoom level 2-19 (default 13). 13-15 = neighbourhood, 16-18 = building.",
+                        "default": 13,
+                    },
+                },
+                "required": ["query"],
             },
         },
     },
@@ -1161,6 +1199,20 @@ def _tool_web_search(query: str, limit: int = 5) -> str:
             ),
         })
     _save_web_search_to_vault(query, hits)
+    try:
+        from openjarvis.cli.brain_server import emit_widget
+        emit_widget("results", {
+            "title": f"Web: {query}",
+            "source": "web",
+            "hits": [{
+                "title": h["title"],
+                "url": h["url"],
+                "snippet": h.get("snippet") or "",
+                "meta": "",
+            } for h in hits],
+        })
+    except Exception:
+        logger.debug("web_search emit_widget failed", exc_info=True)
     return json.dumps({"hits": hits})
 
 
@@ -1365,6 +1417,24 @@ def _tool_github_search(query: str, limit: int = 5) -> str:
     if not repos:
         return json.dumps({"repos": [], "note": "no matching repos"})
     _save_github_search_to_vault(query, repos)
+    # Side-channel: emit a clickable results card so the operator
+    # SEES what Jarvis is talking about, not just hears it.
+    try:
+        from openjarvis.cli.brain_server import emit_widget
+        emit_widget("results", {
+            "title": f"GitHub: {query}",
+            "source": "github",
+            "hits": [{
+                "title": r["name"],
+                "url": r["url"],
+                "snippet": r.get("description") or "",
+                "meta": (f"⭐ {r['stars']:,}"
+                         + (f" · {r['language']}" if r.get("language") else "")
+                         + (f" · pushed {r['pushed_at'][:10]}" if r.get("pushed_at") else "")),
+            } for r in repos],
+        })
+    except Exception:
+        logger.debug("github_search emit_widget failed", exc_info=True)
     return json.dumps({"repos": repos})
 
 
@@ -1401,6 +1471,21 @@ def _tool_hackernews_search(query: str, limit: int = 5) -> str:
     if not hits:
         return json.dumps({"hits": [], "note": "no HN results"})
     _save_hn_search_to_vault(query, hits)
+    try:
+        from openjarvis.cli.brain_server import emit_widget
+        emit_widget("results", {
+            "title": f"Hacker News: {query}",
+            "source": "hackernews",
+            "hits": [{
+                "title": h["title"],
+                "url": h["url"],
+                "snippet": "",
+                "meta": (f"▲ {h['points']} · {h['comments']} comments"
+                         + (f" · {h['created_at']}" if h.get("created_at") else "")),
+            } for h in hits],
+        })
+    except Exception:
+        logger.debug("hackernews_search emit_widget failed", exc_info=True)
     return json.dumps({"hits": hits})
 
 
@@ -1476,6 +1561,61 @@ def _save_hn_search_to_vault(query: str, hits: List[dict]) -> None:
         logger.exception("vault: hn search note write failed")
 
 
+def _tool_maps_locate(query: str, zoom: int = 13) -> str:
+    """Geocode a place name via OpenStreetMap Nominatim and emit a map
+    widget to the HUD chat panel. Returns a one-line text summary the
+    LLM can speak/render. No API key required.
+
+    Nominatim policy: max 1 req/sec, must include a real User-Agent.
+    We satisfy both — this tool only fires on direct operator request,
+    not in tight loops, and we send a J.A.R.V.I.S. UA string."""
+    q = (query or "").strip()
+    if not q:
+        return "maps_locate: empty query"
+    try:
+        import urllib.parse
+        import urllib.request
+        url = ("https://nominatim.openstreetmap.org/search?"
+               + urllib.parse.urlencode({
+                   "q": q, "format": "json", "limit": 1, "addressdetails": 1,
+               }))
+        req = urllib.request.Request(url, headers={
+            "User-Agent": "OpenJarvis/1.0 (jarvis personal assistant)",
+            "Accept-Language": "en",
+        })
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except Exception as exc:
+        return f"maps_locate failed: {exc}"
+    if not data:
+        return f"No place found for {q!r}."
+    hit = data[0]
+    try:
+        lat = float(hit["lat"]); lon = float(hit["lon"])
+    except (KeyError, ValueError, TypeError):
+        return f"maps_locate: bad coords for {q!r}."
+    label = hit.get("display_name") or q
+    try:
+        zoom_i = max(2, min(int(zoom or 13), 19))
+    except Exception:
+        zoom_i = 13
+    # Side-channel: emit the map widget. Tool's text return is what
+    # the LLM sees + speaks; the widget is purely visual.
+    try:
+        from openjarvis.cli.brain_server import emit_widget
+        emit_widget("map", {
+            "lat": lat, "lon": lon, "zoom": zoom_i,
+            "label": label, "query": q,
+        })
+    except Exception:
+        logger.debug("maps_locate emit_widget failed", exc_info=True)
+    # Trim the display_name for the spoken/text reply — Nominatim
+    # tends to return very long comma-separated strings.
+    short_label = ", ".join(label.split(", ")[:3]) if "," in label else label
+    return (f"Found {short_label} at {lat:.4f}, {lon:.4f}. "
+            f"Map's on screen, sir.")
+
+
 def _tool_graph_query(question: str, mode: str = "bfs", depth: int = 3) -> str:
     from openjarvis.cli import graphify_bridge
     try:
@@ -1521,6 +1661,7 @@ _TOOL_DISPATCH = {
     "create_plan": _tool_create_plan,
     "get_plan": _tool_get_plan,
     "advance_plan": _tool_advance_plan,
+    "maps_locate": _tool_maps_locate,
 }
 
 

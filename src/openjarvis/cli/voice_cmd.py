@@ -1148,6 +1148,23 @@ def _record_fp(name: str, text: str, result: str) -> None:
         record_fast_path(name, text, result)
     except Exception:
         pass
+    # Also feed the chat-history SSE bus so the HUD subtitle + chat
+    # panel update on desktop wake-word turns. Without this, only HTTP
+    # endpoints (/voice_turn /chat /text_command) populate the bus and
+    # the desktop voice loop runs invisibly to the HUD.
+    _emit_chat_pair(text, result)
+
+
+def _emit_chat_pair(text: str, result: str) -> None:
+    """Broadcast (operator, jarvis) to the chat-history SSE bus so the
+    HUD shows the exchange. Non-fatal: a missing/uninitialised bus just
+    no-ops. Imported lazily to avoid a circular import with brain_server
+    (which imports voice_cmd's set_voice_context callback)."""
+    try:
+        from openjarvis.cli.brain_server import _chat_history
+        _chat_history.append_pair(text or "", result or "")
+    except Exception:
+        pass
 
 
 _JARVIS_PERSONA = """\
@@ -1465,6 +1482,17 @@ def voice(
         Used by the phone push-to-talk endpoint.
         """
         console.print(f"[bold]Phone>[/bold] {text}")
+        # Voice ack on the phone path. Note: brain_server's HTTP
+        # handlers also fire emit_thinking before calling
+        # process_command — that's redundant on this path, but
+        # voice_ack rate-limits via cache so the cost is negligible
+        # and double-firing is harmless (same audio_b64 broadcast
+        # twice still plays as one ack).
+        try:
+            from openjarvis.cli import voice_ack
+            voice_ack.emit_thinking()
+        except Exception:
+            pass
 
         class _NullConsole:
             def print(self, *a, **k):
@@ -1567,7 +1595,22 @@ def voice(
             vault_ctx = vault_context_for_query(text)
         except Exception:
             vault_ctx = ""
-        system_with_vault = persona if not vault_ctx else (persona + "\n\n" + vault_ctx)
+        # Intent classifier — embedding-based, biases the LLM toward the
+        # right tool when the intent is unambiguous (maps, weather,
+        # crypto, web_search, vault_recall, info_question). Returns "" on
+        # low confidence so chitchat / ambiguous turns flow through
+        # unchanged.
+        try:
+            from openjarvis.cli import intent_classifier
+            intent_hint = intent_classifier.hint_for(text)
+        except Exception:
+            intent_hint = ""
+        parts = [persona]
+        if intent_hint:
+            parts.append(intent_hint)
+        if vault_ctx:
+            parts.append(vault_ctx)
+        system_with_vault = "\n\n".join(parts)
 
         try:
             # Prefer the OpenAI tool-use path when available — it has
@@ -1604,6 +1647,9 @@ def voice(
         if text.startswith("__SAY__:"):
             spoken = text[len("__SAY__:"):]
             console.print(f"[cyan]J.A.R.V.I.S.>[/cyan] {spoken}")
+            # Background-worker chatter still goes to the chat panel —
+            # operator-side text is empty since this isn't an exchange.
+            _emit_chat_pair("", spoken)
             if tts_backend:
                 _speak_response(spoken, tts_backend, config, ui, console)
             elif ui:
@@ -1612,6 +1658,13 @@ def voice(
             return
 
         console.print(f"[bold]You>[/bold] {text}")
+        # Voice ack on the desktop path too — without this, only HTTP
+        # handlers fire "On it, sir." and the wake-word path runs silent.
+        try:
+            from openjarvis.cli import voice_ack
+            voice_ack.emit_thinking()
+        except Exception:
+            pass
 
         # --- Fast-path: time / date ---
         time_result = _try_time(text, console, ui)
@@ -1817,6 +1870,13 @@ def voice(
             vault_ctx = vault_context_for_query(text)
         except Exception:
             vault_ctx = ""
+        # Intent classifier hint — same as the phone path. Steers
+        # gpt-4o toward the right tool when the intent is unambiguous.
+        try:
+            from openjarvis.cli import intent_classifier
+            intent_hint = intent_classifier.hint_for(text)
+        except Exception:
+            intent_hint = ""
 
         history.append(Message(role=Role.USER, content=text))
         try:
@@ -1834,15 +1894,17 @@ def voice(
                     else str(response)
                 )
             else:
-                # Splice the vault context into history as a one-shot
-                # SYSTEM message right before the user's turn — keeps it
-                # out of the persistent persona but makes it visible to
-                # the model for THIS reply.
+                # Splice the vault context + intent hint into history
+                # as one-shot SYSTEM messages right before the user's
+                # turn — keeps them out of the persistent persona but
+                # visible to the model for THIS reply.
+                pre_user: List[Message] = []
+                if intent_hint:
+                    pre_user.append(Message(role=Role.SYSTEM, content=intent_hint))
                 if vault_ctx:
-                    msgs_for_engine = list(history[:-1]) + [
-                        Message(role=Role.SYSTEM, content=vault_ctx),
-                        history[-1],
-                    ]
+                    pre_user.append(Message(role=Role.SYSTEM, content=vault_ctx))
+                if pre_user:
+                    msgs_for_engine = list(history[:-1]) + pre_user + [history[-1]]
                 else:
                     msgs_for_engine = history
                 from openjarvis.cli.tool_use import generate_with_tools
@@ -1853,6 +1915,12 @@ def voice(
             console.print()
             console.print(Markdown(content))
             console.print()
+
+            # Feed the HUD via the chat-history SSE bus — the desktop
+            # voice path doesn't go through brain_server's HTTP handlers
+            # so this is the only way the operator sees the exchange in
+            # the chat panel + subtitle.
+            _emit_chat_pair(text, content)
 
             if tts_backend and content:
                 _speak_response(content, tts_backend, config, ui, console)
