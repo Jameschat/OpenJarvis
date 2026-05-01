@@ -403,6 +403,222 @@ canvas { display: block; }
   #hud-briefing .hb-body { padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 18px); }
 }
 
+/* =================================================================
+   Markets panel — slide-out from right, three-tab layout for the
+   financial-trader Jarvis. Mirrors the briefing/chat panel pattern.
+   Voice-toggleable via "open/close the markets" fast-path.
+================================================================= */
+#hud-markets {
+  position: fixed;
+  top: 38px;
+  right: 0; bottom: 0;
+  width: 520px;
+  display: flex; flex-direction: column;
+  background:
+    linear-gradient(180deg, rgba(10,18,32,0.92), rgba(6,12,22,0.92));
+  border-left: 1px solid rgba(94,224,255,0.30);
+  box-shadow: -8px 0 32px rgba(0,0,0,0.45),
+              inset 1px 0 0 rgba(94,224,255,0.12);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  z-index: 9;
+  transform: translateX(100%);
+  transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+}
+#hud-markets.open { transform: translateX(0); }
+#hud-markets .hm-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 14px;
+  font-family: 'Consolas','SF Mono','Menlo',monospace;
+  font-size: 11px;
+  letter-spacing: 1.6px;
+  text-transform: uppercase;
+  color: #c5f0ff;
+  border-bottom: 1px solid rgba(94,224,255,0.18);
+  flex-shrink: 0;
+}
+#hud-markets .hm-head .hm-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: #5ed0e0;
+  box-shadow: 0 0 6px rgba(94,208,224,0.7);
+}
+#hud-markets .hm-head .hm-spacer { flex: 1; }
+#hud-markets .hm-status {
+  font-size: 9.5px;
+  letter-spacing: 0.6px;
+  color: rgba(180,220,240,0.55);
+  font-weight: normal;
+  text-transform: none;
+}
+#hud-markets .hm-close {
+  background: transparent;
+  border: 1px solid rgba(94,224,255,0.28);
+  color: rgba(180,220,240,0.75);
+  width: 22px; height: 22px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 14px; line-height: 1;
+  padding: 0;
+}
+#hud-markets .hm-close:hover {
+  background: rgba(94,224,255,0.18); color: #e8f7ff;
+}
+#hud-markets .hm-tabs {
+  display: flex;
+  border-bottom: 1px solid rgba(94,224,255,0.18);
+  flex-shrink: 0;
+}
+#hud-markets .hm-tab {
+  flex: 1;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: rgba(180,220,240,0.55);
+  padding: 10px 6px;
+  font-family: 'Consolas','SF Mono','Menlo',monospace;
+  font-size: 10.5px;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: color 120ms ease, border-color 120ms ease, background 120ms ease;
+}
+#hud-markets .hm-tab:hover {
+  color: #e8f7ff;
+  background: rgba(94,224,255,0.06);
+}
+#hud-markets .hm-tab.active {
+  color: #c5f0ff;
+  border-bottom-color: #5ed0e0;
+  background: rgba(94,224,255,0.04);
+}
+#hud-markets .hm-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 18px 18px 24px 18px;
+  font-family: inherit;
+  color: rgba(220,235,250,0.92);
+  font-size: 13px;
+  line-height: 1.55;
+}
+#hud-markets .hm-pane[hidden] { display: none; }
+#hud-markets .hm-empty {
+  padding: 36px 16px;
+  text-align: center;
+  color: rgba(200,220,240,0.7);
+}
+#hud-markets .hm-empty-icon {
+  font-size: 36px;
+  margin-bottom: 10px;
+  opacity: 0.65;
+}
+#hud-markets .hm-empty-title {
+  font-family: 'Consolas','SF Mono','Menlo',monospace;
+  font-size: 13px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: #c5f0ff;
+  margin-bottom: 8px;
+}
+#hud-markets .hm-empty-sub {
+  font-size: 12.5px;
+  line-height: 1.55;
+  max-width: 380px;
+  margin: 0 auto 16px;
+  color: rgba(200,220,240,0.7);
+}
+#hud-markets .hm-empty-meta {
+  font-family: 'Consolas','SF Mono','Menlo',monospace;
+  font-size: 11px;
+  line-height: 1.7;
+  color: rgba(150,200,255,0.55);
+  margin-top: 14px;
+}
+#hud-markets .hm-empty-meta code {
+  background: rgba(94,224,255,0.08);
+  border: 1px solid rgba(94,224,255,0.18);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 10.5px;
+}
+#hud-markets .hm-foot {
+  padding: 8px 14px;
+  font-family: 'Consolas','SF Mono','Menlo',monospace;
+  font-size: 9.5px;
+  letter-spacing: 0.5px;
+  color: rgba(150,200,255,0.4);
+  border-top: 1px solid rgba(94,224,255,0.12);
+  flex-shrink: 0;
+  text-align: center;
+}
+/* Watchlist table — dense info row pattern, scannable in <100ms */
+.hm-watchlist {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: 'Consolas','SF Mono','Menlo',monospace;
+  font-size: 11.5px;
+}
+.hm-watchlist th {
+  text-align: left;
+  padding: 6px 8px;
+  font-size: 9.5px;
+  letter-spacing: 1.3px;
+  text-transform: uppercase;
+  color: rgba(150,200,255,0.55);
+  border-bottom: 1px solid rgba(94,224,255,0.18);
+  font-weight: 500;
+}
+.hm-watchlist th.num { text-align: right; }
+.hm-watchlist td {
+  padding: 7px 8px;
+  border-bottom: 1px solid rgba(94,224,255,0.06);
+  color: rgba(220,235,250,0.92);
+}
+.hm-watchlist td.num { text-align: right; }
+.hm-watchlist td.pos { color: #6ee7a0; }
+.hm-watchlist td.neg { color: #ff7a85; }
+.hm-watchlist td.hm-ts {
+  color: rgba(150,200,255,0.5);
+  font-size: 10px;
+}
+.hm-watchlist tr:hover td {
+  background: rgba(94,224,255,0.05);
+}
+.hm-market {
+  display: inline-block;
+  font-size: 9px;
+  letter-spacing: 0.8px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  border: 1px solid rgba(94,224,255,0.25);
+  background: rgba(94,224,255,0.06);
+  color: rgba(190,220,255,0.85);
+}
+.hm-market-us     { border-color: rgba(110,231,183,0.35); color: #a7f3c8; background: rgba(110,231,183,0.06); }
+.hm-market-uk     { border-color: rgba(255,200,140,0.35); color: #ffd4a3; background: rgba(255,200,140,0.06); }
+.hm-market-crypto { border-color: rgba(255,170,210,0.35); color: #ffc6df; background: rgba(255,170,210,0.06); }
+
+.hm-portfolio {
+  margin-top: 16px;
+  padding: 10px 12px;
+  background: rgba(94,224,255,0.05);
+  border: 1px solid rgba(94,224,255,0.15);
+  border-radius: 6px;
+  font-family: 'Consolas','SF Mono','Menlo',monospace;
+  font-size: 11px;
+  letter-spacing: 0.4px;
+  color: rgba(200,220,240,0.78);
+  text-align: center;
+}
+
+@media (max-width: 720px) {
+  #hud-markets {
+    top: 32px; left: 0; right: 0; width: auto; border-left: none;
+  }
+  #hud-markets .hm-body { padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 18px); }
+  .hm-watchlist { font-size: 13px; }
+  .hm-watchlist td, .hm-watchlist th { padding: 8px 6px; }
+}
+
 /* Activity log — hideable. Toggled by the log icon in the ops banner
    AND by voice ("open / close the activity log"). State persists in
    localStorage under jarvis.log.hidden so the operator's preferred
@@ -2579,6 +2795,19 @@ canvas { display: block; }
       <line x1="7"  y1="17" x2="11" y2="17"/>
     </svg>
   </button>
+  <button class="ob-chat-btn" id="ob-markets-btn" type="button" title="Markets — daily briefing, watchlist, recommendations">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+         stroke-linecap="round" stroke-linejoin="round">
+      <!-- candlestick chart: x-axis baseline + 3 candles with wicks -->
+      <line x1="3"  y1="20" x2="21" y2="20"/>
+      <line x1="7"  y1="6"  x2="7"  y2="17"/>
+      <rect x="5"   y="10" width="4" height="5"/>
+      <line x1="13" y1="9"  x2="13" y2="18"/>
+      <rect x="11"  y="11" width="4" height="6"/>
+      <line x1="18" y1="4"  x2="18" y2="15"/>
+      <rect x="16"  y="7"  width="4" height="6"/>
+    </svg>
+  </button>
   <button class="ob-chat-btn" id="ob-log-btn" type="button" title="Toggle activity log">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
          stroke-linecap="round" stroke-linejoin="round">
@@ -2638,6 +2867,74 @@ canvas { display: block; }
   </div>
   <div class="hb-body" id="hb-body">
     <div class="hb-empty">— no briefing yet —<br>The ai-researcher fires daily at 06:00.<br>First briefing lands tomorrow morning.</div>
+  </div>
+</div>
+
+<!-- Markets panel — financial trader Jarvis. Slide-out from right-edge,
+     three tabs per Backend Architect spec: Today (briefing + picks),
+     Watchlist (operator's tracked tickers), Recommendations (open + closed
+     with track-record). Empty shell shipping today; data wires up after
+     the implementation phase plans are signed off. Voice toggleable. -->
+<div id="hud-markets" aria-hidden="true">
+  <div class="hm-head">
+    <span class="hm-dot"></span>
+    MARKETS
+    <span class="hm-spacer"></span>
+    <span class="hm-status" id="hm-status" title="Data feed health">— offline —</span>
+    <button class="hm-close" id="hm-close" type="button" title="Close (or say 'close the markets')">×</button>
+  </div>
+  <div class="hm-tabs" role="tablist">
+    <button class="hm-tab active" data-tab="today" role="tab">Today</button>
+    <button class="hm-tab" data-tab="watchlist" role="tab">Watchlist</button>
+    <button class="hm-tab" data-tab="recs" role="tab">Recommendations</button>
+  </div>
+  <div class="hm-body">
+    <div class="hm-pane" data-pane="today">
+      <div class="hm-empty">
+        <div class="hm-empty-icon">📊</div>
+        <div class="hm-empty-title">Markets module — planning phase</div>
+        <div class="hm-empty-sub">
+          Five planning agents have shipped their reports today
+          (compliance, data, architecture, sizing, tax). AI Engineer +
+          Product Manager are still running. The master plan lands for
+          your sign-off next; first 6:15am market briefing fires after
+          implementation ships.
+        </div>
+        <div class="hm-empty-meta">
+          Coverage planned: NYSE / NASDAQ / LSE / crypto<br>
+          Daily briefing slot: 06:15 Europe/London<br>
+          Storage: <code>~/.openjarvis/markets/</code> + <code>Brain/Trading/</code>
+        </div>
+      </div>
+    </div>
+    <div class="hm-pane" data-pane="watchlist" hidden>
+      <div class="hm-empty">
+        <div class="hm-empty-icon">⭐</div>
+        <div class="hm-empty-title">Watchlist — not yet wired</div>
+        <div class="hm-empty-sub">
+          Tickers you want Jarvis to track land here, with last price,
+          24h change, news flag, and ISA/SIPP/GIA wrapper eligibility.
+        </div>
+      </div>
+    </div>
+    <div class="hm-pane" data-pane="recs" hidden>
+      <div class="hm-empty">
+        <div class="hm-empty-icon">📈</div>
+        <div class="hm-empty-title">Recommendations log — not yet wired</div>
+        <div class="hm-empty-sub">
+          Every named recommendation logged with entry / stop / target /
+          size / outcome. Track-record metrics (hit rate, alpha vs
+          benchmark, calibration) compute after the first 4 weeks of
+          live recs. <em>This panel will be brutally honest about
+          performance — that's the point.</em>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="hm-foot">
+    <span class="hm-disclaimer">
+      Personal research notes — not regulated financial advice.
+    </span>
   </div>
 </div>
 
@@ -7175,6 +7472,10 @@ function connectChatSSE() {
           if (e.action === 'open') openBriefing();
           else if (e.action === 'close') closeBriefing();
           else if (e.action === 'toggle') toggleBriefing();
+        } else if (target === 'markets') {
+          if (e.action === 'open') openMarkets();
+          else if (e.action === 'close') closeMarkets();
+          else if (e.action === 'toggle') toggleMarkets();
         }
       }
     } catch (err) {
@@ -7368,6 +7669,232 @@ if (elHbDate) elHbDate.addEventListener('change', () => loadBriefing(elHbDate.va
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && elHudBriefing && elHudBriefing.classList.contains('open')) {
     closeBriefing();
+  }
+});
+
+// =====================================================================
+// Markets panel toggle — same right-edge slide-out pattern as briefing.
+// Voice fast-path "open/close the markets" emits an SSE toggle that
+// connectChatSSE routes to toggleMarkets/openMarkets/closeMarkets.
+// Three tabs: Today (default), Watchlist, Recommendations.
+// =====================================================================
+const elHudMarkets   = document.getElementById('hud-markets');
+const elObMarketsBtn = document.getElementById('ob-markets-btn');
+const elHmClose      = document.getElementById('hm-close');
+
+function _hmHost() {
+  const params = new URLSearchParams(window.location.search);
+  return params.get('host') || window.location.host || 'localhost:7710';
+}
+function _hmProto() {
+  return window.location.protocol === 'https:' ? 'https' : 'http';
+}
+
+// Render watchlist into the watchlist pane. Shape:
+//   {items: [{ticker, market, last, change_pct, change_24h_pct,
+//              currency, price_ts, stale, notes}, ...], count}
+function _hmRenderWatchlist(data) {
+  const pane = elHudMarkets && elHudMarkets.querySelector('[data-pane="watchlist"]');
+  if (!pane) return;
+  const items = (data && data.items) || [];
+  if (!items.length) {
+    pane.innerHTML =
+      '<div class="hm-empty">' +
+        '<div class="hm-empty-icon">&#11088;</div>' +
+        '<div class="hm-empty-title">Watchlist empty</div>' +
+        '<div class="hm-empty-sub">' +
+          'Ask Jarvis: <em>"add NVDA to my watchlist"</em>, ' +
+          '<em>"watch SHEL.L"</em>, or <em>"add bitcoin to my watchlist"</em>. ' +
+          'US tickers plain (NVDA), UK with .L suffix (SHEL.L), crypto BTC or ETH.' +
+        '</div>' +
+      '</div>';
+    return;
+  }
+  let html = '<table class="hm-watchlist">' +
+    '<thead><tr>' +
+      '<th>Ticker</th><th>Mkt</th><th class="num">Last</th>' +
+      '<th class="num">&Delta;%</th><th>Updated</th>' +
+    '</tr></thead><tbody>';
+  for (const it of items) {
+    const last = (it.last == null) ? '—' : _hmFmtPrice(it.last, it.currency);
+    const chg = (it.change_pct == null) ? '—' : _hmFmtPct(it.change_pct);
+    const chgClass = (it.change_pct == null) ? '' :
+                      (it.change_pct >= 0 ? 'pos' : 'neg');
+    const ts = it.price_ts ? _hmFmtAge(it.price_ts) : '—';
+    html += '<tr>' +
+      '<td><strong>' + escapeHtml(it.ticker) + '</strong></td>' +
+      '<td><span class="hm-market hm-market-' + (it.market||'').toLowerCase() + '">' +
+        escapeHtml(it.market || '') + '</span></td>' +
+      '<td class="num">' + last + '</td>' +
+      '<td class="num ' + chgClass + '">' + chg + '</td>' +
+      '<td class="hm-ts">' + ts + '</td>' +
+    '</tr>';
+  }
+  html += '</tbody></table>';
+  if (data && data.paper_portfolio) {
+    const pp = data.paper_portfolio;
+    html += '<div class="hm-portfolio">' +
+      'Paper portfolio: &pound;' + Math.round(pp.notional_starting_gbp).toLocaleString() +
+      ' notional &middot; &pound;' + Math.round(pp.cash_gbp).toLocaleString() +
+      ' cash' +
+    '</div>';
+  }
+  pane.innerHTML = html;
+}
+
+function _hmFmtPrice(v, ccy) {
+  if (v == null) return '—';
+  const sym = ccy === 'GBP' ? '&pound;' : ccy === 'USD' ? '$' : '';
+  if (Math.abs(v) >= 1000) return sym + v.toLocaleString(undefined, {maximumFractionDigits:0});
+  if (Math.abs(v) >= 1)    return sym + v.toFixed(2);
+  return sym + v.toFixed(4);
+}
+function _hmFmtPct(v) {
+  if (v == null) return '—';
+  const sign = v >= 0 ? '+' : '';
+  return sign + v.toFixed(2) + '%';
+}
+function _hmFmtAge(ts) {
+  const ageS = Math.max(0, (Date.now()/1000) - ts);
+  if (ageS < 60)   return Math.round(ageS) + 's ago';
+  if (ageS < 3600) return Math.round(ageS/60) + 'm ago';
+  if (ageS < 86400) return Math.round(ageS/3600) + 'h ago';
+  return Math.round(ageS/86400) + 'd ago';
+}
+
+// Render Today pane (placeholder until LLM briefing pipeline ships).
+function _hmRenderToday(data) {
+  const pane = elHudMarkets && elHudMarkets.querySelector('[data-pane="today"]');
+  if (!pane) return;
+  if (!data || !data.ok) {
+    pane.innerHTML = '<div class="hm-empty">' +
+      '<div class="hm-empty-icon">&#9888;</div>' +
+      '<div class="hm-empty-title">Markets backend offline</div>' +
+      '<div class="hm-empty-sub">Restart jarvis.bat then reopen this panel.</div>' +
+    '</div>';
+    return;
+  }
+  if (data.status === 'pending') {
+    pane.innerHTML = '<div class="hm-empty">' +
+      '<div class="hm-empty-icon">&#128202;</div>' +
+      '<div class="hm-empty-title">Day-1 build live &middot; briefing pipeline pending</div>' +
+      '<div class="hm-empty-sub">' +
+        'Data layer + tools + watchlist are up. Ask Jarvis ' +
+        '<em>"how is NVDA"</em> or <em>"price of bitcoin"</em> for a live ' +
+        'quote. The 06:15 daily briefing artefact ships in the next session.' +
+      '</div>' +
+      '<div class="hm-empty-meta">' +
+        'Cache: <code>~/.openjarvis/markets/markets.db</code><br>' +
+        'Sources: yfinance (US/UK) &middot; Kraken (BTC/ETH GBP)<br>' +
+        'Date: ' + escapeHtml(data.date || '?') +
+      '</div>' +
+    '</div>';
+    return;
+  }
+  // Future: render briefing markdown
+  pane.innerHTML = '<div class="hm-empty">' +
+    '<div class="hm-empty-icon">&#128218;</div>' +
+    '<div class="hm-empty-title">' + escapeHtml(data.date || 'Today') + '</div>' +
+    '<div class="hm-empty-sub">' +
+      escapeHtml((data.briefing_md || '').slice(0, 400)) + '...' +
+    '</div>' +
+  '</div>';
+}
+
+async function _hmLoadWatchlist() {
+  try {
+    const r = await fetch(`${_hmProto()}://${_hmHost()}/markets/watchlist`,
+                          { credentials: 'include' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const data = await r.json();
+    _hmRenderWatchlist(data);
+  } catch (e) {
+    console.warn('[markets] watchlist load failed', e);
+    const pane = elHudMarkets && elHudMarkets.querySelector('[data-pane="watchlist"]');
+    if (pane) {
+      pane.innerHTML = '<div class="hm-empty">' +
+        '<div class="hm-empty-icon">&#9888;</div>' +
+        '<div class="hm-empty-title">Watchlist load failed</div>' +
+        '<div class="hm-empty-sub">' + escapeHtml(String(e.message || e)) + '</div>' +
+      '</div>';
+    }
+  }
+}
+
+async function _hmLoadToday() {
+  try {
+    const r = await fetch(`${_hmProto()}://${_hmHost()}/markets/today`,
+                          { credentials: 'include' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const data = await r.json();
+    _hmRenderToday(data);
+  } catch (e) {
+    console.warn('[markets] today load failed', e);
+    _hmRenderToday(null);
+  }
+}
+
+async function _hmLoadHealth() {
+  try {
+    const r = await fetch(`${_hmProto()}://${_hmHost()}/markets/health`,
+                          { credentials: 'include' });
+    if (!r.ok) return;
+    const data = await r.json();
+    const el = document.getElementById('hm-status');
+    if (!el) return;
+    if (data && data.ok) {
+      const n = (data.store && data.store.watchlist_count) || 0;
+      const sources = data.sources || {};
+      const live = (sources.yfinance ? 'yf' : '') +
+                   (sources.kraken ? (sources.yfinance ? '+kraken' : 'kraken') : '');
+      el.textContent = `${n} tickers · ${live || 'no sources'}`;
+    } else {
+      el.textContent = '— offline —';
+    }
+  } catch (_) { /* leave default */ }
+}
+
+function openMarkets() {
+  if (!elHudMarkets) return;
+  elHudMarkets.classList.add('open');
+  elHudMarkets.setAttribute('aria-hidden', 'false');
+  if (elObMarketsBtn) elObMarketsBtn.classList.add('active');
+  // Always re-fetch on open — the data may have changed since last open
+  _hmLoadHealth();
+  _hmLoadToday();
+  _hmLoadWatchlist();
+}
+function closeMarkets() {
+  if (!elHudMarkets) return;
+  elHudMarkets.classList.remove('open');
+  elHudMarkets.setAttribute('aria-hidden', 'true');
+  if (elObMarketsBtn) elObMarketsBtn.classList.remove('active');
+}
+function toggleMarkets() {
+  if (!elHudMarkets) return;
+  if (elHudMarkets.classList.contains('open')) closeMarkets(); else openMarkets();
+}
+function selectMarketsTab(name) {
+  if (!elHudMarkets) return;
+  const tabs = elHudMarkets.querySelectorAll('.hm-tab');
+  const panes = elHudMarkets.querySelectorAll('.hm-pane');
+  tabs.forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+  panes.forEach(p => { p.hidden = (p.dataset.pane !== name); });
+  // Refresh on tab switch — cheap (cache-friendly server-side) and
+  // means a stale watchlist tab gets the latest prices when revisited.
+  if (name === 'watchlist') _hmLoadWatchlist();
+  else if (name === 'today') _hmLoadToday();
+}
+if (elObMarketsBtn) elObMarketsBtn.addEventListener('click', toggleMarkets);
+if (elHmClose)      elHmClose.addEventListener('click', closeMarkets);
+if (elHudMarkets) {
+  elHudMarkets.querySelectorAll('.hm-tab').forEach(t => {
+    t.addEventListener('click', () => selectMarketsTab(t.dataset.tab));
+  });
+}
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && elHudMarkets && elHudMarkets.classList.contains('open')) {
+    closeMarkets();
   }
 });
 
