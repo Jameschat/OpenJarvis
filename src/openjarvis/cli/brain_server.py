@@ -826,6 +826,8 @@ class _Handler(SimpleHTTPRequestHandler):
             self._handle_schedule_cancel(self.path.rsplit("/", 1)[-1])
         elif self.path == "/content/kickoff":
             self._handle_content_kickoff()
+        elif self.path.startswith("/markets/"):
+            self._handle_markets_post()
         else:
             self.send_error(404, "Not Found")
 
@@ -2134,17 +2136,95 @@ class _Handler(SimpleHTTPRequestHandler):
                     "generated_at": None,
                 })
             if sub == "health":
-                from openjarvis.markets.sources import yf, kraken
+                from openjarvis.markets.sources import yf, kraken, coingecko
                 return self._json_response(200, {
                     "ok": True,
                     "store": store.health(),
                     "sources": {
                         "yfinance": yf.is_available(),
                         "kraken": kraken.is_available(),
+                        "coingecko": coingecko.is_available(),
                     },
+                })
+            if sub == "backfill_status":
+                from openjarvis.markets import backfill
+                return self._json_response(200, backfill.get_status())
+            if sub == "today":
+                # Override of the placeholder: serve the actual briefing
+                # markdown if today's file exists in Brain/Trading/Research/.
+                from datetime import date as _date
+                today = _date.today().isoformat()
+                try:
+                    from openjarvis.tools.obsidian_brain import BRAIN_ROOT
+                    p = (BRAIN_ROOT / "Trading" / "Research"
+                         / f"{today} - market-research.md")
+                    if p.is_file():
+                        return self._json_response(200, {
+                            "ok": True, "date": today,
+                            "status": "ready",
+                            "briefing_md": p.read_text(encoding="utf-8"),
+                            "generated_at": p.stat().st_mtime,
+                        })
+                except Exception:
+                    logger.debug("today briefing read failed", exc_info=True)
+                return self._json_response(200, {
+                    "ok": True, "date": today, "status": "pending",
+                    "briefing_md": (
+                        "# Markets Briefing — pending\n\n"
+                        "*No briefing for today yet. Run backfill first if "
+                        "this is your first launch (POST /markets/backfill), "
+                        "then POST /markets/regenerate — or say "
+                        "\"run today's briefing\".*"
+                    ),
+                    "generated_at": None,
                 })
         except Exception:
             logger.exception("/markets/%s failed", sub)
+            return self._json_response(500, {
+                "error": "internal error", "ref": _err_ref(),
+            })
+        return self._json_response(404, {"error": "unknown markets endpoint"})
+
+    def _handle_markets_post(self) -> None:
+        """Markets subsystem write endpoints:
+
+            POST /markets/backfill   → kicks off background 90-day backfill
+                                       across the curated equity universe +
+                                       top-100 crypto. Returns immediately
+                                       with status; poll /markets/backfill_status.
+            POST /markets/regenerate → runs the briefing pipeline now,
+                                       blocks until complete (~30-60s),
+                                       returns the briefing summary + path.
+        """
+        from urllib.parse import urlparse
+        path_only = urlparse(self.path).path
+        sub = path_only[len("/markets/"):]
+        try:
+            if sub == "backfill":
+                from openjarvis.markets import backfill
+                # Read body for optional overrides
+                n = int(self.headers.get("Content-Length", 0))
+                body_bytes = self.rfile.read(n) if n > 0 else b"{}"
+                try:
+                    body = json.loads(body_bytes.decode("utf-8") or "{}")
+                except json.JSONDecodeError:
+                    body = {}
+                kwargs = {}
+                if isinstance(body.get("max_crypto"), int):
+                    kwargs["max_crypto"] = max(0, min(100, body["max_crypto"]))
+                if "include_equities" in body:
+                    kwargs["include_equities"] = bool(body["include_equities"])
+                if "include_crypto" in body:
+                    kwargs["include_crypto"] = bool(body["include_crypto"])
+                status = backfill.start_background(**kwargs)
+                return self._json_response(200, {"ok": True, "status": status})
+            if sub == "regenerate":
+                from openjarvis.markets import financial_researcher
+                result = financial_researcher.run()
+                return self._json_response(200, {"ok": result.get("ok", False),
+                                                 "result": result})
+        except Exception:
+            logger.exception("POST /markets/%s failed", sub)
             return self._json_response(500, {
                 "error": "internal error", "ref": _err_ref(),
             })
@@ -2274,6 +2354,15 @@ def start_brain_server(open_browser: bool = True) -> None:
         graphify_bridge.start_daily_rebuild(hour=rebuild_hour, minute=rebuild_minute)
     except Exception:
         logger.exception("graphify daily-rebuild failed to start")
+
+    # Markets — daily briefing daemon at 06:15 (overridable via
+    # OPENJARVIS_BRIEFING_HOUR / _MINUTE). Falls quietly if the
+    # markets subsystem fails to import.
+    try:
+        from openjarvis.markets import financial_researcher as _fr
+        _fr.start_daily()
+    except Exception:
+        logger.exception("markets daily briefing daemon failed to start")
 
     # UniFi bridge no longer started — operator removed it from the HUD.
     # unifi_bridge.py remains on disk if it's wanted back.

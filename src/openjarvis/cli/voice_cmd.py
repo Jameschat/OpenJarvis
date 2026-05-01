@@ -1084,6 +1084,18 @@ _MARKETS_CLOSE_PATTERNS = (
     r"\bhide (?:the |my )?(?:market(?:s)?|trading|portfolio|stock(?:s)?)\b",
     r"\bdismiss (?:the |my )?(?:market(?:s)?|trading)\b",
 )
+# Run-today's-briefing intents — fire the briefing pipeline now.
+_MARKETS_BRIEFING_RUN_PATTERNS = (
+    r"\b(?:run|generate|fire|trigger|kick off) (?:today'?s |the )?(?:market(?:s)?|trading)? ?briefing\b",
+    r"\b(?:give|read) me (?:today'?s |the )?(?:market(?:s)?|trading)? ?briefing\b",
+    r"\bregenerate (?:the |today'?s )?(?:market(?:s)?|trading)? ?briefing\b",
+)
+# Run-backfill intents — fire the historical backfill (one-off).
+_MARKETS_BACKFILL_PATTERNS = (
+    r"\b(?:run|kick off|start) (?:the )?(?:historical )?backfill\b",
+    r"\b(?:backfill|load) (?:the )?(?:last )?(?:3 ?months?|90 ?days?|history|historical data)\b",
+    r"\bpull (?:the )?(?:last )?(?:3 ?months?|90 ?days?|history)\b",
+)
 
 
 def _try_chat_widget(text: str) -> Optional[str]:
@@ -1132,6 +1144,49 @@ def _try_chat_widget(text: str) -> Optional[str]:
             except Exception:
                 pass
             return "Markets panel closed."
+    for pat in _MARKETS_BRIEFING_RUN_PATTERNS:
+        if re.search(pat, norm):
+            # Run synchronously — operator wants the briefing now and is
+            # willing to wait the ~30-60s. Returns a one-line ack with
+            # the result summary; the briefing markdown lands in
+            # Brain/Trading/Research/<date> - market-research.md.
+            try:
+                from openjarvis.markets import financial_researcher
+                from openjarvis.cli.brain_server import emit_ui_toggle
+                emit_ui_toggle("markets", "open")
+                result = financial_researcher.run()
+                if result.get("ok"):
+                    n = result.get("n_recs", 0)
+                    refusals = result.get("n_refusals", 0)
+                    if n == 0 and refusals == 0:
+                        return ("Briefing generated, sir. No high-conviction "
+                                "setups today — cash is a position.")
+                    if n == 0:
+                        return (f"Briefing generated, sir. Zero picks; "
+                                f"{refusals} segment refused due to thin data.")
+                    return (f"Briefing generated, sir. {n} idea"
+                            f"{'s' if n != 1 else ''} on the markets panel.")
+                else:
+                    return (f"Briefing failed at the {result.get('stage')} stage. "
+                            f"Check the markets panel for the audit footer.")
+            except Exception as exc:
+                logger.exception("voice run-briefing failed")
+                return f"Briefing failed: {exc}"
+    for pat in _MARKETS_BACKFILL_PATTERNS:
+        if re.search(pat, norm):
+            try:
+                from openjarvis.markets import backfill
+                from openjarvis.cli.brain_server import emit_ui_toggle
+                emit_ui_toggle("markets", "open")
+                status = backfill.start_background()
+                if status.get("state") == "running":
+                    return ("Backfill running in the background, sir. About "
+                            "five minutes. I'll write the bars to the local "
+                            "store as they arrive.")
+                return f"Backfill state: {status.get('state')}."
+            except Exception as exc:
+                logger.exception("voice run-backfill failed")
+                return f"Backfill failed to start: {exc}"
     for pat in _LOG_OPEN_PATTERNS:
         if re.search(pat, norm):
             try:

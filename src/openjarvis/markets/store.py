@@ -335,6 +335,106 @@ def get_price_latest(ticker: str) -> Optional[Dict[str, Any]]:
 
 
 # ---------------------------------------------------------------------------
+# Historical OHLCV bars (the `prices` table)
+# ---------------------------------------------------------------------------
+
+def insert_history_bars(ticker: str, bars: Iterable[Dict[str, Any]],
+                        source: str = "yfinance") -> int:
+    """Bulk-insert OHLCV bars. Idempotent — duplicate (ticker, ts)
+    pairs silently replace. Returns the number of rows written."""
+    if not ticker:
+        return 0
+    ticker = ticker.strip().upper()
+    rows = []
+    for b in bars or []:
+        try:
+            rows.append((
+                ticker, float(b["ts"]),
+                float(b.get("open")) if b.get("open") is not None else None,
+                float(b.get("high")) if b.get("high") is not None else None,
+                float(b.get("low")) if b.get("low") is not None else None,
+                float(b["close"]),
+                float(b.get("volume")) if b.get("volume") is not None else None,
+                source,
+            ))
+        except (KeyError, TypeError, ValueError):
+            continue
+    if not rows:
+        return 0
+    try:
+        with _cursor() as cur:
+            cur.executemany(
+                "INSERT OR REPLACE INTO prices "
+                "(ticker, ts, open, high, low, close, volume, source) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                rows,
+            )
+        return len(rows)
+    except Exception:
+        logger.exception("insert_history_bars failed for %s", ticker)
+        return 0
+
+
+def get_history(ticker: str, *,
+                since_ts: Optional[float] = None,
+                limit: Optional[int] = None) -> List[Dict[str, Any]]:
+    """Fetch OHLCV bars for a ticker, oldest-first by default. If
+    ``since_ts`` is provided, only bars at-or-after that timestamp are
+    returned. ``limit`` clamps the row count (most-recent if applied)."""
+    if not ticker:
+        return []
+    ticker = ticker.strip().upper()
+    try:
+        with _cursor() as cur:
+            if limit is not None:
+                # Most-recent N, then re-sort ascending for the caller
+                if since_ts is not None:
+                    cur.execute(
+                        "SELECT * FROM prices "
+                        "WHERE ticker = ? AND ts >= ? "
+                        "ORDER BY ts DESC LIMIT ?",
+                        (ticker, since_ts, int(limit)),
+                    )
+                else:
+                    cur.execute(
+                        "SELECT * FROM prices WHERE ticker = ? "
+                        "ORDER BY ts DESC LIMIT ?",
+                        (ticker, int(limit)),
+                    )
+                rows = [dict(r) for r in cur.fetchall()]
+                rows.reverse()
+                return rows
+            if since_ts is not None:
+                cur.execute(
+                    "SELECT * FROM prices "
+                    "WHERE ticker = ? AND ts >= ? "
+                    "ORDER BY ts ASC",
+                    (ticker, since_ts),
+                )
+            else:
+                cur.execute(
+                    "SELECT * FROM prices WHERE ticker = ? ORDER BY ts ASC",
+                    (ticker,),
+                )
+            return [dict(r) for r in cur.fetchall()]
+    except Exception:
+        logger.exception("get_history failed for %s", ticker)
+        return []
+
+
+def history_count(ticker: str) -> int:
+    if not ticker:
+        return 0
+    try:
+        with _cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM prices WHERE ticker = ?",
+                        (ticker.strip().upper(),))
+            return cur.fetchone()[0] or 0
+    except Exception:
+        return 0
+
+
+# ---------------------------------------------------------------------------
 # Paper portfolio DAO
 # ---------------------------------------------------------------------------
 
@@ -404,6 +504,7 @@ __all__ = [
     "DEFAULT_NOTIONAL_GBP",
     "watchlist_add", "watchlist_remove", "watchlist_get",
     "upsert_price_latest", "get_price_latest",
+    "insert_history_bars", "get_history", "history_count",
     "paper_portfolio_get",
     "db_path", "health",
 ]

@@ -114,6 +114,82 @@ def fetch_quote(ticker: str, *, timeout: float = 6.0) -> Optional[Dict[str, Any]
     }
 
 
+_OHLC_BASE = "https://api.kraken.com/0/public/OHLC"
+
+# Kraken interval is in MINUTES. 1440 = 1 day.
+_KRAKEN_INTERVAL_MIN = {
+    "1m": 1, "5m": 5, "15m": 15, "30m": 30,
+    "1h": 60, "4h": 240, "1d": 1440, "1wk": 10080,
+}
+
+
+def fetch_history(ticker: str, range_str: str = "3mo",
+                  interval: str = "1d", *,
+                  timeout: float = 10.0) -> Optional[list]:
+    """Fetch OHLCV history from Kraken's public OHLC endpoint.
+
+    Returns the same list-of-bar-dicts shape as ``yf.fetch_history``
+    or None on failure. Kraken's OHLC endpoint takes a `since`
+    timestamp; we compute it from range_str and the interval.
+    """
+    pair = _resolve_pair(ticker)
+    if pair is None:
+        return None
+    minutes = _KRAKEN_INTERVAL_MIN.get(interval, 1440)
+    # Translate range_str to a since-seconds value
+    range_days_map = {
+        "1d": 1, "5d": 5, "1mo": 31, "3mo": 92, "6mo": 184,
+        "1y": 366, "2y": 732, "5y": 1830,
+    }
+    days = range_days_map.get(range_str, 92)
+    since = int(time.time()) - (days * 86400)
+    try:
+        import httpx  # type: ignore
+    except Exception:
+        return None
+    try:
+        with httpx.Client(timeout=timeout) as client:
+            r = client.get(_OHLC_BASE, params={
+                "pair": pair, "interval": str(minutes), "since": str(since),
+            })
+            if r.status_code != 200:
+                logger.debug("kraken history %s: HTTP %d", pair, r.status_code)
+                return None
+            data = r.json()
+    except Exception as exc:
+        logger.debug("kraken history %s: fetch failed: %s", pair, exc)
+        return None
+    if data.get("error"):
+        logger.debug("kraken history %s: api error %s", pair, data["error"])
+        return None
+    try:
+        result = data.get("result") or {}
+        # Result is keyed by canonical pair; OHLC array is the matching value
+        block = next(
+            (v for k, v in result.items() if k != "last" and isinstance(v, list)),
+            None,
+        )
+        if not block:
+            return None
+    except Exception:
+        return None
+    bars = []
+    # Kraken row format: [ts, open, high, low, close, vwap, volume, count]
+    for row in block:
+        try:
+            bars.append({
+                "ts": float(row[0]),
+                "open": float(row[1]),
+                "high": float(row[2]),
+                "low":  float(row[3]),
+                "close": float(row[4]),
+                "volume": float(row[6]),
+            })
+        except (IndexError, ValueError, TypeError):
+            continue
+    return bars
+
+
 def is_available() -> bool:
     try:
         import httpx  # type: ignore
@@ -126,4 +202,4 @@ def is_available() -> bool:
         return False
 
 
-__all__ = ["fetch_quote", "is_available"]
+__all__ = ["fetch_quote", "fetch_history", "is_available"]

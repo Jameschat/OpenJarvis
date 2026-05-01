@@ -118,6 +118,70 @@ def _classify_market(exchange: str, ticker: str) -> str:
     return "US"
 
 
+def fetch_history(ticker: str, range_str: str = "3mo",
+                  interval: str = "1d", *,
+                  timeout: float = 12.0) -> Optional[list]:
+    """Fetch OHLCV history. Returns a list of bar dicts:
+
+        [{ts, open, high, low, close, volume}, ...]
+
+    or None on failure. ts is a Unix timestamp (seconds) at the bar
+    start. range_str: "1d","5d","1mo","3mo","6mo","1y","2y","5y".
+    interval: "1m","5m","15m","30m","1h","1d","1wk","1mo".
+    """
+    if not ticker:
+        return None
+    sym = ticker.strip().upper()
+    try:
+        import httpx  # type: ignore
+    except Exception:
+        return None
+    try:
+        with httpx.Client(timeout=timeout, headers=_HEADERS) as client:
+            r = client.get(_BASE + sym, params={
+                "interval": interval, "range": range_str,
+                "includePrePost": "false",
+            })
+            if r.status_code != 200:
+                logger.debug("yf history %s: HTTP %d", sym, r.status_code)
+                return None
+            data = r.json()
+    except Exception as exc:
+        logger.debug("yf history %s: fetch failed: %s", sym, exc)
+        return None
+    try:
+        result = (data.get("chart") or {}).get("result") or []
+        if not result:
+            return None
+        block = result[0]
+        timestamps = block.get("timestamp") or []
+        ind = (block.get("indicators") or {}).get("quote") or [{}]
+        q = ind[0] if ind else {}
+        opens = q.get("open") or []
+        highs = q.get("high") or []
+        lows = q.get("low") or []
+        closes = q.get("close") or []
+        volumes = q.get("volume") or []
+    except Exception as exc:
+        logger.debug("yf history %s: parse failed: %s", sym, exc)
+        return None
+    bars = []
+    for i, ts in enumerate(timestamps):
+        # Yahoo emits null entries on illiquid bars. Drop those.
+        c = closes[i] if i < len(closes) else None
+        if c is None:
+            continue
+        bars.append({
+            "ts": float(ts),
+            "open": float(opens[i]) if i < len(opens) and opens[i] is not None else None,
+            "high": float(highs[i]) if i < len(highs) and highs[i] is not None else None,
+            "low":  float(lows[i])  if i < len(lows)  and lows[i]  is not None else None,
+            "close": float(c),
+            "volume": float(volumes[i]) if i < len(volumes) and volumes[i] is not None else None,
+        })
+    return bars
+
+
 def is_available() -> bool:
     """Cheap availability check — does the Yahoo endpoint respond at all?"""
     try:
@@ -129,4 +193,4 @@ def is_available() -> bool:
         return False
 
 
-__all__ = ["fetch_quote", "is_available"]
+__all__ = ["fetch_quote", "fetch_history", "is_available"]

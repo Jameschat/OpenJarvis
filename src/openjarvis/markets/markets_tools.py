@@ -26,7 +26,7 @@ import logging
 from typing import Any, Dict
 
 from openjarvis.markets import store
-from openjarvis.markets.sources import yf, kraken
+from openjarvis.markets.sources import yf, kraken, coingecko
 
 logger = logging.getLogger(__name__)
 
@@ -64,8 +64,16 @@ def stock_price(ticker: str) -> str:
 
 
 def crypto_price(ticker: str = "BTC") -> str:
-    """Fetch a live crypto quote (BTC or ETH on Kraken GBP pairs)."""
-    quote = kraken.fetch_quote(ticker)
+    """Fetch a live crypto quote in GBP. Coverage = top-100 by market
+    cap via CoinGecko (BTC, ETH, SOL, XRP, ADA, DOGE, … any of the top
+    100). Kraken is used as a tightness fallback for BTC + ETH where
+    its GBP pairs have deeper liquidity."""
+    sym = (ticker or "").strip().upper()
+    quote = coingecko.fetch_quote(sym)
+    if quote is None and sym in ("BTC", "ETH"):
+        # Tightness fallback — Kraken's BTC/GBP and ETH/GBP pairs are
+        # the deepest GBP pricing for these two specifically.
+        quote = kraken.fetch_quote(sym)
     if quote is None:
         return json.dumps({"error": f"no quote for {ticker!r}"})
     try:
@@ -82,6 +90,30 @@ def crypto_price(ticker: str = "BTC") -> str:
     except Exception:
         logger.debug("crypto_price: cache update failed", exc_info=True)
     return json.dumps(quote)
+
+
+def crypto_top_100() -> str:
+    """Return the top 100 cryptos by market cap (CoinGecko, GBP).
+    Refreshed every 10 minutes server-side. Useful for the LLM to
+    reason over the full crypto universe rather than just the
+    operator's watchlist."""
+    coins = coingecko.fetch_top_100()
+    if not coins:
+        return json.dumps({"error": "coingecko unavailable"})
+    # Trim sparkline to keep the LLM payload manageable
+    slim = [{
+        "rank": i + 1,
+        "symbol": c.get("symbol"),
+        "name": c.get("name"),
+        "last": c.get("last"),
+        "change_24h_pct": c.get("change_24h_pct"),
+        "change_7d_pct": c.get("change_7d_pct"),
+        "change_30d_pct": c.get("change_30d_pct"),
+        "market_cap": c.get("market_cap"),
+        "volume_24h": c.get("volume_24h"),
+    } for i, c in enumerate(coins)]
+    return json.dumps({"coins": slim, "count": len(slim),
+                       "currency": "GBP", "source": "coingecko"})
 
 
 # ---------------------------------------------------------------------------
@@ -165,23 +197,44 @@ TOOL_SCHEMAS = [
         "function": {
             "name": "crypto_price",
             "description": (
-                "Fetch a LIVE crypto quote in GBP via Kraken. CALL "
-                "THIS for any 'price of bitcoin / ethereum / BTC / ETH' "
-                "question. Returns last price, 24h % change, volume. "
-                "Do NOT answer from training data — crypto prices "
-                "drift within seconds. Day-1 supports BTC and ETH only."
+                "Fetch a LIVE crypto quote in GBP. Coverage = top-100 "
+                "cryptos by market cap via CoinGecko (BTC, ETH, SOL, "
+                "XRP, ADA, DOGE, AVAX, DOT, LINK, MATIC, NEAR, etc.). "
+                "Returns last price, 24h % change, volume. Do NOT "
+                "answer from training data — crypto prices drift "
+                "within seconds. For 'how is the crypto market doing' "
+                "questions, use crypto_top_100 instead."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "ticker": {
                         "type": "string",
-                        "description": "BTC or ETH (case-insensitive).",
+                        "description": (
+                            "Crypto symbol from the top 100 (case-"
+                            "insensitive). Examples: BTC, ETH, SOL, "
+                            "XRP, ADA, DOGE."
+                        ),
                         "default": "BTC",
                     },
                 },
                 "required": ["ticker"],
             },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "crypto_top_100",
+            "description": (
+                "Return the top 100 cryptocurrencies by market cap "
+                "with live GBP prices, 24h / 7d / 30d % changes, "
+                "market cap, and 24h volume. Use for 'what's hot in "
+                "crypto', 'crypto market overview', 'biggest movers', "
+                "'top performing crypto this week' style questions. "
+                "Source: CoinGecko (free, refreshed every 10 minutes)."
+            ),
+            "parameters": {"type": "object", "properties": {}},
         },
     },
     {
@@ -248,6 +301,7 @@ TOOL_SCHEMAS = [
 TOOL_DISPATCH = {
     "stock_price":      stock_price,
     "crypto_price":     crypto_price,
+    "crypto_top_100":   crypto_top_100,
     "watchlist_get":    watchlist_get,
     "watchlist_add":    watchlist_add,
     "watchlist_remove": watchlist_remove,
@@ -256,6 +310,6 @@ TOOL_DISPATCH = {
 
 __all__ = [
     "TOOL_SCHEMAS", "TOOL_DISPATCH",
-    "stock_price", "crypto_price",
+    "stock_price", "crypto_price", "crypto_top_100",
     "watchlist_get", "watchlist_add", "watchlist_remove",
 ]
