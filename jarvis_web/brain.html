@@ -5734,6 +5734,53 @@ composerEl.addEventListener('drop', async (e) => {
   }
 });
 
+// Clipboard-paste support — primary intended UX for chart analysis
+// (Print Screen / Snipping Tool → click composer → Ctrl+V).
+// Walks the clipboard items, picks out any kind="file" + type=image/*,
+// synthesises a filename (clipboard items don't carry one), and pushes
+// through addAttachments. Non-image pastes (text) fall through normally.
+async function _handleClipboardPaste(e) {
+  if (!e.clipboardData || !e.clipboardData.items) return;
+  const imageFiles = [];
+  for (const item of e.clipboardData.items) {
+    if (item.kind === 'file' && item.type && item.type.startsWith('image/')) {
+      const file = item.getAsFile();
+      if (!file) continue;
+      const ext = (item.type.split('/')[1] || 'png').replace(/[^a-z0-9]/gi, '');
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      const named = new File([file], `chart-paste-${stamp}.${ext}`,
+                             { type: item.type });
+      imageFiles.push(named);
+    }
+  }
+  if (imageFiles.length) {
+    e.preventDefault();          // don't dump binary into the textarea
+    await addAttachments(imageFiles);
+    try {
+      logEvent('hud',
+        ` pasted ${imageFiles.length} image — say "analyse this chart"`);
+    } catch (_) {}
+    // Subtle visual ack
+    composerEl.classList.add('dragging');
+    setTimeout(() => composerEl.classList.remove('dragging'), 220);
+  }
+}
+composerInp.addEventListener('paste', _handleClipboardPaste);
+// Also handle paste when focus isn't yet inside the textarea —
+// operator may press Ctrl+V before clicking. Document-wide handler
+// only intervenes when there's an image in the clipboard; pure-text
+// pastes fall through to whatever has focus.
+document.addEventListener('paste', (e) => {
+  if (!e.clipboardData || !e.clipboardData.items) return;
+  const hasImage = Array.from(e.clipboardData.items).some(
+    it => it.kind === 'file' && it.type && it.type.startsWith('image/')
+  );
+  if (hasImage && document.activeElement !== composerInp) {
+    _handleClipboardPaste(e);
+    composerInp.focus();
+  }
+});
+
 // --- Client-side chat history ---
 // Last N=12 messages (6 turns) live in this tab's memory only. Sent with
 // each /chat request so the model can interpret short replies. Resets on
