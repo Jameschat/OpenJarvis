@@ -293,6 +293,51 @@ def fetch_history(ticker: str, range_str: str = "3mo", *,
     return bars
 
 
+_global_cache: Dict[str, Any] = {}
+_global_cached_at: float = 0.0
+_GLOBAL_TTL_S = 60.0
+
+
+def fetch_global(*, vs_currency: str = "gbp",
+                 timeout: float = 8.0) -> Dict[str, Any]:
+    """CoinGecko /global — total market cap, BTC dominance, 24h volume.
+    Cached for 60s. Returns empty dict on failure."""
+    global _global_cached_at
+    now = time.time()
+    with _lock:
+        if _global_cache and (now - _global_cached_at) < _GLOBAL_TTL_S:
+            return dict(_global_cache)
+    try:
+        import httpx  # type: ignore
+    except Exception:
+        return dict(_global_cache)
+    try:
+        with httpx.Client(timeout=timeout, headers=_HEADERS) as client:
+            r = client.get(_BASE + "/global")
+            if r.status_code != 200:
+                return dict(_global_cache)
+            data = (r.json() or {}).get("data", {}) or {}
+    except Exception as exc:
+        logger.debug("coingecko global: %s", exc)
+        return dict(_global_cache)
+    ccy = vs_currency.lower()
+    out = {
+        "total_market_cap":   (data.get("total_market_cap") or {}).get(ccy),
+        "total_volume_24h":   (data.get("total_volume") or {}).get(ccy),
+        "market_cap_pct_24h": data.get("market_cap_change_percentage_24h_usd"),
+        "btc_dominance":      (data.get("market_cap_percentage") or {}).get("btc"),
+        "eth_dominance":      (data.get("market_cap_percentage") or {}).get("eth"),
+        "active_cryptocurrencies": data.get("active_cryptocurrencies"),
+        "ts": now,
+        "currency": vs_currency.upper(),
+    }
+    with _lock:
+        _global_cache.clear()
+        _global_cache.update(out)
+        _global_cached_at = now
+    return dict(out)
+
+
 def is_available() -> bool:
     try:
         import httpx  # type: ignore
@@ -304,5 +349,6 @@ def is_available() -> bool:
 
 
 __all__ = [
-    "fetch_top_100", "fetch_quote", "fetch_history", "is_available",
+    "fetch_top_100", "fetch_quote", "fetch_history", "fetch_global",
+    "is_available",
 ]

@@ -472,6 +472,200 @@ def emit_widget(widget_type: str, data: Dict[str, Any]) -> None:
         logger.debug("emit_widget failed", exc_info=True)
 
 
+# ---------------------------------------------------------------------------
+# Markets-Pro page helpers — data assembly for the standalone
+# jarvis_web/markets.html UI (Dashboard / Pulse / Analyze tabs).
+# ---------------------------------------------------------------------------
+
+def _markets_pro_dashboard() -> Dict[str, Any]:
+    """Dashboard tab — stats, recent analyses, and the live market
+    strip across the bottom."""
+    from openjarvis.markets import store
+    from openjarvis.markets.sources import coingecko
+    out: Dict[str, Any] = {"ok": True}
+    # Stats
+    recent_charts = _markets_pro_recent_analyses(limit=20)
+    try:
+        watchlist_count = len(store.watchlist_get() or [])
+    except Exception:
+        watchlist_count = 0
+    out["stats"] = {
+        "analyses_total": _markets_pro_count_analyses(),
+        "analyses_last_7d": _markets_pro_count_analyses(within_days=7),
+        "watchlist_count": watchlist_count,
+        "win_rate": None,    # populates once paper-trade outcomes accumulate
+    }
+    out["recent_analyses"] = recent_charts[:8]
+    out["global"] = coingecko.fetch_global()
+    return out
+
+
+def _markets_pro_pulse() -> Dict[str, Any]:
+    """Pulse tab — top gainers / losers / trending + market overview."""
+    from openjarvis.markets.sources import coingecko
+    coins = coingecko.fetch_top_100() or []
+    # Sort by 24h % change
+    by_change = [c for c in coins if c.get("change_24h_pct") is not None]
+    gainers = sorted(by_change, key=lambda c: c["change_24h_pct"],
+                     reverse=True)[:8]
+    losers = sorted(by_change, key=lambda c: c["change_24h_pct"])[:8]
+    # Trending = top by 24h volume
+    by_vol = sorted([c for c in coins if c.get("volume_24h")],
+                    key=lambda c: c["volume_24h"], reverse=True)[:10]
+    return {
+        "ok": True,
+        "global": coingecko.fetch_global(),
+        "gainers": gainers,
+        "losers": losers,
+        "trending": by_vol,
+        "all_count": len(coins),
+    }
+
+
+def _markets_pro_count_analyses(*, within_days: Optional[int] = None) -> int:
+    """Count chart-analysis markdown files in
+    Brain/Trading/Research/Charts/."""
+    try:
+        from openjarvis.tools.obsidian_brain import BRAIN_ROOT
+    except Exception:
+        return 0
+    p = Path(BRAIN_ROOT) / "Trading" / "Research" / "Charts"
+    if not p.is_dir():
+        return 0
+    cutoff = (time.time() - within_days * 86400) if within_days else 0
+    n = 0
+    try:
+        for f in p.iterdir():
+            if not f.is_file() or f.suffix.lower() != ".md":
+                continue
+            if cutoff and f.stat().st_mtime < cutoff:
+                continue
+            n += 1
+    except Exception:
+        pass
+    return n
+
+
+def _markets_pro_recent_analyses(*, limit: int = 8) -> List[Dict[str, Any]]:
+    """Scan the Charts dir for recent chart-analysis files. Returns
+    [{filename, ticker, timeframe, verdict, ts}] newest-first."""
+    try:
+        from openjarvis.tools.obsidian_brain import BRAIN_ROOT
+    except Exception:
+        return []
+    p = Path(BRAIN_ROOT) / "Trading" / "Research" / "Charts"
+    if not p.is_dir():
+        return []
+    items: List[Dict[str, Any]] = []
+    try:
+        files = [f for f in p.iterdir()
+                 if f.is_file() and f.suffix.lower() == ".md"]
+        files.sort(key=lambda f: f.stat().st_mtime, reverse=True)
+        for f in files[:limit * 2]:    # over-fetch then trim — some may parse-fail
+            try:
+                txt = f.read_text(encoding="utf-8", errors="replace")
+            except Exception:
+                continue
+            ticker = _extract_frontmatter(txt, "ticker") or "?"
+            tf = _extract_frontmatter(txt, "timeframe") or "?"
+            verdict = _extract_verdict(txt) or "—"
+            items.append({
+                "filename": f.name,
+                "ticker": ticker,
+                "timeframe": tf,
+                "verdict": verdict,
+                "ts": f.stat().st_mtime,
+                "chart_image": f.with_suffix(".png").name
+                                if f.with_suffix(".png").is_file() else None,
+            })
+            if len(items) >= limit:
+                break
+    except Exception:
+        logger.debug("markets_pro recent_analyses failed", exc_info=True)
+    return items
+
+
+def _extract_frontmatter(text: str, key: str) -> Optional[str]:
+    if not text.startswith("---"):
+        return None
+    try:
+        end = text.find("\n---", 3)
+        if end < 0:
+            return None
+        block = text[3:end]
+        for line in block.splitlines():
+            if line.strip().startswith(f"{key}:"):
+                return line.split(":", 1)[1].strip()
+    except Exception:
+        pass
+    return None
+
+
+def _extract_verdict(text: str) -> Optional[str]:
+    """Pull the verdict string from '## Verdict: LONG — high'."""
+    for line in text.splitlines():
+        ls = line.strip().lower()
+        if ls.startswith("## verdict"):
+            return line.split(":", 1)[-1].strip(" *#")
+    return None
+
+
+def _markets_pro_analyze(body: Dict[str, Any]) -> Dict[str, Any]:
+    """Decode posted image + run chart_analyst + return inline result."""
+    from openjarvis.markets import chart_analyst
+    img_b64 = body.get("image_b64") or ""
+    if not img_b64:
+        return {"ok": False, "error": "image_b64 required"}
+    name = (body.get("image_name") or "chart.png").replace("\\", "_").replace("/", "_")[:120]
+    ticker_hint = (body.get("ticker_hint") or "").strip() or None
+    timeframe = body.get("timeframe") or "2h"
+    # Persist to Brain/Inbox/ for trace + so chart_analyst can read it
+    try:
+        from openjarvis.tools import obsidian_brain
+        obsidian_brain._ensure_layout()
+        inbox = obsidian_brain.INBOX_DIR
+    except Exception:
+        inbox = Path(os.path.expanduser("~/Obsidian/Claude/Brain/Inbox"))
+        inbox.mkdir(parents=True, exist_ok=True)
+    from datetime import datetime as _dt
+    stamp = _dt.now().strftime("%Y-%m-%d-%H%M%S")
+    img_path = inbox / f"markets-pro-{stamp}-{name}"
+    try:
+        img_path.write_bytes(base64.b64decode(img_b64))
+    except Exception:
+        return {"ok": False, "error": "could not decode image_b64"}
+    raw = chart_analyst.analyze_chart(
+        image_path=str(img_path),
+        ticker_hint=ticker_hint,
+        timeframe=timeframe,
+    )
+    try:
+        result = json.loads(raw)
+    except Exception:
+        return {"ok": False, "error": "analyzer returned non-JSON",
+                "raw": raw[:500]}
+    # Inline the rendered PNG + the markdown body for the page
+    chart_b64 = ""
+    chart_image = result.get("chart_image")
+    if chart_image:
+        try:
+            chart_b64 = base64.b64encode(
+                Path(chart_image).read_bytes()
+            ).decode("ascii")
+        except Exception:
+            chart_b64 = ""
+    md_body = ""
+    md_path = result.get("vault_note")
+    if md_path:
+        try:
+            md_body = Path(md_path).read_text(encoding="utf-8")
+        except Exception:
+            md_body = ""
+    result["chart_image_b64"] = chart_b64
+    result["markdown_body"] = md_body
+    return result
+
+
 def emit_chat_widget_toggle(action: str) -> None:
     """Public bridge for voice_cmd / fast-paths to nudge the HUD's chat
     widget open or closed. Decoupled from _chat_history's internal class
@@ -641,12 +835,15 @@ class _Handler(SimpleHTTPRequestHandler):
                 })
             return self._json_response(200, _vault_openapi_schema())
         if path_only in ("/", "/brain", "/brain.html", "/phone", "/phone.html",
+                          "/markets", "/markets.html",
                           "/manifest.webmanifest"):
             # Static shell — auth happens client-side via the modal
             if path_only in ("/", "/brain", "/brain.html"):
                 self.path = "/brain.html"
             elif path_only in ("/phone", "/phone.html"):
                 self.path = "/phone.html"
+            elif path_only in ("/markets", "/markets.html"):
+                self.path = "/markets.html"
             return super().do_GET()
         if path_only.startswith("/icons/"):
             return super().do_GET()
@@ -689,6 +886,10 @@ class _Handler(SimpleHTTPRequestHandler):
             #                       (LLM pipeline ships next session)
             # /markets/health     → SQLite + ingestion source health
             self._handle_markets_get()
+        elif self.path.startswith("/markets-pro/"):
+            # Standalone Markets-Pro page (jarvis_web/markets.html) data
+            # endpoints — separate from the in-HUD slide-out panel.
+            self._handle_markets_pro_get()
         elif self.path == "/chat_history":
             # One-shot snapshot of the in-memory chat ring buffer. The HUD
             # widget calls this on first open to seed past bubbles, then
@@ -832,6 +1033,8 @@ class _Handler(SimpleHTTPRequestHandler):
             self._handle_content_kickoff()
         elif self.path.startswith("/markets/"):
             self._handle_markets_post()
+        elif self.path.startswith("/markets-pro/"):
+            self._handle_markets_pro_post()
         else:
             self.send_error(404, "Not Found")
 
@@ -2233,6 +2436,60 @@ class _Handler(SimpleHTTPRequestHandler):
                 "error": "internal error", "ref": _err_ref(),
             })
         return self._json_response(404, {"error": "unknown markets endpoint"})
+
+    # ------------------------------------------------------------------
+    # Markets-Pro page (jarvis_web/markets.html) — separate dedicated
+    # full-page UI for crypto chart analysis. Mirrors natum.app's three-
+    # tab layout (Dashboard / Pulse / Analyze) but reuses our chart_
+    # analyst pipeline + free CoinGecko/Kraken data + L-1 outcomes.
+    # ------------------------------------------------------------------
+
+    def _handle_markets_pro_get(self) -> None:
+        """GET /markets-pro/{dashboard|pulse}."""
+        from urllib.parse import urlparse
+        path_only = urlparse(self.path).path
+        sub = path_only[len("/markets-pro/"):]
+        try:
+            if sub == "dashboard":
+                return self._json_response(200, _markets_pro_dashboard())
+            if sub == "pulse":
+                return self._json_response(200, _markets_pro_pulse())
+            if sub == "global":
+                from openjarvis.markets.sources import coingecko
+                return self._json_response(200, coingecko.fetch_global())
+        except Exception:
+            logger.exception("GET /markets-pro/%s failed", sub)
+            return self._json_response(500, {
+                "error": "internal error", "ref": _err_ref(),
+            })
+        return self._json_response(404, {"error": "unknown markets-pro endpoint"})
+
+    def _handle_markets_pro_post(self) -> None:
+        """POST /markets-pro/analyze — body:
+            {image_b64, image_name?, ticker_hint?, timeframe?}
+        Decodes the image, persists to Brain/Inbox/, runs chart_analyst,
+        reads the rendered PNG, returns inline base64 + analysis."""
+        from urllib.parse import urlparse
+        path_only = urlparse(self.path).path
+        sub = path_only[len("/markets-pro/"):]
+        try:
+            if sub != "analyze":
+                return self._json_response(404, {
+                    "error": "unknown markets-pro endpoint"})
+            n = int(self.headers.get("Content-Length", 0))
+            if n <= 0 or n > 25_000_000:    # 25MB cap on the body
+                return self._json_response(400, {"error": "image required"})
+            body_bytes = self.rfile.read(n)
+            try:
+                body = json.loads(body_bytes.decode("utf-8"))
+            except json.JSONDecodeError:
+                return self._json_response(400, {"error": "bad JSON"})
+            return self._json_response(200, _markets_pro_analyze(body))
+        except Exception:
+            logger.exception("POST /markets-pro/%s failed", sub)
+            return self._json_response(500, {
+                "error": "internal error", "ref": _err_ref(),
+            })
 
     def _handle_chat_sse(self) -> None:
         """SSE stream for the right-edge chat widget. Emits two event
