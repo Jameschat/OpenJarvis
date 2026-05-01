@@ -69,7 +69,11 @@ _LOCK_ACQUIRE_TIMEOUT_S = 30
 # kill a thread without rewriting process_command); it keeps running in
 # the background and its result lands in the vault as a journal entry,
 # but the HTTP turn unblocks the operator. Accepted trade-off.
-_PROCESS_DEADLINE_S = 25
+# Bumped 25s → 60s on 2026-05-01: chart_analyst legitimately runs
+# 25-40s (two vision calls + OHLCV fetch + matplotlib render). Voice
+# ack already plays so silence is no longer the failure mode the
+# tighter deadline protected against.
+_PROCESS_DEADLINE_S = 60
 
 
 def _run_with_deadline(fn: Callable[[str], str], arg: str,

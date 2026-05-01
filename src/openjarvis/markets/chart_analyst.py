@@ -58,19 +58,22 @@ def _charts_dir() -> Path:
 # ---------------------------------------------------------------------------
 
 def _identify_chart(image_path: Path) -> Optional[Dict[str, Any]]:
-    """Ask gpt-4o vision: what crypto / timeframe is this chart of?
+    """Ask gpt-4o-mini vision: what crypto / timeframe is this chart of?
     Returns {ticker, timeframe, confidence, notes} or None."""
+    print("[CHART] step 1/5: vision identify (gpt-4o-mini)", flush=True)
     try:
         from openjarvis.cli.llm_fallback import _get_openai_client
-    except Exception:
+    except Exception as exc:
+        print(f"[CHART] identify: client import failed: {exc}", flush=True)
         return None
     client = _get_openai_client()
     if client is None:
+        print("[CHART] identify: no OPENAI_API_KEY", flush=True)
         return None
     try:
         b64 = base64.b64encode(image_path.read_bytes()).decode("ascii")
     except Exception as exc:
-        logger.warning("chart_analyst: image read failed: %s", exc)
+        print(f"[CHART] identify: image read failed: {exc}", flush=True)
         return None
     # Detect mime from extension; default to PNG
     ext = image_path.suffix.lower().lstrip(".") or "png"
@@ -91,9 +94,15 @@ def _identify_chart(image_path: Path) -> Optional[Dict[str, Any]]:
         '"notes": "<short>"}\n'
         "If you cannot identify the ticker, set ticker to null."
     )
+    t0 = time.time()
     try:
+        # gpt-4o-mini for identification — 3x faster than gpt-4o, plenty
+        # accurate for "what coin and what timeframe is this chart of".
+        # gpt-4o reserved for the synthesis step where vision quality
+        # actually matters.
         resp = client.chat.completions.create(
-            model=os.environ.get("OPENJARVIS_VISION_MODEL", "gpt-4o"),
+            model=os.environ.get(
+                "OPENJARVIS_VISION_IDENT_MODEL", "gpt-4o-mini"),
             messages=[{
                 "role": "user",
                 "content": [
@@ -106,8 +115,11 @@ def _identify_chart(image_path: Path) -> Optional[Dict[str, Any]]:
             temperature=0.1,
         )
         text = (resp.choices[0].message.content or "").strip()
-    except Exception:
-        logger.exception("chart_analyst: vision call failed")
+        print(f"[CHART] identify: ok in {time.time()-t0:.1f}s "
+              f"({len(text)} chars)", flush=True)
+    except Exception as exc:
+        logger.exception("chart_analyst: vision identify failed")
+        print(f"[CHART] identify: API call failed: {exc}", flush=True)
         return None
     # Strip ```json fences if present
     if text.startswith("```"):
@@ -119,7 +131,10 @@ def _identify_chart(image_path: Path) -> Optional[Dict[str, Any]]:
     except json.JSONDecodeError:
         logger.warning("chart_analyst: vision returned non-JSON: %s",
                        text[:200])
+        print(f"[CHART] identify: non-JSON reply: {text[:140]}", flush=True)
         return None
+    print(f"[CHART] identify: ticker={data.get('ticker')} "
+          f"tf={data.get('timeframe')}", flush=True)
     return data
 
 
@@ -153,25 +168,37 @@ def _fetch_for_ticker(ticker: str, timeframe: str
     """Returns (bars, source_label, actual_timeframe). bars is empty
     on failure. actual_timeframe may differ from requested when we
     have to fall back (e.g. CoinGecko 4h for long-tail coins)."""
+    print(f"[CHART] step 2/5: fetch OHLCV for {ticker} @ {timeframe}",
+          flush=True)
     sym_lower = (ticker or "").lower().strip()
     tf = (timeframe or "2h").lower().strip()
 
     # Try Kraken if we know the pair
     pair = _KRAKEN_USD_SYMBOLS.get(sym_lower)
     if pair:
+        t0 = time.time()
         bars = _fetch_kraken(pair, tf)
         if bars:
+            print(f"[CHART] fetch: kraken {pair} → {len(bars)} bars "
+                  f"in {time.time()-t0:.1f}s", flush=True)
             return bars, f"kraken:{pair}", tf
+        print(f"[CHART] fetch: kraken {pair} returned nothing, "
+              f"falling back to coingecko", flush=True)
 
     # Fall back to CoinGecko OHLC at 4h granularity
     try:
         from openjarvis.markets.sources import coingecko
-        # Coingecko's /coins/{id}/ohlc returns 4h bars for days 7-90
+        t0 = time.time()
         bars_cg = coingecko.fetch_history(ticker, range_str="1mo")
         if bars_cg:
-            note = "coingecko (4h granularity)"
-            return bars_cg, note, "4h"
-    except Exception:
+            print(f"[CHART] fetch: coingecko {ticker} → {len(bars_cg)} "
+                  f"bars in {time.time()-t0:.1f}s (4h granularity)",
+                  flush=True)
+            return bars_cg, "coingecko (4h granularity)", "4h"
+        print(f"[CHART] fetch: coingecko {ticker} returned nothing",
+              flush=True)
+    except Exception as exc:
+        print(f"[CHART] fetch: coingecko exception: {exc}", flush=True)
         logger.debug("coingecko fallback failed", exc_info=True)
     return [], "no-data", tf
 
@@ -389,14 +416,17 @@ def _render_chart(ticker: str, timeframe: str,
     """Render a candlestick chart with EMA overlays + RSI panel +
     marked support/resistance + suggested entry/stop/target zones.
     Returns the saved PNG path or None if matplotlib is unavailable."""
+    print(f"[CHART] step 4/5: render chart ({len(bars)} bars)", flush=True)
     try:
         import matplotlib  # type: ignore
         matplotlib.use("Agg")           # no GUI
         import matplotlib.pyplot as plt  # type: ignore
         import matplotlib.dates as mdates  # type: ignore
         from matplotlib.patches import Rectangle  # type: ignore
-    except Exception:
+    except Exception as exc:
         logger.warning("chart_analyst: matplotlib unavailable; skipping chart")
+        print(f"[CHART] render: matplotlib unavailable ({exc}) — "
+              f"install with: uv pip install matplotlib", flush=True)
         return None
 
     if not bars:
@@ -523,6 +553,7 @@ def _render_chart(ticker: str, timeframe: str,
     fig.savefig(out_path, dpi=120, facecolor=fig.get_facecolor(),
                 bbox_inches="tight")
     plt.close(fig)
+    print(f"[CHART] render: ok → {out_path.name}", flush=True)
     return out_path
 
 
@@ -671,6 +702,7 @@ End. No disclaimers — they're added by the persistence layer.
 def _synthesize(image_path: Path, ticker: str, timeframe: str,
                 ind: Dict[str, Any], source: str,
                 suggested: Dict[str, Any]) -> Dict[str, Any]:
+    print("[CHART] step 5/5: synthesise (gpt-4o vision)", flush=True)
     try:
         from openjarvis.cli.llm_fallback import _get_openai_client
     except Exception:
@@ -678,6 +710,7 @@ def _synthesize(image_path: Path, ticker: str, timeframe: str,
     client = _get_openai_client()
     if client is None:
         return {"headline": "(no OPENAI_API_KEY)", "body": ""}
+    t0 = time.time()
     try:
         b64 = base64.b64encode(image_path.read_bytes()).decode("ascii")
     except Exception:
@@ -716,8 +749,11 @@ def _synthesize(image_path: Path, ticker: str, timeframe: str,
             temperature=0.3,
         )
         text = (resp.choices[0].message.content or "").strip()
-    except Exception:
+        print(f"[CHART] synth: ok in {time.time()-t0:.1f}s "
+              f"({len(text)} chars)", flush=True)
+    except Exception as exc:
         logger.exception("chart_analyst: synthesis call failed")
+        print(f"[CHART] synth: API call failed: {exc}", flush=True)
         return {"headline": "(synthesis failed)", "body": ""}
     # Headline = the Verdict line if present, else first prose sentence
     headline = "TA read"
@@ -823,20 +859,20 @@ def _persist_analysis(ticker: str, timeframe: str,
 
 def _emit_chart_widget(chart_path: Optional[Path], caption: str) -> None:
     if chart_path is None:
+        print("[CHART] emit_widget: no chart_path (matplotlib missing?)",
+              flush=True)
         return
     try:
         from openjarvis.cli.brain_server import emit_widget
-        # The image widget needs a URL the browser can fetch.
-        # We expose the chart from /vault/get or via a static path.
-        # For Day-1 simplicity: encode as a data: URL so it's
-        # entirely self-contained in the SSE event.
         with open(chart_path, "rb") as f:
             data = f.read()
         b64 = base64.b64encode(data).decode("ascii")
         url = f"data:image/png;base64,{b64}"
         emit_widget("image", {"url": url, "caption": caption})
-    except Exception:
+        print(f"[CHART] emit_widget: ok ({len(data)} bytes)", flush=True)
+    except Exception as exc:
         logger.debug("chart widget emit failed", exc_info=True)
+        print(f"[CHART] emit_widget: FAILED {exc}", flush=True)
 
 
 # ---------------------------------------------------------------------------
@@ -847,9 +883,12 @@ def analyze_chart(image_path: str,
                   ticker_hint: Optional[str] = None,
                   timeframe: str = "2h") -> str:
     """Main entry. Returns a JSON string with summary + paths."""
+    print(f"[CHART] === analyze_chart start: {image_path!r} "
+          f"hint={ticker_hint} tf={timeframe}", flush=True)
     started = time.time()
     p = Path(image_path)
     if not p.is_file():
+        print(f"[CHART] FAIL: image not found at {image_path}", flush=True)
         return json.dumps({
             "ok": False, "error": f"image not found: {image_path}",
         })
@@ -899,7 +938,12 @@ def analyze_chart(image_path: str,
 
     # 7. Emit widget for HUD
     headline = analysis.get("headline") or "TA read"
+    print(f"[CHART] step 6/6: emit widget", flush=True)
     _emit_chart_widget(chart_path, f"{ticker} · {actual_tf} · {headline}")
+    print(f"[CHART] === analyze_chart DONE in "
+          f"{time.time()-started:.1f}s · {ticker}/{actual_tf} · "
+          f"verdict={analysis.get('verdict')} · widget={'yes' if chart_path else 'no'}",
+          flush=True)
 
     return json.dumps({
         "ok": True,
