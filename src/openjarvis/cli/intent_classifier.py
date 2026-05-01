@@ -116,6 +116,18 @@ _CORPUS: Dict[str, List[str]] = {
         "hacker news front page",
         "what's everyone talking about on HN",
     ],
+    "chart_analysis": [
+        "analyse this chart",
+        "analyze this chart",
+        "what does this chart show",
+        "is this a good entry",
+        "should I buy this",
+        "what do you think of this chart",
+        "give me your read on this chart",
+        "what's the setup on this chart",
+        "TA on this please",
+        "technical analysis on this",
+    ],
     "vault_recall": [
         "what do you remember about jarvis architecture",
         "recall what we said about graphify",
@@ -175,6 +187,16 @@ _HINTS: Dict[str, str] = {
         "INTENT HINT: the operator wants live HN content. CALL "
         "hackernews_search(query=...) — it returns live data AND renders a "
         "clickable results card."
+    ),
+    "chart_analysis": (
+        "INTENT HINT: the operator wants chart analysis. If an image "
+        "attachment is present in the prompt (look for "
+        "'=== file(s) attached ===' with a .png/.jpg path), CALL "
+        "analyze_chart(image_path=<that path>). The tool fetches real "
+        "OHLCV, computes EMA/RSI/ATR, renders an annotated chart, and "
+        "writes a research note. Do NOT try to read indicators off the "
+        "screenshot yourself — use the tool. If no image is attached, "
+        "ask the operator to attach the chart screenshot."
     ),
     "vault_recall": (
         "INTENT HINT: the operator is asking about their own notes. Use "

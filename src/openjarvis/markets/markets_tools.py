@@ -27,6 +27,7 @@ from typing import Any, Dict
 
 from openjarvis.markets import store
 from openjarvis.markets.sources import yf, kraken, coingecko
+from openjarvis.markets import chart_analyst as _chart_analyst
 
 logger = logging.getLogger(__name__)
 
@@ -156,6 +157,16 @@ def watchlist_remove(ticker: str) -> str:
     removed = store.watchlist_remove(ticker)
     return json.dumps({"ok": True, "removed": removed,
                        "ticker": (ticker or "").upper()})
+
+
+def analyze_chart(image_path: str, ticker_hint: str = "",
+                  timeframe: str = "2h") -> str:
+    """Analyse a crypto chart screenshot. See chart_analyst.analyze_chart
+    for the full pipeline. Schema in TOOL_SCHEMAS below."""
+    hint = (ticker_hint or "").strip() or None
+    return _chart_analyst.analyze_chart(
+        image_path=image_path, ticker_hint=hint, timeframe=timeframe,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -293,6 +304,61 @@ TOOL_SCHEMAS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "analyze_chart",
+            "description": (
+                "MANDATORY when the operator attaches a crypto chart "
+                "screenshot AND asks for analysis ('analyse this', "
+                "'what does this chart show', 'should I buy this', "
+                "'is this a good entry', 'what do you think'). The "
+                "tool: (1) uses vision to identify the coin + timeframe "
+                "from the screenshot, (2) fetches REAL OHLCV from "
+                "Kraken/CoinGecko, (3) computes EMA(20/50/200), RSI(14), "
+                "ATR(14), support/resistance, (4) renders an annotated "
+                "chart with marked levels, (5) writes a research note "
+                "to the vault. Returns a JSON summary with the computed "
+                "indicators + suggested entry/stop/take-profit zones. "
+                "Crypto-only on Day-1. Default timeframe 2h."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "image_path": {
+                        "type": "string",
+                        "description": (
+                            "Absolute filesystem path to the screenshot. "
+                            "When the operator attaches an image to the "
+                            "chat composer it lands at "
+                            "Brain/Inbox/<timestamp> - <name> — pass "
+                            "that exact path."
+                        ),
+                    },
+                    "ticker_hint": {
+                        "type": "string",
+                        "description": (
+                            "Optional — if you can already tell the "
+                            "operator's chart is for a specific coin "
+                            "(BTC, ETH, SOL, etc.) pass it here to "
+                            "skip the vision-identification step."
+                        ),
+                        "default": "",
+                    },
+                    "timeframe": {
+                        "type": "string",
+                        "description": (
+                            "Candle interval. Defaults to 2h. The vision "
+                            "layer overrides this if it can read the "
+                            "timeframe from the screenshot."
+                        ),
+                        "default": "2h",
+                    },
+                },
+                "required": ["image_path"],
+            },
+        },
+    },
 ]
 
 
@@ -305,6 +371,7 @@ TOOL_DISPATCH = {
     "watchlist_get":    watchlist_get,
     "watchlist_add":    watchlist_add,
     "watchlist_remove": watchlist_remove,
+    "analyze_chart":    analyze_chart,
 }
 
 
@@ -312,4 +379,5 @@ __all__ = [
     "TOOL_SCHEMAS", "TOOL_DISPATCH",
     "stock_price", "crypto_price", "crypto_top_100",
     "watchlist_get", "watchlist_add", "watchlist_remove",
+    "analyze_chart",
 ]
