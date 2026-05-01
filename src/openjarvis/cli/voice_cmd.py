@@ -1071,6 +1071,19 @@ _BRIEFING_CLOSE_PATTERNS = (
     r"\bhide (?:the |today'?s )?(?:daily )?(?:briefing|brief|ai pulse|pulse)\b",
     r"\bdismiss (?:the |today'?s )?(?:briefing|brief|ai pulse)\b",
 )
+_MARKETS_OPEN_PATTERNS = (
+    r"\bopen (?:the |my )?(?:market(?:s)?|trading|portfolio|stock(?:s)?|stock market) (?:panel|view|tab|hud)?\b",
+    r"\bshow (?:me )?(?:the |my )?(?:market(?:s)?|trading|portfolio|stock(?:s)?|watchlist|recommendations)\b",
+    r"\bbring up (?:the |my )?(?:market(?:s)?|trading|stock|portfolio)\b",
+    r"\bwhat'?s (?:in )?(?:the |my )?(?:market(?:s)?|portfolio|watchlist)\b",
+    r"\bopen jarvis markets\b",
+    r"\bshow me today'?s (?:picks|trades|recommendations)\b",
+)
+_MARKETS_CLOSE_PATTERNS = (
+    r"\bclose (?:the |my )?(?:market(?:s)?|trading|portfolio|stock(?:s)?) (?:panel|view|tab|hud)?\b",
+    r"\bhide (?:the |my )?(?:market(?:s)?|trading|portfolio|stock(?:s)?)\b",
+    r"\bdismiss (?:the |my )?(?:market(?:s)?|trading)\b",
+)
 
 
 def _try_chat_widget(text: str) -> Optional[str]:
@@ -1103,6 +1116,22 @@ def _try_chat_widget(text: str) -> Optional[str]:
             except Exception:
                 pass
             return "Briefing closed."
+    for pat in _MARKETS_OPEN_PATTERNS:
+        if re.search(pat, norm):
+            try:
+                from openjarvis.cli.brain_server import emit_ui_toggle
+                emit_ui_toggle("markets", "open")
+            except Exception:
+                pass
+            return "Markets panel is open, sir."
+    for pat in _MARKETS_CLOSE_PATTERNS:
+        if re.search(pat, norm):
+            try:
+                from openjarvis.cli.brain_server import emit_ui_toggle
+                emit_ui_toggle("markets", "close")
+            except Exception:
+                pass
+            return "Markets panel closed."
     for pat in _LOG_OPEN_PATTERNS:
         if re.search(pat, norm):
             try:

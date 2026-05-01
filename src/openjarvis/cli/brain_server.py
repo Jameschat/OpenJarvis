@@ -411,12 +411,12 @@ class _ChatHistoryBus:
         Server holds no opinion about who's currently visible — this is
         purely a hint, the HUD is the source of truth for visibility.
 
-        target: "chat" (default) | "log" | "briefing"
+        target: "chat" (default) | "log" | "briefing" | "markets"
         action: "open" | "close" | "toggle"
         """
         if action not in ("open", "close", "toggle"):
             return
-        if target not in ("chat", "log", "briefing"):
+        if target not in ("chat", "log", "briefing", "markets"):
             return
         self._broadcast({
             "kind": "toggle", "target": target, "action": action,
@@ -678,6 +678,13 @@ class _Handler(SimpleHTTPRequestHandler):
             # requested date (defaults to most-recent), plus a list of
             # available dates so the HUD widget can populate a dropdown.
             self._handle_briefing_get()
+        elif self.path.startswith("/markets/"):
+            # Markets subsystem — Day-1 read endpoints for the HUD panel.
+            # /markets/watchlist  → operator's tracked tickers + cached prices
+            # /markets/today      → placeholder for the 06:15 briefing artefact
+            #                       (LLM pipeline ships next session)
+            # /markets/health     → SQLite + ingestion source health
+            self._handle_markets_get()
         elif self.path == "/chat_history":
             # One-shot snapshot of the in-memory chat ring buffer. The HUD
             # widget calls this on first open to seed past bubbles, then
@@ -2077,6 +2084,71 @@ class _Handler(SimpleHTTPRequestHandler):
             "date": chosen["date"] if chosen else None,
             "content": content,
         })
+
+    def _handle_markets_get(self) -> None:
+        """Markets subsystem read endpoints. Day-1 surface:
+
+            GET /markets/watchlist   → {items:[...], count, paper_portfolio:{...}}
+            GET /markets/today       → {date, briefing_md, generated_at, status}
+                                       — Day-1 returns placeholder; LLM
+                                       pipeline ships next session.
+            GET /markets/health      → store + sources health snapshot
+
+        All endpoints sit behind the same PIN auth as other GETs (handled
+        upstream in _dispatch_get). Failure modes return 200 + an
+        ``error`` field so the HUD doesn't see a hard 500.
+        """
+        from urllib.parse import urlparse
+        path_only = urlparse(self.path).path
+        sub = path_only[len("/markets/"):]
+        try:
+            from openjarvis.markets import store
+        except Exception as exc:
+            return self._json_response(200, {
+                "ok": False,
+                "error": "markets subsystem not initialised: %s" % exc,
+            })
+        try:
+            if sub == "watchlist":
+                items = store.watchlist_get()
+                portfolio = store.paper_portfolio_get()
+                return self._json_response(200, {
+                    "ok": True,
+                    "items": items,
+                    "count": len(items),
+                    "paper_portfolio": portfolio,
+                })
+            if sub == "today":
+                # Placeholder until the LLM briefing pipeline ships.
+                from datetime import date as _date
+                return self._json_response(200, {
+                    "ok": True,
+                    "date": _date.today().isoformat(),
+                    "status": "pending",
+                    "briefing_md": (
+                        "# Markets Briefing — pending\n\n"
+                        "*The LLM briefing pipeline ships in the next "
+                        "session. Day-1 build provides the data layer + "
+                        "watchlist + tools only.*"
+                    ),
+                    "generated_at": None,
+                })
+            if sub == "health":
+                from openjarvis.markets.sources import yf, kraken
+                return self._json_response(200, {
+                    "ok": True,
+                    "store": store.health(),
+                    "sources": {
+                        "yfinance": yf.is_available(),
+                        "kraken": kraken.is_available(),
+                    },
+                })
+        except Exception:
+            logger.exception("/markets/%s failed", sub)
+            return self._json_response(500, {
+                "error": "internal error", "ref": _err_ref(),
+            })
+        return self._json_response(404, {"error": "unknown markets endpoint"})
 
     def _handle_chat_sse(self) -> None:
         """SSE stream for the right-edge chat widget. Emits two event

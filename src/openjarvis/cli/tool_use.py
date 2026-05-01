@@ -1664,6 +1664,19 @@ _TOOL_DISPATCH = {
     "maps_locate": _tool_maps_locate,
 }
 
+# Markets subsystem tools (paper-trading shape, Day-1) — splice into
+# both dispatch + schema list. Lazy-imported so a failure inside
+# markets/* never bricks tool_use.py for the non-markets tools.
+try:
+    from openjarvis.markets.markets_tools import (
+        TOOL_DISPATCH as _MARKETS_DISPATCH,
+        TOOL_SCHEMAS as _MARKETS_SCHEMAS,
+    )
+    _TOOL_DISPATCH.update(_MARKETS_DISPATCH)
+except Exception:
+    logger.warning("markets tools failed to register", exc_info=True)
+    _MARKETS_SCHEMAS = []
+
 
 # ---------------------------------------------------------------------------
 # Bridge to the Agno-style ToolRegistry — exposes a curated whitelist of
@@ -1801,7 +1814,7 @@ def generate_with_tools(messages: Sequence, fallback_engine: Any = None,
                                  fallback_model=fallback_model)
 
     _load_agno_tools()
-    all_tools = TOOL_SCHEMAS + _agno_schemas
+    all_tools = TOOL_SCHEMAS + _agno_schemas + list(_MARKETS_SCHEMAS)
     msgs = list(_messages_to_openai(messages))
     # Splice the tool-use addendum in as a SYSTEM message right before the
     # last user turn. Placing it close to the user message gives it more
