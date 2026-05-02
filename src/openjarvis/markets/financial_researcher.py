@@ -495,78 +495,81 @@ def run(*, refresh_quotes: bool = False) -> Dict[str, Any]:
     }
 
 
-# ---------------------------------------------------------------------------
-# Daily-fire daemon — wakes at HH:MM each day and runs the briefing.
-# Mirrors graphify_bridge.start_daily_rebuild from 2026-04-29.
-# ---------------------------------------------------------------------------
-
-import threading as _threading
-
-_daily_lock = _threading.Lock()
-_daily_thread: Optional[_threading.Thread] = None
-_daily_status: Dict[str, Any] = {"running": False}
+# Note: daily fire is now owned by the vault scheduler reading
+# Brain/Scheduled/<date> - financial-researcher - daily markets
+# briefing.md (created 2026-05-02). Replaces the earlier
+# daemon-thread approach which had no visibility in the SCHEDULE
+# panel and didn't survive operator restarts cleanly.
 
 
-def _seconds_until(hour: int, minute: int) -> float:
-    """Seconds from now until the next HH:MM in local time."""
-    now = datetime.now()
-    target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-    if target <= now:
-        # Roll to tomorrow
-        target = target.replace(day=target.day + 1) if target.day < 28 else (
-            target.replace(month=target.month + 1, day=1) if target.month < 12 else
-            target.replace(year=target.year + 1, month=1, day=1)
-        )
-    return max(1.0, (target - now).total_seconds())
+def run_as_agent_task(task) -> Dict[str, Any]:
+    """python-provider entry point for agent_runner.
 
+    Called when the vault scheduler fires a Brain/Scheduled file
+    naming ``financial-researcher`` as the agent. ``task.workspace``
+    is the standard ~/.openjarvis/agents/runs/<task_id>/ dir — we
+    write a small log there for trace visibility, then defer to the
+    real ``run()`` which persists the briefing to Brain/Trading/
+    Research/ where the HUD looks for it.
 
-def start_daily(hour: Optional[int] = None,
-                minute: Optional[int] = None) -> Dict[str, Any]:
-    """Start the daily briefing daemon thread. Idempotent — second call
-    returns the existing status. Hour/minute default to env vars
-    (OPENJARVIS_BRIEFING_HOUR / _MINUTE) then to 06:15."""
-    global _daily_thread
-    h = hour if hour is not None else int(os.environ.get(
-        "OPENJARVIS_BRIEFING_HOUR", "6"))
-    m = minute if minute is not None else int(os.environ.get(
-        "OPENJARVIS_BRIEFING_MINUTE", "15"))
-    with _daily_lock:
-        if _daily_status.get("running"):
-            return dict(_daily_status)
+    Returns a status dict with the canonical agent_runner shape
+    {ok, error?, summary?}."""
+    ws_str = getattr(task, "workspace", None)
+    ws = Path(ws_str) if ws_str else None
+    log_path = (ws / "financial_researcher.log") if ws else None
 
-        def _runner():
-            while True:
-                try:
-                    wait_s = _seconds_until(h, m)
-                    _daily_status["next_fire_in_seconds"] = wait_s
-                    _daily_status["next_fire_hour"] = h
-                    _daily_status["next_fire_minute"] = m
-                    time.sleep(wait_s)
-                    logger.info("financial_researcher: daily fire at %02d:%02d",
-                                h, m)
-                    result = run()
-                    _daily_status["last_fire_at"] = time.time()
-                    _daily_status["last_result"] = result
-                    # Sleep through the minute so we don't double-fire
-                    time.sleep(70)
-                except Exception:
-                    logger.exception("daily briefing daemon iteration failed")
-                    time.sleep(300)
+    def _log(line: str) -> None:
+        ts = datetime.now().strftime("%H:%M:%S")
+        msg = f"[{ts}] {line}"
+        try:
+            print("[FINRES]", msg, flush=True)
+        except Exception:
+            pass
+        if log_path:
+            try:
+                with log_path.open("a", encoding="utf-8") as f:
+                    f.write(msg + "\n")
+            except Exception:
+                pass
 
-        _daily_thread = _threading.Thread(
-            target=_runner, daemon=True, name="markets-daily-briefing",
-        )
-        _daily_thread.start()
-        _daily_status.update({"running": True, "fire_hour": h, "fire_minute": m})
-    return dict(_daily_status)
-
-
-def daily_status() -> Dict[str, Any]:
-    with _daily_lock:
-        return dict(_daily_status)
+    _log("financial-researcher fired by scheduler")
+    try:
+        result = run()
+    except Exception as exc:
+        _log(f"run() raised: {exc}")
+        logger.exception("financial-researcher: run() raised")
+        return {"ok": False, "error": str(exc)}
+    _log(f"run() done: {result}")
+    if not result.get("ok"):
+        # Common one: 'no historical bars in store — run backfill first'
+        return {
+            "ok": False,
+            "error": result.get("error") or result.get("stage") or "unknown",
+            "result": result,
+        }
+    summary = (
+        f"Briefing for {date.today().isoformat()}: "
+        f"{result.get('n_recs', 0)} pick(s), "
+        f"{result.get('n_refusals', 0)} refusal(s), "
+        f"{result.get('wall_seconds', '?')}s wall."
+    )
+    # Write a RESULT.md to the agent workspace so it's visible in the
+    # AGENTS panel's task drilldown.
+    if ws:
+        try:
+            (ws / "RESULT.md").write_text(
+                f"# financial-researcher — {date.today().isoformat()}\n\n"
+                f"{summary}\n\n"
+                f"Briefing markdown: `{result.get('path', '?')}`\n"
+                f"Bundle hash: `{result.get('bundle_hash', '?')}`\n",
+                encoding="utf-8",
+            )
+        except Exception:
+            pass
+    return {"ok": True, "summary": summary, "result": result}
 
 
 __all__ = [
     "run", "gather", "build_bundle", "generate", "validate", "persist",
-    "start_daily", "daily_status",
+    "run_as_agent_task",
 ]

@@ -2616,14 +2616,11 @@ def start_brain_server(open_browser: bool = True) -> None:
     except Exception:
         logger.exception("graphify daily-rebuild failed to start")
 
-    # Markets — daily briefing daemon at 06:15 (overridable via
-    # OPENJARVIS_BRIEFING_HOUR / _MINUTE). Falls quietly if the
-    # markets subsystem fails to import.
-    try:
-        from openjarvis.markets import financial_researcher as _fr
-        _fr.start_daily()
-    except Exception:
-        logger.exception("markets daily briefing daemon failed to start")
+    # Markets — daily briefing now fires via the vault scheduler reading
+    # Brain/Scheduled/<date> - financial-researcher - daily markets
+    # briefing.md (registered as a python-provider agent in agent_runner).
+    # No daemon thread to start here — gives SCHEDULE-panel visibility
+    # the daemon-thread approach didn't have.
 
     # UniFi bridge no longer started — operator removed it from the HUD.
     # unifi_bridge.py remains on disk if it's wanted back.

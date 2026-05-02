@@ -509,6 +509,29 @@ DEFAULT_AGENTS: List[Dict[str, Any]] = [
         # entry and calls it directly instead of spawning a CLI.
         "python_entry": "openjarvis.tools.browser_pilot:run_task",
     },
+    # ---- Financial researcher (in-process Python agent) -----------------
+    # Daily 06:15 markets briefing. Wired through the vault scheduler so
+    # it shows up in the SCHEDULE panel + AGENTS panel like ai-researcher.
+    # Replaces the earlier daemon-thread-based fire which had no UI
+    # visibility.
+    {
+        "id": "financial-researcher",
+        "name": "financial-researcher",
+        "role": (
+            "Daily 06:15 crypto + equities markets briefing. Synthesises "
+            "real OHLCV signals (EMA, RSI, ATR, swing levels) into a "
+            "structured Markdown research note with mechanically-derived "
+            "long/short candidates. Writes to Brain/Trading/Research/. "
+            "Honest-by-construction — every claim cites a signal_id from "
+            "the bundle; V4 fabrication killswitch active."
+        ),
+        "model": "gpt-4o",
+        "skills": ["finance", "trading", "research", "ta"],
+        "color": "#5ed0e0",   # cyan — matches the markets HUD aesthetic
+        "provider": "python",
+        "python_entry":
+            "openjarvis.markets.financial_researcher:run_as_agent_task",
+    },
 ]
 
 
