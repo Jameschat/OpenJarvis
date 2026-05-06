@@ -64,8 +64,11 @@ def approve_video(video_id: str) -> bool:
 
 
 def reject_video(video_id: str) -> bool:
-    queue = [e for e in load_queue() if e["id"] != video_id]
-    save_queue(queue)
+    queue = load_queue()
+    new_queue = [e for e in queue if e["id"] != video_id]
+    if len(new_queue) == len(queue):
+        return False
+    save_queue(new_queue)
     return True
 
 
@@ -171,7 +174,11 @@ def approve_comment(reply_id: str) -> bool:
 
 
 def reject_comment(reply_id: str) -> bool:
-    save_comments([c for c in load_comments() if c["id"] != reply_id])
+    comments = load_comments()
+    new_comments = [c for c in comments if c["id"] != reply_id]
+    if len(new_comments) == len(comments):
+        return False
+    save_comments(new_comments)
     return True
 
 
