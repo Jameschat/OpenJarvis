@@ -489,29 +489,57 @@ def _markets_pro_dashboard() -> Dict[str, Any]:
         watchlist_count = len(store.watchlist_get() or [])
     except Exception:
         watchlist_count = 0
+    try:
+        from openjarvis.markets import paper_broker
+        paper = paper_broker.paper_portfolio()
+        win_rate = paper.get("win_rate")
+        open_positions = len(paper.get("open_positions") or [])
+    except Exception:
+        win_rate = None
+        open_positions = 0
     out["stats"] = {
         "analyses_total": _markets_pro_count_analyses(),
         "analyses_last_7d": _markets_pro_count_analyses(within_days=7),
         "watchlist_count": watchlist_count,
-        "win_rate": None,    # populates once paper-trade outcomes accumulate
+        "win_rate": win_rate,
+        "open_positions": open_positions,
     }
     out["recent_analyses"] = recent_charts[:8]
     out["global"] = coingecko.fetch_global()
     return out
 
 
-def _markets_pro_pulse() -> Dict[str, Any]:
-    """Pulse tab — top gainers / losers / trending + market overview."""
+def _markets_pro_pulse(*, hide_high_risk: bool = False) -> Dict[str, Any]:
+    """Pulse tab — top gainers / losers / trending + market overview.
+
+    Uses the top-1000 universe so the long-tail movers surface — but
+    those are exactly where rug-pulls hide, so the risk module
+    annotates each row before it ships to the client.
+
+    ``hide_high_risk`` (query string ``?hide_high_risk=1``) drops any
+    coin scored ``high`` or ``rugpull``. Default False: badges visible
+    but coins still listed, so the operator can see what's being
+    pumped today without it dominating the list.
+    """
     from openjarvis.markets.sources import coingecko
-    coins = coingecko.fetch_top_100() or []
-    # Sort by 24h % change
+    from openjarvis.markets import risk as _risk
+    raw = coingecko.fetch_top_n(1000) or coingecko.fetch_top_100() or []
+    coins = _risk.annotate(raw)
+    if hide_high_risk:
+        coins = _risk.filter_clean(coins, max_label_key="caution")
+
     by_change = [c for c in coins if c.get("change_24h_pct") is not None]
     gainers = sorted(by_change, key=lambda c: c["change_24h_pct"],
-                     reverse=True)[:8]
-    losers = sorted(by_change, key=lambda c: c["change_24h_pct"])[:8]
-    # Trending = top by 24h volume
+                     reverse=True)[:12]
+    losers = sorted(by_change, key=lambda c: c["change_24h_pct"])[:12]
     by_vol = sorted([c for c in coins if c.get("volume_24h")],
-                    key=lambda c: c["volume_24h"], reverse=True)[:10]
+                    key=lambda c: c["volume_24h"], reverse=True)[:12]
+
+    risk_counts = {"clean": 0, "caution": 0, "high": 0, "rugpull": 0}
+    for c in coins:
+        k = (c.get("risk") or {}).get("label_key") or "clean"
+        risk_counts[k] = risk_counts.get(k, 0) + 1
+
     return {
         "ok": True,
         "global": coingecko.fetch_global(),
@@ -519,6 +547,9 @@ def _markets_pro_pulse() -> Dict[str, Any]:
         "losers": losers,
         "trending": by_vol,
         "all_count": len(coins),
+        "universe_size": len(raw),
+        "risk_counts": risk_counts,
+        "hide_high_risk": hide_high_risk,
     }
 
 
@@ -610,6 +641,33 @@ def _extract_verdict(text: str) -> Optional[str]:
     return None
 
 
+
+def _markets_pro_paper_portfolio() -> Dict[str, Any]:
+    from openjarvis.markets import paper_broker
+    paper_broker.check_open_positions()
+    return paper_broker.paper_portfolio()
+
+
+def _markets_pro_paper_buy(body: Dict[str, Any]) -> Dict[str, Any]:
+    from openjarvis.markets import paper_broker
+    ticker = (body.get("ticker") or "").strip().upper()
+    gbp = body.get("gbp", body.get("gbp_amount", 0))
+    return paper_broker.paper_buy(
+        ticker,
+        gbp,
+        stop=body.get("stop"),
+        tp1=body.get("tp1"),
+        tp2=body.get("tp2"),
+    )
+
+
+def _markets_pro_paper_sell(body: Dict[str, Any]) -> Dict[str, Any]:
+    from openjarvis.markets import paper_broker
+    ticker = (body.get("ticker") or "").strip().upper()
+    reason = (body.get("reason") or "closed_manually").strip()
+    return paper_broker.paper_sell(ticker, reason=reason)
+
+
 def _markets_pro_analyze(body: Dict[str, Any]) -> Dict[str, Any]:
     """Decode posted image + run chart_analyst + return inline result."""
     from openjarvis.markets import chart_analyst
@@ -619,6 +677,9 @@ def _markets_pro_analyze(body: Dict[str, Any]) -> Dict[str, Any]:
     name = (body.get("image_name") or "chart.png").replace("\\", "_").replace("/", "_")[:120]
     ticker_hint = (body.get("ticker_hint") or "").strip() or None
     timeframe = body.get("timeframe") or "2h"
+    forecast_horizon = (body.get("forecast_horizon") or "3d").strip()
+    if forecast_horizon not in {"24h", "3d", "7d", "30d"}:
+        forecast_horizon = "3d"
     # Persist to Brain/Inbox/ for trace + so chart_analyst can read it
     try:
         from openjarvis.tools import obsidian_brain
@@ -638,6 +699,7 @@ def _markets_pro_analyze(body: Dict[str, Any]) -> Dict[str, Any]:
         image_path=str(img_path),
         ticker_hint=ticker_hint,
         timeframe=timeframe,
+        forecast_horizon=forecast_horizon,
     )
     try:
         result = json.loads(raw)
@@ -890,6 +952,8 @@ class _Handler(SimpleHTTPRequestHandler):
             # Standalone Markets-Pro page (jarvis_web/markets.html) data
             # endpoints — separate from the in-HUD slide-out panel.
             self._handle_markets_pro_get()
+        elif self.path.startswith("/tiktok"):
+            self._handle_tiktok_get()
         elif self.path == "/chat_history":
             # One-shot snapshot of the in-memory chat ring buffer. The HUD
             # widget calls this on first open to seed past bubbles, then
@@ -1035,6 +1099,8 @@ class _Handler(SimpleHTTPRequestHandler):
             self._handle_markets_post()
         elif self.path.startswith("/markets-pro/"):
             self._handle_markets_pro_post()
+        elif self.path.startswith("/tiktok/"):
+            self._handle_tiktok_post()
         else:
             self.send_error(404, "Not Found")
 
@@ -2418,7 +2484,7 @@ class _Handler(SimpleHTTPRequestHandler):
                     body = {}
                 kwargs = {}
                 if isinstance(body.get("max_crypto"), int):
-                    kwargs["max_crypto"] = max(0, min(100, body["max_crypto"]))
+                    kwargs["max_crypto"] = max(0, min(1000, body["max_crypto"]))
                 if "include_equities" in body:
                     kwargs["include_equities"] = bool(body["include_equities"])
                 if "include_crypto" in body:
@@ -2446,17 +2512,24 @@ class _Handler(SimpleHTTPRequestHandler):
 
     def _handle_markets_pro_get(self) -> None:
         """GET /markets-pro/{dashboard|pulse}."""
-        from urllib.parse import urlparse
-        path_only = urlparse(self.path).path
-        sub = path_only[len("/markets-pro/"):]
+        from urllib.parse import urlparse, parse_qs
+        parsed = urlparse(self.path)
+        sub = parsed.path[len("/markets-pro/"):]
+        qs = parse_qs(parsed.query or "")
         try:
             if sub == "dashboard":
                 return self._json_response(200, _markets_pro_dashboard())
             if sub == "pulse":
-                return self._json_response(200, _markets_pro_pulse())
+                hide = (qs.get("hide_high_risk", ["0"])[0] or "0").lower()
+                hide_flag = hide in ("1", "true", "yes", "on")
+                return self._json_response(
+                    200, _markets_pro_pulse(hide_high_risk=hide_flag),
+                )
             if sub == "global":
                 from openjarvis.markets.sources import coingecko
                 return self._json_response(200, coingecko.fetch_global())
+            if sub == "paper/portfolio":
+                return self._json_response(200, _markets_pro_paper_portfolio())
         except Exception:
             logger.exception("GET /markets-pro/%s failed", sub)
             return self._json_response(500, {
@@ -2473,23 +2546,166 @@ class _Handler(SimpleHTTPRequestHandler):
         path_only = urlparse(self.path).path
         sub = path_only[len("/markets-pro/"):]
         try:
-            if sub != "analyze":
+            if sub not in ("analyze", "paper/buy", "paper/sell"):
                 return self._json_response(404, {
                     "error": "unknown markets-pro endpoint"})
             n = int(self.headers.get("Content-Length", 0))
-            if n <= 0 or n > 25_000_000:    # 25MB cap on the body
-                return self._json_response(400, {"error": "image required"})
+            max_body = 25_000_000 if sub == "analyze" else 100_000
+            if n <= 0 or n > max_body:
+                return self._json_response(400, {"error": "request body required"})
             body_bytes = self.rfile.read(n)
             try:
                 body = json.loads(body_bytes.decode("utf-8"))
             except json.JSONDecodeError:
                 return self._json_response(400, {"error": "bad JSON"})
+            if sub == "paper/buy":
+                return self._json_response(200, _markets_pro_paper_buy(body))
+            if sub == "paper/sell":
+                return self._json_response(200, _markets_pro_paper_sell(body))
             return self._json_response(200, _markets_pro_analyze(body))
         except Exception:
             logger.exception("POST /markets-pro/%s failed", sub)
             return self._json_response(500, {
                 "error": "internal error", "ref": _err_ref(),
             })
+
+    def _handle_tiktok_get(self) -> None:
+        """TikTok subsystem read endpoints."""
+        from openjarvis.tiktok.pipeline import get_pipeline_state
+        import json as _json
+
+        path_only = self.path.split("?")[0].rstrip("/")
+
+        if path_only == "/tiktok":
+            html_path = (
+                Path(__file__).parent.parent.parent / "jarvis_web" / "tiktok.html"
+            )
+            if html_path.exists():
+                self._send(200, "text/html", html_path.read_bytes())
+            else:
+                self._send(200, "text/html", b"<h1>TikTok dashboard not yet built</h1>")
+
+        elif path_only == "/tiktok/state":
+            self._json_response(200, get_pipeline_state())
+
+        elif path_only == "/tiktok/events":
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Connection", "keep-alive")
+            self.end_headers()
+            state = get_pipeline_state()
+            self.wfile.write(f"data: {_json.dumps(state)}\n\n".encode())
+            self.wfile.flush()
+
+        elif path_only == "/tiktok/oauth/callback":
+            from openjarvis.tiktok.state import get_setting, set_setting
+            from openjarvis.tiktok.tiktok_client import exchange_code, TikTokError
+            import urllib.parse as _up
+            qs = _up.parse_qs(self.path.split("?", 1)[-1])
+            code = qs.get("code", [""])[0]
+            if not code:
+                self._json_response(400, {"error": "missing code"})
+                return
+            client_key = get_setting("tiktok_client_key", "")
+            client_secret = get_setting("tiktok_client_secret", "")
+            redirect_uri = get_setting("tiktok_redirect_uri", "")
+            try:
+                tokens = exchange_code(client_key, client_secret, code, redirect_uri)
+                set_setting("tiktok_access_token", tokens.get("access_token", ""))
+                set_setting("tiktok_refresh_token", tokens.get("refresh_token", ""))
+                set_setting("tiktok_open_id", tokens.get("open_id", ""))
+                self.send_response(302)
+                self.send_header("Location", "/tiktok?tab=settings&connected=1")
+                self.end_headers()
+            except (TikTokError, Exception) as e:
+                self._json_response(500, {"error": str(e)})
+
+        else:
+            self._json_response(404, {"error": "not found"})
+
+    def _handle_tiktok_post(self) -> None:
+        """TikTok subsystem write endpoints."""
+        import json as _json
+        from openjarvis.tiktok.state import (
+            approve_video, reject_video, approve_comment, reject_comment,
+            get_setting, set_setting, save_settings, load_settings, add_comment_reply,
+            load_comments,
+        )
+        from openjarvis.tiktok.pipeline import tiktok_publisher_entry
+
+        path_only = self.path.split("?")[0].rstrip("/")
+        length = int(self.headers.get("Content-Length", 0))
+        body = _json.loads(self.rfile.read(length)) if length else {}
+
+        if path_only.startswith("/tiktok/approve/"):
+            vid_id = path_only.split("/")[-1]
+            ok = approve_video(vid_id)
+            self._json_response(200, {"ok": ok})
+
+        elif path_only.startswith("/tiktok/reject/"):
+            vid_id = path_only.split("/")[-1]
+            reject_video(vid_id)
+            self._json_response(200, {"ok": True})
+
+        elif path_only.startswith("/tiktok/post/"):
+            queue_id = path_only.split("/")[-1]
+            result = tiktok_publisher_entry({"queue_id": queue_id})
+            self._json_response(200, result)
+
+        elif path_only == "/tiktok/trigger":
+            from openjarvis.tiktok.trend_scorer import write_tiktok_trends
+            threshold = get_setting("threshold", 70)
+            try:
+                items, note = write_tiktok_trends(threshold)
+                self._json_response(200, {"ok": True, "qualified": len(items), "note": note})
+            except Exception as e:
+                self._json_response(500, {"error": str(e)})
+
+        elif path_only == "/tiktok/settings":
+            settings = load_settings()
+            for key in ("kling_api_key", "kling_api_secret", "tiktok_client_key",
+                        "tiktok_client_secret", "tiktok_redirect_uri",
+                        "threshold", "rpm_gbp"):
+                if key in body:
+                    settings[key] = body[key]
+            save_settings(settings)
+            self._json_response(200, {"ok": True})
+
+        elif path_only.startswith("/tiktok/comments/approve/"):
+            reply_id = path_only.split("/")[-1]
+            from openjarvis.tiktok.tiktok_client import post_comment, TikTokError
+            access_token = get_setting("tiktok_access_token", "")
+            comments = load_comments()
+            entry = next((c for c in comments if c["id"] == reply_id), None)
+            if not entry:
+                self._json_response(404, {"error": "reply not found"})
+                return
+            try:
+                post_comment(entry["video_id"], entry["draft_reply"], access_token)
+                approve_comment(reply_id)
+                self._json_response(200, {"ok": True})
+            except TikTokError as e:
+                self._json_response(500, {"error": str(e)})
+
+        elif path_only.startswith("/tiktok/comments/reject/"):
+            reply_id = path_only.split("/")[-1]
+            reject_comment(reply_id)
+            self._json_response(200, {"ok": True})
+
+        elif path_only == "/tiktok/comments/draft":
+            r = add_comment_reply(
+                body.get("comment_id", ""),
+                body.get("video_id", ""),
+                body.get("commenter", ""),
+                body.get("original_comment", ""),
+                body.get("draft_reply", ""),
+            )
+            self._json_response(200, {"ok": True, "id": r["id"]})
+
+        else:
+            self._json_response(404, {"error": "not found"})
 
     def _handle_chat_sse(self) -> None:
         """SSE stream for the right-edge chat widget. Emits two event
