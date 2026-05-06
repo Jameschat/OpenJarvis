@@ -38,7 +38,7 @@ def submit_job(script: str, visual_prompt: str, api_key: str,
         "negative_prompt": "text overlay, subtitles, watermark, blurry, low quality",
         "cfg_scale": 0.5,
         "mode": "std",
-        "duration": str(duration),
+        "duration": duration,
         "aspect_ratio": "9:16",
     }).encode()
     req = urllib.request.Request(
@@ -60,17 +60,23 @@ def poll_job(task_id: str, api_key: str, api_secret: str,
     """Poll until complete. Returns video URL."""
     deadline = time.time() + max_wait
     while time.time() < deadline:
-        req = urllib.request.Request(
-            f"{KLING_API_BASE}/v1/videos/text2video/{task_id}",
-            headers=_headers(api_key, api_secret),
-        )
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            data = json.loads(resp.read())
-        status = data["data"]["task_status"]
-        if status == "succeed":
-            return data["data"]["task_result"]["videos"][0]["url"]
-        if status == "failed":
-            raise KlingError(data["data"].get("task_status_msg", "job failed"))
+        try:
+            req = urllib.request.Request(
+                f"{KLING_API_BASE}/v1/videos/text2video/{task_id}",
+                headers=_headers(api_key, api_secret),
+            )
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                data = json.loads(resp.read())
+            task_data = data.get("data", {})
+            status = task_data.get("task_status", "")
+            if status == "succeed":
+                return task_data["task_result"]["videos"][0]["url"]
+            if status == "failed":
+                raise KlingError(task_data.get("task_status_msg", "job failed"))
+        except KlingError:
+            raise
+        except Exception:
+            pass
         time.sleep(15)
     raise KlingError(f"Kling job timed out after {max_wait}s")
 
