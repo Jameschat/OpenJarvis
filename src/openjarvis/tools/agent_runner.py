@@ -67,6 +67,18 @@ RUNS_DIR = ROOT / "runs"
 PROJECTS_DIR = ROOT / "projects"
 TICK_INTERVAL = 2.0  # seconds between worker iterations
 
+_CODE_REVIEW_GRAPH_EXE = Path(os.environ.get(
+    "OPENJARVIS_CODE_REVIEW_GRAPH_EXE",
+    r"C:\Users\User\.openjarvis\tools\code-review-graph-venv\Scripts\code-review-graph.exe",
+))
+_CODE_REVIEW_GRAPH_REPO = Path(os.environ.get(
+    "OPENJARVIS_CODE_REVIEW_GRAPH_REPO",
+    r"E:\Claude\OpenJarvis",
+))
+_CODE_REVIEW_GRAPH_ENABLED = os.environ.get(
+    "OPENJARVIS_CODE_REVIEW_GRAPH", "1"
+).lower() in {"1", "true", "yes", "on"}
+
 # Default model used when we ask claude-code to run a task. The Claude CLI
 # picks a sensible default itself if this is unset, so we leave it blank.
 _CLAUDE_MODEL = os.environ.get("OPENJARVIS_AGENT_MODEL", "")
@@ -93,6 +105,42 @@ _VERIFY_AGENT_ALLOWLIST = frozenset({"backend-dev", "frontend-dev",
 _VERIFIER_AGENT = "code-reviewer"
 
 # Hardcoded agent roster — name, role prompt, "skills" tags (cosmetic in HUD).
+
+
+def _write_code_review_graph_mcp(ws: Path) -> bool:
+    """Expose OpenJarvis' code graph to headless Claude/Codex task workspaces."""
+    if not _CODE_REVIEW_GRAPH_ENABLED:
+        return False
+    if not (_CODE_REVIEW_GRAPH_EXE.exists() and _CODE_REVIEW_GRAPH_REPO.exists()):
+        return False
+    target = ws / ".mcp.json"
+    try:
+        if target.exists():
+            payload = json.loads(target.read_text(encoding="utf-8-sig") or "{}")
+        else:
+            payload = {}
+        servers = payload.setdefault("mcpServers", {})
+        servers["code-review-graph"] = {
+            "command": str(_CODE_REVIEW_GRAPH_EXE),
+            "args": ["serve", "--repo", str(_CODE_REVIEW_GRAPH_REPO)],
+        }
+        target.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+        return True
+    except Exception:
+        logger.exception("could not write code-review-graph MCP config to %s", target)
+        return False
+
+
+def _code_review_graph_prompt_block() -> str:
+    if not (_CODE_REVIEW_GRAPH_ENABLED and _CODE_REVIEW_GRAPH_EXE.exists() and _CODE_REVIEW_GRAPH_REPO.exists()):
+        return ""
+    return (
+        "CODE GRAPH: the code-review-graph MCP server is available for "
+        f"{_CODE_REVIEW_GRAPH_REPO}. For OpenJarvis code tasks, call it "
+        "before broad file-reading: start with minimal context, then inspect "
+        "only the affected files/functions it recommends."
+    )
+
 DEFAULT_AGENTS: List[Dict[str, Any]] = [
     # ---- Anthropic-Claude team (provider=claude, headless via `claude -p`) ----
     {
@@ -233,6 +281,60 @@ DEFAULT_AGENTS: List[Dict[str, Any]] = [
         "skills": ["ffmpeg", "video", "publishing"],
         "color": "#c0a3ff",   # lilac
         "provider": "codex",
+    },
+    {
+        "id": "trend-scorer",
+        "name": "trend-scorer",
+        "role": "TikTok trend scorer. Ranks candidate topics for short-form viral potential.",
+        "model": "claude-sonnet-4-6",
+        "skills": ["tiktok", "trends", "scoring"],
+        "color": "#ff2d55",
+        "provider": "claude",
+    },
+    {
+        "id": "script-writer-tiktok",
+        "name": "script-writer-tiktok",
+        "role": "TikTok script writer. Turns scored ideas into punchy vertical-video scripts.",
+        "model": "claude-sonnet-4-6",
+        "skills": ["tiktok", "copywriting", "video"],
+        "color": "#ff2d55",
+        "provider": "claude",
+    },
+    {
+        "id": "video-generator",
+        "name": "video-generator",
+        "role": "TikTok video generator. Runs the in-process video generation pipeline.",
+        "skills": ["tiktok", "video", "generation"],
+        "color": "#ff2d55",
+        "provider": "python",
+        "python_entry": "openjarvis.tiktok.pipeline:video_generator_entry",
+    },
+    {
+        "id": "tiktok-publisher",
+        "name": "tiktok-publisher",
+        "role": "TikTok publisher. Publishes generated videos through the TikTok pipeline.",
+        "skills": ["tiktok", "publishing"],
+        "color": "#ff2d55",
+        "provider": "python",
+        "python_entry": "openjarvis.tiktok.pipeline:tiktok_publisher_entry",
+    },
+    {
+        "id": "stats-puller",
+        "name": "stats-puller",
+        "role": "TikTok stats puller. Refreshes published video analytics through the pipeline.",
+        "skills": ["tiktok", "analytics"],
+        "color": "#ff2d55",
+        "provider": "python",
+        "python_entry": "openjarvis.tiktok.pipeline:stats_puller_entry",
+    },
+    {
+        "id": "comment-responder",
+        "name": "comment-responder",
+        "role": "TikTok comment responder. Drafts concise replies to audience comments.",
+        "model": "claude-sonnet-4-6",
+        "skills": ["tiktok", "community", "copywriting"],
+        "color": "#ff2d55",
+        "provider": "claude",
     },
     # ---- Ambient research agents — proactive knowledge feeders ----------
     # These agents fire on scheduled tasks (Brain/Scheduled/) rather than
@@ -531,6 +633,94 @@ DEFAULT_AGENTS: List[Dict[str, Any]] = [
         "provider": "python",
         "python_entry":
             "openjarvis.markets.financial_researcher:run_as_agent_task",
+    },
+    # ---- TikTok business system agents (Task 8) ----------------------------
+    {
+        "id": "trend-scorer",
+        "name": "TikTok Trend Scorer",
+        "role": (
+            "You are a TikTok trend analyst. Your job:\n"
+            "1. Call write_tiktok_trends() from openjarvis.tiktok.trend_scorer\n"
+            "2. Log which trends qualified (score >= threshold) and how many scripts will be queued\n"
+            "3. For each qualifying trend, output a JSON line: "
+            '{"trend": "<title>", "score": <n>, "visual_prompt": "<30-word cinematic vertical video description>"}\n'
+            "Focus on broad-appeal topics. Avoid niche jargon. Keep visual prompts vivid and specific."
+        ),
+        "model": "claude-sonnet-4-6",
+        "skills": ["trend-analysis", "tiktok"],
+        "color": "#ff2d55",
+        "provider": "claude",
+    },
+    {
+        "id": "script-writer-tiktok",
+        "name": "TikTok Script Writer",
+        "role": (
+            "You are an expert faceless TikTok scriptwriter. Given a trend topic, write a 45-60 second script.\n"
+            "Output format (plain text, no markdown):\n"
+            "TITLE: <punchy title>\n"
+            "HOOK: <first 3 seconds - must stop the scroll. One sentence, starts with action or shock>\n"
+            "SCRIPT: <narration, 120-160 words, short punchy sentences, conversational>\n"
+            "ONSCREEN: <3-5 bullet points of text to show on screen>\n"
+            "CAPTION: <TikTok caption, max 150 chars, ends with a question to drive comments>\n"
+            "HASHTAGS: <5 hashtags, no # prefix, comma separated>\n"
+            "VISUAL_PROMPT: <30-word Kling AI generation prompt, cinematic 9:16 vertical>\n"
+            "Never mention the creator. No face reveals. Faceless narration only."
+        ),
+        "model": "claude-sonnet-4-6",
+        "skills": ["copywriting", "tiktok", "scriptwriting"],
+        "color": "#ff2d55",
+        "provider": "claude",
+    },
+    {
+        "id": "video-generator",
+        "name": "TikTok Video Generator",
+        "role": "Generates TikTok videos via Kling AI API.",
+        "model": None,
+        "skills": ["video-generation", "kling-ai"],
+        "color": "#ff2d55",
+        "provider": "python",
+        "python_entry": "openjarvis.tiktok.pipeline:video_generator_entry",
+    },
+    {
+        "id": "tiktok-publisher",
+        "name": "TikTok Publisher",
+        "role": "Publishes approved videos to TikTok via Content Posting API.",
+        "model": None,
+        "skills": ["tiktok", "publishing"],
+        "color": "#ff2d55",
+        "provider": "python",
+        "python_entry": "openjarvis.tiktok.pipeline:tiktok_publisher_entry",
+    },
+    {
+        "id": "stats-puller",
+        "name": "TikTok Stats Puller",
+        "role": "Fetches video stats and updates finance estimates every 6 hours.",
+        "model": None,
+        "skills": ["tiktok", "analytics"],
+        "color": "#ff2d55",
+        "provider": "python",
+        "python_entry": "openjarvis.tiktok.pipeline:stats_puller_entry",
+    },
+    {
+        "id": "comment-responder",
+        "name": "TikTok Comment Responder",
+        "role": (
+            "You are a TikTok community manager. Every 6 hours:\n"
+            "1. Read posted.json from ~/.openjarvis/tiktok/posted.json\n"
+            "2. For each video posted in the last 7 days, fetch its comments via the TikTok API "
+            "(use tiktok_access_token from ~/.openjarvis/tiktok/settings.json)\n"
+            "3. Identify 1-2 genuine questions per video (ignore emoji-only, spam, generic praise)\n"
+            "4. Draft a short, friendly, authentic reply for each question (max 150 chars)\n"
+            "5. For each draft reply, call POST /tiktok/comments/draft with JSON: "
+            '{"comment_id": "...", "video_id": "...", "commenter": "...", '
+            '"original_comment": "...", "draft_reply": "..."}\n'
+            "Never reply to the same commenter twice on the same video. "
+            "Never be promotional. Sound like a real person who made the video."
+        ),
+        "model": "claude-sonnet-4-6",
+        "skills": ["community-management", "tiktok"],
+        "color": "#ff2d55",
+        "provider": "claude",
     },
 ]
 
@@ -1478,18 +1668,34 @@ def _build_brain_context() -> str:
     knowledge = _list("Knowledge", n=6)
     sessions = _list("Sessions", n=4)
 
+    fs_root = str(ob.BRAIN_ROOT)
+    claude_mem = r"C:\Users\User\.claude\projects\E--Claude\memory"
+    handoff = "00 Session Handoff"
+
     lines: List[str] = []
     lines.append("== TEAM BRAIN (shared vault) ==")
-    lines.append(f"You can read & write the team's shared Obsidian vault via HTTP at {base}.")
-    lines.append("Use the Bash tool with curl. Quick examples:")
-    lines.append(f"  - Search:   curl '{base}/vault/recall?q=<keyword>'{auth}")
-    lines.append(f"  - Read:     curl '{base}/vault/get?name=<note-stem>'{auth}")
-    lines.append(f"  - List:     curl '{base}/vault/list?folder=Projects'{auth}")
-    lines.append(f"  - Save:     curl -X POST '{base}/vault/remember' -H 'Content-Type: application/json'{auth} \\")
-    lines.append("              -d '{\"content\":\"...\",\"title\":\"...\",\"folder\":\"Knowledge\",\"tags\":[\"...\"]}'")
+    lines.append(
+        f"You and the other AI agent (Claude / Codex) share an Obsidian "
+        f"vault at {fs_root}. Read AND write access — both of you must "
+        f"keep it as the single source of truth."
+    )
+    lines.append(f"START HERE: read '{handoff}.md' at the vault root for current state, "
+                 f"open threads, and any handover sub-note from the previous session.")
     lines.append("")
-    lines.append("Folders: Knowledge (facts/snippets) · Projects (project briefs) · "
-                 "Sessions (past sessions) · People (about the user) · Decisions · Daily")
+    lines.append("Two ways in — pick whichever the task makes easier:")
+    lines.append(f"  A) Direct filesystem (you have full read/write):")
+    lines.append(f"     - vault root: {fs_root}")
+    lines.append(f"     - claude memory (READ-ONLY for you): {claude_mem}")
+    lines.append(f"  B) HTTP at {base} (use curl):")
+    lines.append(f"     - Search:   curl '{base}/vault/recall?q=<keyword>'{auth}")
+    lines.append(f"     - Read:     curl '{base}/vault/get?name=<note-stem>'{auth}")
+    lines.append(f"     - List:     curl '{base}/vault/list?folder=Projects'{auth}")
+    lines.append(f"     - Save:     curl -X POST '{base}/vault/remember' -H 'Content-Type: application/json'{auth} \\")
+    lines.append("                 -d '{\"content\":\"...\",\"title\":\"...\",\"folder\":\"Knowledge\",\"tags\":[\"...\"]}'")
+    lines.append("")
+    lines.append("Folders: Knowledge (facts) · Projects (briefs) · Sessions (past work) · "
+                 "Decisions (choices made, cross-link with [[wikilinks]]) · Trading "
+                 "(financial-Jarvis research) · People · Daily (don't edit) · Scheduled")
     if projects:
         lines.append("Existing projects: " + ", ".join(projects))
     if knowledge:
@@ -1497,9 +1703,15 @@ def _build_brain_context() -> str:
     if sessions:
         lines.append("Recent sessions: " + ", ".join(sessions))
     lines.append("")
-    lines.append("BEFORE starting, consider running /vault/recall to find prior work on this topic.")
-    lines.append("AFTER finishing, save anything noteworthy via /vault/remember (folder=Knowledge "
-                 "for facts, folder=Decisions for choices made).")
+    lines.append("BEFORE starting: recall prior work on this topic (vault recall or "
+                 "grep the FS path above).")
+    lines.append("AFTER finishing: save anything noteworthy. Knowledge for facts, "
+                 "Decisions for choices (with frontmatter type: decision + tags + parent + related). "
+                 "If you handed work off mid-build, write Brain/Decisions/<date> - Session "
+                 "handover - <subject>.md and update '00 Session Handoff.md' to point to it.")
+    lines.append("RULES: no secrets in vault notes. Cross-link with [[wikilinks]]. "
+                 "If editing an existing note from the other agent, prepend a "
+                 "'> [<your-name> YYYY-MM-DD]:' line explaining your change.")
     lines.append("== END TEAM BRAIN ==")
     return "\n".join(lines)
 
@@ -1574,6 +1786,7 @@ def _run_task(task: Task) -> None:
     if task.project_id:
         ws = PROJECTS_DIR / task.project_id
         ws.mkdir(parents=True, exist_ok=True)
+        graph_mcp_available = _write_code_review_graph_mcp(ws)
         # Namespace the per-task artifacts so concurrent tasks (if ever
         # >1) don't clobber each other's prompt/log files. Code, PLAN.md
         # etc. that the agents create live at the project root and are
@@ -1584,6 +1797,7 @@ def _run_task(task: Task) -> None:
     else:
         ws = RUNS_DIR / task.id
         ws.mkdir(parents=True, exist_ok=True)
+        graph_mcp_available = _write_code_review_graph_mcp(ws)
         (ws / "prompt.txt").write_text(task.prompt, encoding="utf-8")
         stdout_log = ws / "stdout.log"
         stderr_log = ws / "stderr.log"
@@ -1600,10 +1814,12 @@ def _run_task(task: Task) -> None:
         p.startswith("YOU ARE")
     )
     brain_block = _build_brain_context()
+    graph_block = _code_review_graph_prompt_block() if graph_mcp_available else ""
     if looks_self_contained:
         # Append the brain block to a self-contained prompt so the agent
         # still gets vault access, without disturbing the existing structure.
-        full_prompt = task.prompt + ("\n\n" + brain_block if brain_block else "")
+        extra_blocks = [block for block in (graph_block, brain_block) if block]
+        full_prompt = task.prompt + ("\n\n" + "\n\n".join(extra_blocks) if extra_blocks else "")
     else:
         # IMPERATIVE-first framing — the agent reads "TASK: do X NOW" before
         # any role/context preamble. Earlier "You are X. Your task: Y" framing
@@ -1687,6 +1903,8 @@ def _run_task(task: Task) -> None:
             "",
             f"You are operating as the {task.agent_id} agent ({role})",
         ]
+        if graph_block:
+            parts.extend(["", graph_block])
         if brain_block:
             parts.extend(["", brain_block])
         full_prompt = "\n".join(parts)
