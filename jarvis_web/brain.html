@@ -2808,6 +2808,7 @@ canvas { display: block; }
       <rect x="16"  y="7"  width="4" height="6"/>
     </svg>
   </button>
+  <button id="ob-tiktok-btn" onclick="window.location='/tiktok'" style="background:rgba(255,45,85,0.15);border:1px solid #ff2d55;color:#ff6b8a;padding:3px 10px;border-radius:4px;font-size:10px;letter-spacing:0.06em;cursor:pointer;">📱 TIKTOK</button>
   <a class="ob-chat-btn" id="ob-markets-pro-link" href="/markets.html" target="_blank"
      title="Open Markets Pro — full-page Dashboard / Pulse / Analyze (new tab)"
      style="display:inline-flex; align-items:center; justify-content:center; text-decoration:none;">
@@ -7771,7 +7772,7 @@ function _hmRenderWatchlist(data) {
   let html = '<table class="hm-watchlist">' +
     '<thead><tr>' +
       '<th>Ticker</th><th>Mkt</th><th class="num">Last</th>' +
-      '<th class="num">&Delta;%</th><th>Updated</th>' +
+      '<th class="num">&Delta;%</th><th>Updated</th><th></th>' +
     '</tr></thead><tbody>';
   for (const it of items) {
     const last = (it.last == null) ? '—' : _hmFmtPrice(it.last, it.currency);
@@ -7786,6 +7787,7 @@ function _hmRenderWatchlist(data) {
       '<td class="num">' + last + '</td>' +
       '<td class="num ' + chgClass + '">' + chg + '</td>' +
       '<td class="hm-ts">' + ts + '</td>' +
+      '<td>' + _hmTradeButton(it) + '</td>' +
     '</tr>';
   }
   html += '</tbody></table>';
@@ -7798,6 +7800,15 @@ function _hmRenderWatchlist(data) {
     '</div>';
   }
   pane.innerHTML = html;
+}
+
+function _hmCryptoComUrl(symbol) {
+  const s = String(symbol || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  return s ? ('https://crypto.com/exchange/trade/spot/' + s + '_USDT') : 'https://crypto.com/exchange';
+}
+function _hmTradeButton(it) {
+  if ((it.market || '').toUpperCase() !== 'CRYPTO') return '';
+  return '<button class="hm-close" style="width:auto;height:auto;padding:3px 7px;font-size:10px;" onclick="event.stopPropagation(); window.open(_hmCryptoComUrl(\'' + escapeHtml(it.ticker) + '\'), \'_blank\', \'noopener\')">Trade</button>';
 }
 
 function _hmFmtPrice(v, ccy) {
