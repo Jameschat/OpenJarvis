@@ -35,9 +35,12 @@ def exchange_code(client_key: str, client_secret: str,
         "code": code, "grant_type": "authorization_code",
         "redirect_uri": redirect_uri,
     }).encode()
-    req = urllib.request.Request(TIKTOK_TOKEN_URL, data=body, method="POST")
-    with urllib.request.urlopen(req, timeout=15) as resp:
-        data = json.loads(resp.read())
+    try:
+        req = urllib.request.Request(TIKTOK_TOKEN_URL, data=body, method="POST")
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        raise TikTokError(f"Token exchange HTTP {e.code}: {e.read().decode()}")
     if "error" in data:
         raise TikTokError(f"Token exchange: {data.get('error_description', data['error'])}")
     return data
@@ -56,6 +59,8 @@ def refresh_token(client_key: str, client_secret: str, refresh_tok: str) -> Dict
 def upload_video(mp4_path: str, caption: str, access_token: str) -> str:
     """Upload and publish video via Direct Post. Returns publish_id."""
     file_size = os.path.getsize(mp4_path)
+    if file_size == 0:
+        raise TikTokError(f"Video file is empty: {mp4_path}")
     init_body = json.dumps({
         "post_info": {
             "title": caption[:2200],
@@ -82,8 +87,7 @@ def upload_video(mp4_path: str, caption: str, access_token: str) -> str:
     publish_id = init_data["data"]["publish_id"]
     upload_url = init_data["data"]["upload_url"]
     with open(mp4_path, "rb") as f:
-        video_bytes = f.read()
-    put_req = urllib.request.Request(upload_url, data=video_bytes, method="PUT")
+        put_req = urllib.request.Request(upload_url, data=f, method="PUT")
     put_req.add_header("Content-Type", "video/mp4")
     put_req.add_header("Content-Range", f"bytes 0-{file_size - 1}/{file_size}")
     with urllib.request.urlopen(put_req, timeout=120):
