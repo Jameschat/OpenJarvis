@@ -27,7 +27,7 @@ def score_for_tiktok(item: Dict) -> int:
     We cap at 5 and normalize to a 0.0–1.0 base contributing up to 30 pts.
     The remaining 70 pts come from virality signals, format fit, and engagement.
     """
-    title = item.get("title", "")
+    title = (item.get("title") or "")
     keyword_count, _ = _relevance(title)
     # Normalize keyword count: 0 → 0 pts, 1 → 6 pts, 5+ → 30 pts
     base_pts = min(int(keyword_count), 5) * 6
@@ -92,7 +92,6 @@ def write_tiktok_trends(threshold: int = 70) -> Tuple[List[Dict], str]:
              f"Threshold: {threshold} | Qualified: {len(items)}\n\n"]
     for item in items[:20]:
         s = item["tiktok_score"]
-        tag = "✅" if s >= threshold else "⬇️"
-        lines.append(f"- {tag} **{s}** [{item['title']}]({item.get('url','')}) — {item['source']}\n")
+        lines.append(f"- ✅ **{s}** [{item['title']}]({item.get('url','')}) — {item['source']}\n")
     note_path.write_text("".join(lines), encoding="utf-8")
     return items, str(note_path)
