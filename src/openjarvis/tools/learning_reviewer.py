@@ -77,14 +77,18 @@ def build_learning_digest(
                 f"- Queue `capability-scout` for **{item['capability']}** "
                 f"({item['count']} occurrences) to search GitHub/web and rank candidate tools."
             )
+        lines.append("- Run `capability-queue` after scouting to rank prototype/watch/reject next steps.")
     else:
         lines.append("- No capability-scout queue needed yet; wait for repeated or high-severity gaps.")
+        if recent_gaps:
+            lines.append("- Run `capability-queue` if the operator wants a prioritized evolution backlog now.")
     lines.append("- For failed task patterns, update agent prompts only after a concrete repeated pattern appears.")
     lines.extend([
         "",
         "## Capability Scout Guardrail",
         "",
         "`capability-scout` may research, rank, and write recommendations. It must not install tools or mutate external systems without explicit operator approval.",
+        "`capability-queue` may prioritize and write backlog notes. It must not install tools or mutate external systems without explicit operator approval.",
         "",
         "_Compiled by `learning-reviewer`._",
     ])

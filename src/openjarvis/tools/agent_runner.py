@@ -394,6 +394,19 @@ DEFAULT_AGENTS: List[Dict[str, Any]] = [
         "provider": "python",
         "python_entry": "openjarvis.tools.capability_scout:run_as_agent_task",
     },
+    {
+        "id": "capability-queue",
+        "name": "capability-queue",
+        "role": (
+            "Ranks recorded Jarvis capability gaps and scout recommendations "
+            "into a safe evolution backlog. It writes queue notes, but never "
+            "installs tools or mutates systems."
+        ),
+        "skills": ["learning", "autonomy", "prioritization", "tools"],
+        "color": "#c084fc",
+        "provider": "python",
+        "python_entry": "openjarvis.tools.capability_queue:run_as_agent_task",
+    },
 
     # ---- Department heads (agency-agents integration, 2026-04-28) -------
     # Each head is a Claude-provider coordinator that orchestrates the
