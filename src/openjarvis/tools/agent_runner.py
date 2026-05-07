@@ -67,6 +67,9 @@ RUNS_DIR = ROOT / "runs"
 PROJECTS_DIR = ROOT / "projects"
 TICK_INTERVAL = 2.0  # seconds between worker iterations
 
+VAULT_ROOT = Path(r"E:/Claude/Obsidian/Claude/Brain")
+PROJECTS_ROOT = VAULT_ROOT / "Projects"
+
 _CODE_REVIEW_GRAPH_EXE = Path(os.environ.get(
     "OPENJARVIS_CODE_REVIEW_GRAPH_EXE",
     r"C:\Users\User\.openjarvis\tools\code-review-graph-venv\Scripts\code-review-graph.exe",
@@ -1636,6 +1639,25 @@ def _find_claude() -> Optional[str]:
     return None
 
 
+def _active_project_slug() -> str | None:
+    """Return the slug of the most recently updated project folder under
+    PROJECTS_ROOT, skipping folders whose name starts with '_'.
+
+    Uses STATE.md mtime as the recency signal; returns None if no eligible
+    folder (or PROJECTS_ROOT doesn't exist).
+    """
+    if not PROJECTS_ROOT.exists():
+        return None
+    candidates = [
+        p for p in PROJECTS_ROOT.iterdir()
+        if p.is_dir() and not p.name.startswith("_") and (p / "STATE.md").exists()
+    ]
+    if not candidates:
+        return None
+    latest = max(candidates, key=lambda p: (p / "STATE.md").stat().st_mtime)
+    return latest.name
+
+
 def _build_brain_context() -> str:
     """Compose a short, ready-to-paste markdown block telling the agent
     what's in the vault and how to read/write it via HTTP.
@@ -1713,6 +1735,24 @@ def _build_brain_context() -> str:
                  "If editing an existing note from the other agent, prepend a "
                  "'> [<your-name> YYYY-MM-DD]:' line explaining your change.")
     lines.append("== END TEAM BRAIN ==")
+
+    slug = _active_project_slug()
+    if slug:
+        state_path = PROJECTS_ROOT / slug / "STATE.md"
+        context_path = PROJECTS_ROOT / slug / "CONTEXT.md"
+        try:
+            state = state_path.read_text(encoding="utf-8")
+            ctx = context_path.read_text(encoding="utf-8")
+            active_block = (
+                f"\n## Active project: {slug}\n"
+                f"Update STATE.md at end of session. Update CONTEXT.md when stable info appears.\n"
+                f"\n### STATE.md\n{state}\n"
+                f"\n### CONTEXT.md\n{ctx}\n"
+            )
+            lines.append(active_block)
+        except OSError:
+            pass
+
     return "\n".join(lines)
 
 
