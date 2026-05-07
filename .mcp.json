@@ -1,0 +1,12 @@
+{
+    "mcpServers":  {
+                       "code-review-graph":  {
+                                                 "command":  "C:\\Users\\User\\.openjarvis\\tools\\code-review-graph-venv\\Scripts\\code-review-graph.exe",
+                                                 "args":  [
+                                                              "serve",
+                                                              "--repo",
+                                                              "E:\\Claude\\OpenJarvis"
+                                                          ]
+                                             }
+                   }
+}

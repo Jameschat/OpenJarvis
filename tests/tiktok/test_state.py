@@ -56,3 +56,9 @@ def test_settings(tiktok_dir):
     set_setting("threshold", 75)
     assert get_setting("threshold") == 75
     assert get_setting("missing_key", "default") == "default"
+
+def test_save_and_load_trends(tiktok_dir):
+    from openjarvis.tiktok.state import save_trends, load_trends
+    trends = [{"title": "AI agents are everywhere", "tiktok_score": 42}]
+    save_trends(trends)
+    assert load_trends() == trends

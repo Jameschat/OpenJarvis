@@ -9,7 +9,7 @@ from openjarvis.tiktok.state import (
     load_settings, get_setting, set_setting,
     load_queue, save_queue, get_pending_queue, get_approved_queue,
     add_to_queue, load_posted, add_posted, update_posted_stats,
-    save_finance, get_pending_comments, add_comment_reply,
+    save_finance, load_trends, get_pending_comments, add_comment_reply,
 )
 from openjarvis.tiktok.finance import monthly_summary, per_video_earnings, estimate_earnings_gbp
 
@@ -32,6 +32,7 @@ def get_pipeline_state() -> Dict:
         "posted": posted,
         "finance": finance,
         "comments": get_pending_comments(),
+        "trends": load_trends(),
     }
 
 

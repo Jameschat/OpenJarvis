@@ -27,6 +27,11 @@ _WEB_DIR = Path(__file__).resolve().parent.parent.parent.parent / "jarvis_web"
 _PORT = 7710
 
 
+def _jarvis_web_path(filename: str) -> Path:
+    """Return a file path under jarvis_web."""
+    return _WEB_DIR / filename
+
+
 class VoiceTurnContext:
     """Shared backends + command processor supplied by the voice loop."""
 
@@ -2577,13 +2582,13 @@ class _Handler(SimpleHTTPRequestHandler):
         path_only = self.path.split("?")[0].rstrip("/")
 
         if path_only == "/tiktok":
-            html_path = (
-                Path(__file__).parent.parent.parent / "jarvis_web" / "tiktok.html"
-            )
+            html_path = _jarvis_web_path("tiktok.html")
             if html_path.exists():
-                self._send(200, "text/html", html_path.read_bytes())
+                self.path = "/tiktok.html"
+                return super().do_GET()
             else:
-                self._send(200, "text/html", b"<h1>TikTok dashboard not yet built</h1>")
+                self._json_response(404, {"error": "TikTok dashboard not yet built"})
+                return
 
         elif path_only == "/tiktok/state":
             self._json_response(200, get_pipeline_state())
@@ -2631,7 +2636,7 @@ class _Handler(SimpleHTTPRequestHandler):
         from openjarvis.tiktok.state import (
             approve_video, reject_video, approve_comment, reject_comment,
             get_setting, set_setting, save_settings, load_settings, add_comment_reply,
-            load_comments,
+            load_comments, load_trends,
         )
         from openjarvis.tiktok.pipeline import tiktok_publisher_entry
 
@@ -2659,7 +2664,16 @@ class _Handler(SimpleHTTPRequestHandler):
             threshold = get_setting("threshold", 70)
             try:
                 items, note = write_tiktok_trends(threshold)
-                self._json_response(200, {"ok": True, "qualified": len(items), "note": note})
+                trends = load_trends()
+                top_score = trends[0].get("tiktok_score", 0) if trends else 0
+                self._json_response(200, {
+                    "ok": True,
+                    "qualified": len(items),
+                    "scanned": len(trends),
+                    "top_score": top_score,
+                    "threshold": threshold,
+                    "note": note,
+                })
             except Exception as e:
                 self._json_response(500, {"error": str(e)})
 

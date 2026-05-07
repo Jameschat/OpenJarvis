@@ -60,6 +60,27 @@ TOOL-USE MODE
 You have native function-calling tools available. ACT first, summarise after.
 
 Rules:
+- You are Jarvis's capability layer: memory lives in the vault/graph, work \
+is carried out through tools and agents, and capability gaps are solved by \
+researching better modules, MCP servers, libraries, CLIs, APIs, or agent \
+patterns. If the operator asks for something you cannot currently do, do \
+not tell them to search the internet. Search GitHub/web yourself, identify \
+candidate tools, evaluate fit, then either use an existing Jarvis tool, \
+dispatch an agent to prototype integration, or explain the safest next \
+approval needed.
+- For capability upgrades, prefer GitHub-first discovery: call \
+`github_search` with focused queries, inspect recent activity/stars/issues, \
+then use `fetch_url`/`web_search` for docs and independent discussion. Save \
+useful findings to the vault with `remember_fact` so future sessions do not \
+repeat the same search.
+- Autonomy has guardrails: you may research, plan, queue agents, and propose \
+integrations without asking. Do not install unknown packages, edit \
+`jarvis.bat`, expose secrets, run destructive commands, spend money, connect \
+accounts, trade, or make irreversible external changes unless the operator \
+explicitly approves that specific action.
+- When a request exposes a missing capability you cannot complete with \
+current tools, call `record_capability_gap` before the final reply. Then \
+search GitHub/web immediately if the operator is asking for a path forward.
 - For any request that involves looking something up, saving information, \
 dispatching agents, or controlling devices: CALL THE RELEVANT TOOL. Do not \
 describe what you would do — do it.
@@ -92,14 +113,7 @@ work ("how is X connected to Y in my notes", "what bridges A and B", \
 `graph_query` traverses outward, `graph_path` finds the shortest \
 chain, `graph_explain` lists every direct neighbour. Use recall_vault \
 for keyword search, the graph tools for structural relationships.
-- For MULTI-STEP project work (operator says "build a thing" that \
-clearly needs 2+ agents working on a shared workspace), prefer the \
-plan tools over a single big dispatch: call `create_plan` first with \
-the breakdown, then `dispatch_agent` for the first ready step \
-(passing plan_step_id). On any subsequent turn that mentions an \
-existing project_id, call `get_plan` first to see where you left off; \
-use `advance_plan` to dispatch the next ready step. For single-step \
-requests, skip create_plan entirely — just dispatch_agent.
+- For MULTI-STEP project work (operator says "build a thing" that clearly needs 2+ agents working on a shared workspace), prefer the plan tools over a single big dispatch. If the objective has clear success/failure criteria, call `create_ideal_state` first with binary, state-based criteria (what must be true when done), then `create_plan` with each step optionally mapped via `criterion_ids`, then `dispatch_agent` for the first ready step (passing plan_step_id). On subsequent turns, call `get_plan` / `get_ideal_state` first; use `advance_plan` to dispatch the next ready step. For single-step requests, skip create_plan entirely - just dispatch_agent.
 - When the operator asks for a constraint (e.g. "use independent \
 sources only", "GitHub stars not vendor sites"), TREAT IT AS A HARD RULE. \
 If your tool calls violate the constraint, retry with corrected queries \
@@ -178,6 +192,27 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
                     },
                 },
                 "required": ["title", "content"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "record_capability_gap",
+            "description": (
+                "Record a missing Jarvis capability so the learning-reviewer can "
+                "search GitHub/web for tools or modules later. Use when the operator "
+                "asks for something Jarvis cannot currently complete with available tools."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "capability": {"type": "string"},
+                    "trigger": {"type": "string"},
+                    "context": {"type": "string"},
+                    "severity": {"type": "string", "enum": ["low", "medium", "high"]},
+                },
+                "required": ["capability", "trigger"],
             },
         },
     },
@@ -359,6 +394,76 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "create_ideal_state",
+            "description": (
+                "Persist Ideal State Criteria for a project: granular, binary, "
+                "state-based criteria that define what must be true when the "
+                "project is done. Use before create_plan for multi-step objectives "
+                "where verification quality matters."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "project_id": {"type": "string"},
+                    "objective": {"type": "string"},
+                    "criteria": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {"type": "string"},
+                                "statement": {"type": "string",
+                                    "description": "State-based binary criterion, e.g. 'Tests pass'."},
+                                "verification_method": {"type": "string",
+                                    "description": "How to verify this in 1-2 concrete checks."},
+                                "linked_step_ids": {"type": "array", "items": {"type": "string"}},
+                            },
+                            "required": ["id", "statement"],
+                        },
+                    },
+                },
+                "required": ["project_id", "objective", "criteria"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_ideal_state",
+            "description": "Read a project's Ideal State Criteria and verification status.",
+            "parameters": {
+                "type": "object",
+                "properties": {"project_id": {"type": "string"}},
+                "required": ["project_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "update_criterion",
+            "description": (
+                "Mark one Ideal State criterion pass/fail/unknown/pending/skipped "
+                "and attach evidence. Use in VERIFY after checking deliverables."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "project_id": {"type": "string"},
+                    "criterion_id": {"type": "string"},
+                    "status": {"type": "string",
+                        "enum": ["pending", "pass", "fail", "unknown", "skipped"]},
+                    "evidence": {"type": "string"},
+                    "verification_method": {"type": "string"},
+                    "linked_step_ids": {"type": "array", "items": {"type": "string"}},
+                },
+                "required": ["project_id", "criterion_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "create_plan",
             "description": (
                 "Persist a multi-step execution plan for a project so future turns "
@@ -419,6 +524,8 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
                                     "description": "Self-contained instruction for the dispatched agent / head."},
                                 "depends_on": {"type": "array", "items": {"type": "string"},
                                     "description": "Step ids this step waits for."},
+                                "criterion_ids": {"type": "array", "items": {"type": "string"},
+                                    "description": "Optional Ideal State criterion ids this step helps satisfy."},
                             },
                             "required": ["id", "title", "prompt"],
                         },
@@ -739,6 +846,31 @@ def _tool_remember_fact(title: str, content: str, folder: str = "Knowledge") -> 
     return json.dumps({"ok": True, "path": rel})
 
 
+def _tool_record_capability_gap(
+    capability: str,
+    trigger: str,
+    context: str = "",
+    severity: str = "medium",
+) -> str:
+    try:
+        from openjarvis.tools import capability_gaps
+        path = capability_gaps.record_gap(
+            capability=capability,
+            trigger=trigger,
+            context=context,
+            severity=severity,
+            source="tool_use.record_capability_gap",
+        )
+    except Exception as exc:
+        logger.exception("record_capability_gap failed")
+        return json.dumps({"ok": False, "error": str(exc)})
+    return json.dumps({
+        "ok": path is not None,
+        "capability": capability,
+        "path": str(path) if path else None,
+    })
+
+
 def _tool_list_agents() -> str:
     from openjarvis.tools import agent_runner
     snap = agent_runner.get_snapshot()
@@ -968,6 +1100,65 @@ def _tool_dispatch_browser_pilot(goal: str, title: str) -> str:
     })
 
 
+def _tool_create_ideal_state(project_id: str, objective: str,
+                             criteria: List[Dict[str, Any]]) -> str:
+    try:
+        from openjarvis.tools import ideal_state
+    except Exception as exc:
+        return json.dumps({"ok": False, "error": f"ideal_state unavailable: {exc}"})
+    try:
+        path = ideal_state.create_ideal_state(
+            project_id=project_id, objective=objective, criteria=criteria,
+            created_by="tool_use.create_ideal_state",
+        )
+    except ideal_state.IdealStateValidationError as exc:
+        return json.dumps({"ok": False, "error": str(exc)})
+    except Exception as exc:
+        logger.exception("create_ideal_state failed")
+        return json.dumps({"ok": False, "error": str(exc)})
+    return json.dumps({
+        "ok": True,
+        "project_id": project_id,
+        "ideal_state_path": str(path),
+        "criterion_count": len(criteria),
+        "hint": "Now create_plan with step.criterion_ids mapped to these criteria.",
+    })
+
+
+def _tool_get_ideal_state(project_id: str) -> str:
+    try:
+        from openjarvis.tools import ideal_state
+    except Exception as exc:
+        return json.dumps({"ok": False, "error": f"ideal_state unavailable: {exc}"})
+    data = ideal_state.get_ideal_state(project_id)
+    if data is None:
+        return json.dumps({"ok": False, "reason": f"no ideal state for project {project_id!r}"})
+    return json.dumps({"ok": True, "ideal_state": data, "summary": ideal_state.summary(project_id)})
+
+
+def _tool_update_criterion(project_id: str, criterion_id: str,
+                           status: Optional[str] = None,
+                           evidence: Optional[str] = None,
+                           verification_method: Optional[str] = None,
+                           linked_step_ids: Optional[List[str]] = None) -> str:
+    try:
+        from openjarvis.tools import ideal_state
+    except Exception as exc:
+        return json.dumps({"ok": False, "error": f"ideal_state unavailable: {exc}"})
+    try:
+        crit = ideal_state.update_criterion(
+            project_id, criterion_id,
+            status=status, evidence=evidence,
+            verification_method=verification_method,
+            linked_step_ids=linked_step_ids,
+        )
+    except ideal_state.IdealStateValidationError as exc:
+        return json.dumps({"ok": False, "error": str(exc)})
+    if crit is None:
+        return json.dumps({"ok": False, "error": "ideal state or criterion not found"})
+    return json.dumps({"ok": True, "criterion": crit, "summary": ideal_state.summary(project_id)})
+
+
 def _tool_create_plan(project_id: str, goal: str,
                       steps: List[Dict[str, Any]]) -> str:
     """Create + persist a multi-step plan."""
@@ -1020,17 +1211,24 @@ def _tool_get_plan(project_id: str) -> str:
         })
     nxt = agent_plan.next_pending_step(project_id)
     summary = agent_plan.plan_summary(project_id)
+    try:
+        from openjarvis.tools import ideal_state
+        isc_summary = ideal_state.summary(project_id)
+    except Exception:
+        isc_summary = {"exists": False}
     return json.dumps({
         "ok": True,
         "project_id": project_id,
         "summary": summary,
         "status": plan.get("status"),
         "goal": plan.get("goal"),
+        "ideal_state": isc_summary,
         "steps": [
             {"id": s.get("id"), "agent": s.get("agent"),
              "title": s.get("title"), "status": s.get("status"),
              "task_id": s.get("task_id"),
-             "depends_on": s.get("depends_on") or []}
+             "depends_on": s.get("depends_on") or [],
+             "criterion_ids": s.get("criterion_ids") or []}
             for s in plan.get("steps") or []
         ],
         "next_step": (
@@ -1646,6 +1844,7 @@ def _tool_graph_refresh() -> str:
 _TOOL_DISPATCH = {
     "recall_vault": _tool_recall_vault,
     "remember_fact": _tool_remember_fact,
+    "record_capability_gap": _tool_record_capability_gap,
     "list_agents": _tool_list_agents,
     "dispatch_agent": _tool_dispatch_agent,
     "dispatch_browser_pilot": _tool_dispatch_browser_pilot,
@@ -1658,6 +1857,9 @@ _TOOL_DISPATCH = {
     "graph_path": _tool_graph_path,
     "graph_explain": _tool_graph_explain,
     "refresh_graph": _tool_graph_refresh,
+    "create_ideal_state": _tool_create_ideal_state,
+    "get_ideal_state": _tool_get_ideal_state,
+    "update_criterion": _tool_update_criterion,
     "create_plan": _tool_create_plan,
     "get_plan": _tool_get_plan,
     "advance_plan": _tool_advance_plan,

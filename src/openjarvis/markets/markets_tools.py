@@ -28,6 +28,7 @@ from typing import Any, Dict
 from openjarvis.markets import store
 from openjarvis.markets.sources import yf, kraken, coingecko
 from openjarvis.markets import chart_analyst as _chart_analyst
+from openjarvis.markets import paper_broker as _paper_broker
 
 logger = logging.getLogger(__name__)
 
@@ -91,6 +92,23 @@ def crypto_price(ticker: str = "BTC") -> str:
     except Exception:
         logger.debug("crypto_price: cache update failed", exc_info=True)
     return json.dumps(quote)
+
+
+def crypto_top_1000() -> str:
+    """Return the top 1000 cryptos by market cap with risk labels."""
+    from openjarvis.markets import risk as _risk
+    coins = coingecko.fetch_top_n(1000)
+    if not coins:
+        return json.dumps({"error": "coingecko unavailable"})
+    annotated = _risk.annotate(coins)
+    slim = [{
+        "rank": i + 1, "symbol": c.get("symbol"), "name": c.get("name"),
+        "last": c.get("last"), "change_24h_pct": c.get("change_24h_pct"),
+        "market_cap": c.get("market_cap"), "volume_24h": c.get("volume_24h"),
+        "risk": c.get("risk"),
+    } for i, c in enumerate(annotated)]
+    return json.dumps({"coins": slim, "count": len(slim),
+                       "currency": "GBP", "source": "coingecko"})
 
 
 def crypto_top_100() -> str:
@@ -157,6 +175,26 @@ def watchlist_remove(ticker: str) -> str:
     removed = store.watchlist_remove(ticker)
     return json.dumps({"ok": True, "removed": removed,
                        "ticker": (ticker or "").upper()})
+
+
+
+def paper_buy(ticker: str, gbp_amount: float,
+              stop: float = None, tp1: float = None, tp2: float = None) -> str:
+    """Open a simulated paper crypto position. No broker API call."""
+    return json.dumps(_paper_broker.paper_buy(
+        ticker, gbp_amount, stop=stop, tp1=tp1, tp2=tp2,
+    ))
+
+
+def paper_sell(ticker: str, reason: str = "closed_manually") -> str:
+    """Close an open simulated paper crypto position."""
+    return json.dumps(_paper_broker.paper_sell(ticker, reason=reason))
+
+
+def paper_portfolio() -> str:
+    """Return simulated paper portfolio cash, equity, positions, and P&L."""
+    _paper_broker.check_open_positions()
+    return json.dumps(_paper_broker.paper_portfolio())
 
 
 def analyze_chart(image_path: str, ticker_hint: str = "",
@@ -307,6 +345,61 @@ TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "crypto_top_1000",
+            "description": (
+                "Return the top 1000 cryptocurrencies by market cap with live GBP prices "
+                "and rug-pull/pump-and-dump risk labels. Use for long-tail crypto scans."
+            ),
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "paper_buy",
+            "description": (
+                "Open a PAPER-ONLY simulated crypto position. No real broker order is placed. "
+                "Use when the operator asks to take a paper trade."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "ticker": {"type": "string"},
+                    "gbp_amount": {"type": "number"},
+                    "stop": {"type": "number"},
+                    "tp1": {"type": "number"},
+                    "tp2": {"type": "number"},
+                },
+                "required": ["ticker", "gbp_amount"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "paper_sell",
+            "description": "Close an open PAPER-ONLY simulated crypto position.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "ticker": {"type": "string"},
+                    "reason": {"type": "string", "default": "closed_manually"},
+                },
+                "required": ["ticker"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "paper_portfolio",
+            "description": "Return the paper portfolio, open positions, realised P&L and hit rate.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "analyze_chart",
             "description": (
                 "MANDATORY when the operator attaches a crypto chart "
@@ -368,6 +461,10 @@ TOOL_DISPATCH = {
     "stock_price":      stock_price,
     "crypto_price":     crypto_price,
     "crypto_top_100":   crypto_top_100,
+    "crypto_top_1000":  crypto_top_1000,
+    "paper_buy":        paper_buy,
+    "paper_sell":       paper_sell,
+    "paper_portfolio":  paper_portfolio,
     "watchlist_get":    watchlist_get,
     "watchlist_add":    watchlist_add,
     "watchlist_remove": watchlist_remove,
@@ -377,7 +474,8 @@ TOOL_DISPATCH = {
 
 __all__ = [
     "TOOL_SCHEMAS", "TOOL_DISPATCH",
-    "stock_price", "crypto_price", "crypto_top_100",
+    "stock_price", "crypto_price", "crypto_top_100", "crypto_top_1000",
     "watchlist_get", "watchlist_add", "watchlist_remove",
+    "paper_buy", "paper_sell", "paper_portfolio",
     "analyze_chart",
 ]

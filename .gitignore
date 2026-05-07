@@ -109,3 +109,6 @@ Inline/
 # Local launchers with secrets / machine-specific config
 jarvis.bat
 set_spotify_creds.bat
+
+# code-review-graph local index
+.code-review-graph/

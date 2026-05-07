@@ -375,9 +375,10 @@ def _write_plan_md(project_id: str, plan: Dict[str, Any]) -> None:
             f"{dep} → {s.get('agent','?')}"
             if dep else s.get('agent','?')
         )
+        crits = ", ".join(s.get("criterion_ids") or []) or "-"
         lines.append(
-            f"- [{glyph}] **{s.get('id','?')}** · {agent_label} · "
-            f"{s.get('title','')}  (deps: {deps}, task: `{task_id}`)"
+            f"- [{glyph}] **{s.get('id','?')}** - {agent_label} - "
+            f"{s.get('title','')}  (deps: {deps}, criteria: {crits}, task: `{task_id}`)"
         )
     plan_md_path(project_id).write_text("\n".join(lines) + "\n", encoding="utf-8")
 
@@ -410,6 +411,7 @@ def create_plan(project_id: str, *, goal: str, steps: List[Dict[str, Any]],
             "title":        str(s.get("title", ""))[:120],
             "prompt":       str(s.get("prompt", "")),
             "depends_on":   [str(d) for d in (s.get("depends_on") or [])],
+            "criterion_ids": [str(c) for c in (s.get("criterion_ids") or [])][:20],
             "status":       "pending",
             "task_id":      None,
             "started_at":   None,
@@ -438,6 +440,11 @@ def create_plan(project_id: str, *, goal: str, steps: List[Dict[str, Any]],
                 "pass overwrite=True to replace, or use get_plan to inspect"
             )
         _write_plan_atomic(pid, plan)
+    try:
+        from openjarvis.tools import ideal_state
+        ideal_state.sync_plan_links(pid, plan)
+    except Exception:
+        logger.debug("agent_plan: ideal_state sync failed for %s", pid, exc_info=True)
     logger.info("agent_plan: created plan for %s with %d steps", pid, len(norm_steps))
     return target
 
@@ -598,6 +605,13 @@ def plan_summary(project_id: str) -> str:
             parts.append(f"next: {nxt['agent']} ({nxt.get('title','')[:40]})")
     if failed:
         parts.append(f"{failed} failed")
+    try:
+        from openjarvis.tools import ideal_state
+        isc = ideal_state.summary(project_id)
+        if isc.get("exists"):
+            parts.append(f"ISC: {isc.get('summary')}")
+    except Exception:
+        pass
     return ", ".join(parts)
 
 

@@ -368,6 +368,71 @@ h1.page-title {
   background: rgba(180,200,220,0.05); color: var(--txt-2);
 }
 
+/* Risk badges (rug-pull / pump-and-dump scorer) */
+.risk-badge {
+  display: inline-block; padding: 1px 6px; margin-left: 6px;
+  font-size: 9.5px; letter-spacing: 0.6px; font-weight: 600;
+  border-radius: 3px; cursor: help; vertical-align: middle;
+  white-space: nowrap;
+}
+.risk-badge.rugpull {
+  background: rgba(255,68,80,0.18); color: #ff5560;
+  border: 1px solid rgba(255,68,80,0.55);
+  text-shadow: 0 0 8px rgba(255,68,80,0.55);
+  animation: rugpullPulse 1.6s ease-in-out infinite;
+}
+@keyframes rugpullPulse {
+  0%,100% { box-shadow: 0 0 0 rgba(255,68,80,0.0); }
+  50%     { box-shadow: 0 0 12px rgba(255,68,80,0.55); }
+}
+.risk-badge.high {
+  background: rgba(255,160,60,0.14); color: #ffa83c;
+  border: 1px solid rgba(255,160,60,0.45);
+}
+.risk-badge.caution {
+  background: rgba(255,210,80,0.10); color: #ffd84a;
+  border: 1px solid rgba(255,210,80,0.35);
+}
+.risk-banner {
+  margin: 12px 0; padding: 10px 14px;
+  border: 1px solid rgba(255,68,80,0.55);
+  background: rgba(255,68,80,0.10);
+  border-radius: 4px; color: #ff8088;
+  font-size: 13px; letter-spacing: 0.4px;
+}
+.risk-banner strong { color: #ff5560; letter-spacing: 1px; }
+.forecast-strip {
+  margin: 12px 20px 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(94,224,255,0.24);
+  background: rgba(94,224,255,0.07);
+  border-radius: 4px;
+  color: var(--txt-2);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.forecast-strip strong {
+  color: var(--cyan);
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+}
+.forecast-strip .forecast-meta {
+  color: var(--txt-3);
+  margin-top: 2px;
+}
+.risk-toggle {
+  display: inline-flex; align-items: center; gap: 6px;
+  margin-left: 12px; font-size: 11px; color: var(--txt-2);
+  cursor: pointer; user-select: none;
+}
+.risk-toggle input { accent-color: #ff8088; }
+.risk-counts {
+  font-size: 11px; color: var(--txt-3); margin-left: 8px;
+}
+.risk-counts .ct-rug { color: #ff5560; }
+.risk-counts .ct-high { color: #ffa83c; }
+.risk-counts .ct-caut { color: #ffd84a; }
+
 /* Trending strip */
 .trending-row {
   display: grid;
@@ -609,6 +674,20 @@ h1.page-title {
   font-family: 'Consolas','SF Mono','Menlo',monospace;
   font-size: 11px; color: var(--txt-3);
 }
+
+.paper-grid { display: grid; grid-template-columns: 1.2fr 1fr; gap: 18px; }
+@media (max-width: 900px) { .paper-grid { grid-template-columns: 1fr; } }
+.paper-row { display: grid; grid-template-columns: 1fr auto auto auto; gap: 10px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.paper-row:last-child { border-bottom: none; }
+.paper-pnl.pos { color: var(--pos); }
+.paper-pnl.neg { color: var(--neg); }
+.action-buttons { display: inline-flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.btn.trade { border-color: rgba(40,190,120,0.38); color: #6ee7a0; }
+.btn.paper { border-color: rgba(94,224,255,0.35); color: var(--cy-2); }
+.paper-form { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
+.paper-form input { min-width: 0; }
+@media (max-width: 720px) { .paper-form { grid-template-columns: 1fr 1fr; } }
+
 </style>
 </head>
 <body>
@@ -620,6 +699,7 @@ h1.page-title {
     <button class="nav-tab active" data-tab="dashboard">Dashboard</button>
     <button class="nav-tab" data-tab="pulse">Pulse</button>
     <button class="nav-tab" data-tab="analyze">Analyze</button>
+    <button class="nav-tab" data-tab="paper">Paper</button>
   </div>
   <button class="nav-back" onclick="window.location.href='/brain.html'">← HUD</button>
 </nav>
@@ -694,7 +774,7 @@ h1.page-title {
         </div>
       </div>
       <div class="action-foot">
-        <span class="action-meta">Top-100 crypto · 2-h chart auto-fetched</span>
+        <span class="action-meta">Top-1000 crypto · 2-h chart auto-fetched</span>
         <button class="btn" onclick="switchTab('analyze'); setTimeout(()=>document.getElementById('a-symbol').focus(),120);">Quick Signal</button>
       </div>
     </div>
@@ -735,7 +815,14 @@ h1.page-title {
   <div class="page-head">
     <div class="page-eyebrow"><span class="pulse-dot"></span> Market Pulse</div>
     <h1 class="page-title">Market Pulse</h1>
-    <div class="page-sub">Live crypto market overview — top 100 by market cap · powered by CoinGecko</div>
+    <div class="page-sub">
+      Live crypto market overview — <span id="p-universe-label">top 1000</span> by market cap · powered by CoinGecko
+      <label class="risk-toggle" title="Hide coins flagged HIGH RISK or RUGPULL by the on-the-fly risk scorer">
+        <input type="checkbox" id="p-hide-risky" onchange="loadPulse()">
+        Hide high-risk coins
+      </label>
+      <span class="risk-counts" id="p-risk-counts"></span>
+    </div>
   </div>
 
   <div class="section-title"><span class="accent"></span> Market Overview</div>
@@ -819,6 +906,43 @@ h1.page-title {
   </div>
 </section>
 
+
+<!-- =================================================================== -->
+<!-- Paper tab                                                            -->
+<!-- =================================================================== -->
+<section class="page tab-page" data-tab-page="paper" hidden>
+  <div class="page-head">
+    <div class="page-eyebrow"><span class="pulse-dot"></span> Paper Trading</div>
+    <h1 class="page-title">Paper Portfolio</h1>
+    <div class="page-sub">Simulated trades only. No broker order is placed.</div>
+  </div>
+
+  <div class="grid grid-3">
+    <div class="card lined"><div class="stat-eyebrow">Equity</div><div class="stat-value" id="paper-equity">-</div><div class="stat-sub" id="paper-equity-sub">paper only</div></div>
+    <div class="card lined"><div class="stat-eyebrow">Cash</div><div class="stat-value" id="paper-cash">-</div><div class="stat-sub">available GBP</div></div>
+    <div class="card lined"><div class="stat-eyebrow">Hit rate</div><div class="stat-value" id="paper-hit">-</div><div class="stat-sub" id="paper-hit-sub">closed paper trades</div></div>
+  </div>
+
+  <div class="paper-grid" style="margin-top:18px;">
+    <div class="card">
+      <div class="section-title"><span class="accent"></span> Open Positions</div>
+      <div id="paper-open"><div class="empty-sub">Loading...</div></div>
+    </div>
+    <div class="card">
+      <div class="section-title"><span class="accent"></span> Quick Paper Buy</div>
+      <div class="paper-form">
+        <input id="paper-symbol" class="field" placeholder="BTC">
+        <input id="paper-gbp" class="field" type="number" min="1" step="1" placeholder="GBP">
+        <input id="paper-stop" class="field" type="number" step="any" placeholder="Stop">
+        <input id="paper-tp1" class="field" type="number" step="any" placeholder="TP1">
+      </div>
+      <button class="btn primary-solid" style="margin-top:10px;" onclick="paperBuyFromForm()">Paper buy</button>
+      <div class="section-title" style="margin-top:20px;"><span class="accent"></span> Closed Trades</div>
+      <div id="paper-closed"><div class="empty-sub">Loading...</div></div>
+    </div>
+  </div>
+</section>
+
 <!-- =================================================================== -->
 <!-- Analyze tab                                                          -->
 <!-- =================================================================== -->
@@ -855,10 +979,19 @@ h1.page-title {
           <div class="tf-chips" id="tf-chips">
             <button class="tf-chip" data-tf="15m">15m</button>
             <button class="tf-chip" data-tf="1h">1H</button>
-            <button class="tf-chip active" data-tf="2h">2H</button>
-            <button class="tf-chip" data-tf="4h">4H</button>
+            <button class="tf-chip" data-tf="2h">2H</button>
+            <button class="tf-chip active" data-tf="4h">4H</button>
             <button class="tf-chip" data-tf="1d">1D</button>
             <button class="tf-chip" data-tf="1w">1W</button>
+          </div>
+        </div>
+        <div class="settings-row">
+          <label>Forecast</label>
+          <div class="tf-chips" id="forecast-chips">
+            <button class="tf-chip" data-horizon="24h">24H</button>
+            <button class="tf-chip active" data-horizon="3d">3D</button>
+            <button class="tf-chip" data-horizon="7d">7D</button>
+            <button class="tf-chip" data-horizon="30d">30D</button>
           </div>
         </div>
         <button id="start-analysis" class="start-btn" disabled>
@@ -879,7 +1012,7 @@ h1.page-title {
 // ============================================================
 // Tab switching
 // ============================================================
-const TABS = ['dashboard', 'pulse', 'analyze'];
+const TABS = ['dashboard', 'pulse', 'analyze', 'paper'];
 function switchTab(name) {
   if (!TABS.includes(name)) return;
   document.querySelectorAll('.nav-tab').forEach(t => {
@@ -891,6 +1024,7 @@ function switchTab(name) {
   // Refresh data on tab switch
   if (name === 'dashboard') loadDashboard();
   if (name === 'pulse')     loadPulse();
+  if (name === 'paper')     loadPaper();
   // Update URL hash for deep-link
   if (history.replaceState) history.replaceState(null, '', '#' + name);
 }
@@ -926,6 +1060,19 @@ function escapeHtml(s) {
   return (s || '').replace(/[&<>"']/g, c => (
     {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]
   ));
+}
+
+function cryptoComUrl(symbol) {
+  const s = String(symbol || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  return s ? ('https://crypto.com/exchange/trade/spot/' + s + '_USDT') : 'https://crypto.com/exchange';
+}
+function tradeButtonHtml(symbol) {
+  return '<button class="btn ghost trade" onclick="event.stopPropagation(); window.open(cryptoComUrl(\'' +
+    escapeHtml(symbol) + '\'), \'_blank\', \'noopener\')">Trade</button>';
+}
+function numOrNull(v) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
 }
 
 // Sparkline SVG from a list of numbers
@@ -1004,7 +1151,9 @@ async function loadDashboard() {
 // ============================================================
 async function loadPulse() {
   try {
-    const data = await api('/markets-pro/pulse');
+    const hide = !!document.getElementById('p-hide-risky')?.checked;
+    const url = '/markets-pro/pulse' + (hide ? '?hide_high_risk=1' : '');
+    const data = await api(url);
     const g = data.global || {};
     document.getElementById('p-mcap').textContent = fmtMoney(g.total_market_cap);
     document.getElementById('p-mcap-pct').textContent = fmtPct(g.market_cap_pct_24h) + ' 24h';
@@ -1013,8 +1162,23 @@ async function loadPulse() {
     document.getElementById('p-eth-dom').textContent = g.eth_dominance != null
       ? 'ETH ' + g.eth_dominance.toFixed(1) + '%' : '';
     document.getElementById('p-vol').textContent = fmtMoney(g.total_volume_24h);
+
+    const universe = data.universe_size || data.all_count || 0;
+    const visible = data.all_count || 0;
+    document.getElementById('p-universe-label').textContent =
+      universe >= 250 ? ('top ' + universe) : ('top ' + universe);
     document.getElementById('p-coin-count').textContent =
-      (data.all_count || 0) + ' coins · top 100';
+      visible + (hide ? ' visible / ' + universe + ' total' : ' coins');
+
+    const rc = data.risk_counts || {};
+    const counts = document.getElementById('p-risk-counts');
+    if (counts) {
+      counts.innerHTML =
+        '<span class="ct-rug">🚨 ' + (rc.rugpull || 0) + '</span> · ' +
+        '<span class="ct-high">⚠ ' + (rc.high || 0) + '</span> · ' +
+        '<span class="ct-caut">⚠ ' + (rc.caution || 0) + '</span> · ' +
+        'clean ' + (rc.clean || 0);
+    }
 
     renderCoinTable('gainers-table', data.gainers || [], 'pos');
     renderCoinTable('losers-table',  data.losers  || [], 'neg');
@@ -1022,6 +1186,18 @@ async function loadPulse() {
   } catch (e) {
     console.error('[markets-pro] pulse load failed', e);
   }
+}
+
+function riskBadgeHtml(risk) {
+  if (!risk || !risk.label_key || risk.label_key === 'clean') return '';
+  const k = risk.label_key;
+  const emoji = risk.label_emoji || '';
+  const reasons = (risk.reasons || []).join(' · ');
+  const tip = (risk.label || '') + ' · score ' + (risk.score ?? '?')
+              + (reasons ? ' · ' + reasons : '');
+  const text = k === 'rugpull' ? 'RUGPULL' : (k === 'high' ? 'HIGH RISK' : 'CAUTION');
+  return '<span class="risk-badge ' + k + '" title="'
+    + escapeHtml(tip) + '">' + emoji + ' ' + text + '</span>';
 }
 
 function renderCoinTable(elemId, coins, signClass) {
@@ -1041,6 +1217,7 @@ function renderCoinTable(elemId, coins, signClass) {
       '<td><div class="coin-row">' +
         '<span class="coin-name">' + escapeHtml(c.name || c.symbol) + '</span>' +
         '<span class="coin-symbol">' + escapeHtml(c.symbol) + '</span>' +
+        riskBadgeHtml(c.risk) +
       '</div></td>' +
       '<td class="num">' + fmtMoney(c.last) + '</td>' +
       '<td class="num ' + cls + '">' + fmtPct(change) + '</td>' +
@@ -1063,7 +1240,8 @@ function renderTrending(coins) {
        + escapeHtml(c.symbol) + '\')" style="cursor:pointer;">' +
       '<span class="trending-rank">#' + (i+1) + '</span>' +
       '<div class="trending-name">' + escapeHtml(c.name || c.symbol) + '</div>' +
-      '<div class="trending-sym">' + escapeHtml(c.symbol) + '</div>' +
+      '<div class="trending-sym">' + escapeHtml(c.symbol) + ' ' +
+        riskBadgeHtml(c.risk) + '</div>' +
       '<div class="trending-pct ' + cls + '">' + fmtPct(change) + '</div>' +
     '</div>';
   });
@@ -1083,14 +1261,22 @@ function quickAnalyze(symbol) {
 // ============================================================
 // Analyze tab
 // ============================================================
-let _selectedTimeframe = '2h';
+let _selectedTimeframe = '4h';
+let _selectedForecastHorizon = '3d';
 let _attachedImage = null;       // { name, type, b64 }
 
-document.querySelectorAll('.tf-chip').forEach(b => {
+document.querySelectorAll('#tf-chips .tf-chip').forEach(b => {
   b.addEventListener('click', () => {
-    document.querySelectorAll('.tf-chip').forEach(x => x.classList.remove('active'));
+    document.querySelectorAll('#tf-chips .tf-chip').forEach(x => x.classList.remove('active'));
     b.classList.add('active');
     _selectedTimeframe = b.dataset.tf;
+  });
+});
+document.querySelectorAll('#forecast-chips .tf-chip').forEach(b => {
+  b.addEventListener('click', () => {
+    document.querySelectorAll('#forecast-chips .tf-chip').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    _selectedForecastHorizon = b.dataset.horizon;
   });
 });
 
@@ -1184,6 +1370,7 @@ async function runAnalysis() {
   try {
     const body = {
       timeframe: _selectedTimeframe,
+      forecast_horizon: _selectedForecastHorizon,
       ticker_hint: symInp.value.trim(),
     };
     if (_attachedImage) {
@@ -1244,6 +1431,17 @@ function renderResult(data) {
   const chartImg = data.chart_image_b64
     ? '<img class="result-chart" src="data:image/png;base64,'+data.chart_image_b64+'">'
     : '';
+  const risk = data.risk || {};
+  const forecast = data.forecast || null;
+  const forecastStrip = renderForecastStrip(forecast);
+  const riskBanner = risk && risk.label_key && risk.label_key !== 'clean'
+    ? '<div class="risk-banner"><strong>' + escapeHtml((risk.label_emoji || '') + ' ' + (risk.label || 'RISK')) + '</strong> - score ' + escapeHtml(String(risk.score ?? '?')) + '/100<br>' + escapeHtml((risk.reasons || []).join(' · ')) + '</div>'
+    : '';
+  const actionBtns = '<div class="action-buttons" style="margin:10px 0 14px;">' +
+    '<button class="btn paper" onclick="paperTakeFromAnalysis()">Take paper trade</button>' +
+    '<button class="btn trade" onclick="window.open(cryptoComUrl(\'' + escapeHtml(ticker) + '\'), \'_blank\', \'noopener\')">Trade on Crypto.com</button>' +
+    '</div>';
+  window._lastAnalysis = data;
   result.innerHTML =
     '<div class="card result-card">' +
       '<div class="result-head">' +
@@ -1252,13 +1450,37 @@ function renderResult(data) {
         '<span class="spacer"></span>' +
         '<span class="meta">analysed in ' + (data.wall_seconds || '?') + 's</span>' +
       '</div>' +
-      chartImg +
+      forecastStrip + riskBanner + actionBtns + chartImg +
       '<div class="result-body">' + renderMarkdown(md) + '</div>' +
     '</div>';
   result.scrollIntoView({behavior: 'smooth', block: 'start'});
 }
 
 // Tiny markdown renderer — covers what chart_analyst emits
+function renderForecastStrip(forecast) {
+  if (!forecast || forecast.available === false) return '';
+  const scenarios = Array.isArray(forecast.scenarios) ? forecast.scenarios : [];
+  if (!scenarios.length) return '';
+  const probs = {};
+  scenarios.forEach(s => {
+    const key = String(s.key || '').toLowerCase();
+    if (key) probs[key] = s.probability;
+  });
+  const tf = String(forecast.timeframe || '4h').toUpperCase();
+  const horizon = String(forecast.horizon || '3d').toUpperCase();
+  const confidence = forecast.confidence == null ? '?' : String(forecast.confidence);
+  const regime = String(forecast.regime || 'unknown').replace(/_/g, ' ');
+  return '<div class="forecast-strip">' +
+    '<strong>' + escapeHtml(tf) + ' Forecast:</strong> ' +
+    'Base ' + escapeHtml(String(probs.base ?? '?')) + '% / ' +
+    'Bull ' + escapeHtml(String(probs.bull ?? '?')) + '% / ' +
+    'Bear ' + escapeHtml(String(probs.bear ?? '?')) + '%' +
+    '<div class="forecast-meta">Horizon ' + escapeHtml(horizon) +
+    ' · confidence ' + escapeHtml(confidence) + '% · regime ' +
+    escapeHtml(regime) + '</div>' +
+    '</div>';
+}
+
 function renderMarkdown(src) {
   if (!src) return '<div style="color:var(--txt-3);">(no analysis text)</div>';
   // Strip frontmatter
@@ -1302,6 +1524,75 @@ function _renderInline(s) {
   return t;
 }
 
+
+// ============================================================
+// Paper tab
+// ============================================================
+async function loadPaper() {
+  try {
+    const data = await api('/markets-pro/paper/portfolio');
+    document.getElementById('paper-equity').textContent = fmtMoney(data.equity_gbp);
+    const pnl = (data.equity_gbp || 0) - (data.starting_gbp || 0);
+    document.getElementById('paper-equity-sub').textContent = 'P&L ' + fmtMoney(pnl);
+    document.getElementById('paper-cash').textContent = fmtMoney(data.cash_gbp);
+    document.getElementById('paper-hit').textContent = data.win_rate == null ? '-' : data.win_rate.toFixed(0) + '%';
+    document.getElementById('paper-hit-sub').textContent = (data.closed_count || 0) + ' closed trades';
+    renderPaperOpen(data.open_positions || []);
+    renderPaperClosed(data.closed_trades || []);
+  } catch (e) {
+    console.error('[markets-pro] paper load failed', e);
+  }
+}
+function renderPaperOpen(items) {
+  const el = document.getElementById('paper-open');
+  if (!items.length) { el.innerHTML = '<div class="empty-sub">No open paper positions.</div>'; return; }
+  el.innerHTML = items.map(p => {
+    const pnl = p.unrealised_pnl_gbp || 0;
+    const cls = pnl >= 0 ? 'pos' : 'neg';
+    return '<div class="paper-row"><div><strong>' + escapeHtml(p.ticker) + '</strong><div class="meta">qty ' + Number(p.quantity).toPrecision(6) + ' · entry ' + fmtMoney(p.entry_price) + '</div></div>' +
+      '<div>' + fmtMoney(p.value_gbp) + '</div><div class="paper-pnl ' + cls + '">' + fmtMoney(pnl) + '</div>' +
+      '<button class="btn ghost" onclick="paperSell(\'' + escapeHtml(p.ticker) + '\')">Close</button></div>';
+  }).join('');
+}
+function renderPaperClosed(items) {
+  const el = document.getElementById('paper-closed');
+  if (!items.length) { el.innerHTML = '<div class="empty-sub">No closed paper trades yet.</div>'; return; }
+  el.innerHTML = items.slice(0, 8).map(t => {
+    const pnl = t.pnl_gbp || 0;
+    const cls = pnl >= 0 ? 'pos' : 'neg';
+    return '<div class="paper-row"><div><strong>' + escapeHtml(t.ticker) + '</strong><div class="meta">' + escapeHtml(t.reason || 'closed') + '</div></div>' +
+      '<div class="paper-pnl ' + cls + '">' + fmtMoney(pnl) + '</div><div></div><div></div></div>';
+  }).join('');
+}
+async function paperBuy(payload) {
+  const r = await fetch('/markets-pro/paper/buy', {method:'POST', credentials:'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+  const data = await r.json();
+  if (!data.ok) throw new Error(data.error || 'paper buy failed');
+  switchTab('paper');
+  await loadPaper();
+}
+async function paperBuyFromForm() {
+  try {
+    await paperBuy({ticker: document.getElementById('paper-symbol').value, gbp: numOrNull(document.getElementById('paper-gbp').value), stop: numOrNull(document.getElementById('paper-stop').value), tp1: numOrNull(document.getElementById('paper-tp1').value)});
+  } catch (e) { alert(e.message || e); }
+}
+async function paperSell(ticker) {
+  try {
+    const r = await fetch('/markets-pro/paper/sell', {method:'POST', credentials:'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ticker, reason:'closed_manually'})});
+    const data = await r.json();
+    if (!data.ok) throw new Error(data.error || 'paper sell failed');
+    await loadPaper();
+  } catch (e) { alert(e.message || e); }
+}
+async function paperTakeFromAnalysis() {
+  const d = window._lastAnalysis || {};
+  const s = d.suggested || {};
+  const gbp = Number(prompt('Paper stake in GBP?', '100'));
+  if (!Number.isFinite(gbp) || gbp <= 0) return;
+  try { await paperBuy({ticker: d.ticker, gbp, stop: s.stop, tp1: s.tp1, tp2: s.tp2}); }
+  catch (e) { alert(e.message || e); }
+}
+
 // ============================================================
 // Boot
 // ============================================================
@@ -1319,6 +1610,7 @@ setInterval(() => {
   if (!active) return;
   if (active.dataset.tab === 'pulse') loadPulse();
   if (active.dataset.tab === 'dashboard') loadDashboard();
+  if (active.dataset.tab === 'paper') loadPaper();
 }, 60000);
 </script>
 </body>

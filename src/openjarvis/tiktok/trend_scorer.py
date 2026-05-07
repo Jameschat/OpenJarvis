@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import List, Dict, Tuple
 
 from openjarvis.tools.trend_miner import _hn_top, _reddit_top, _relevance
+from openjarvis.tiktok.state import save_trends
 
 _VIRAL_WORDS = [
     "everyone", "nobody", "secretly", "actually", "finally", "exposed",
@@ -63,6 +64,11 @@ def score_for_tiktok(item: Dict) -> int:
 
 def fetch_and_score(threshold: int = 70) -> List[Dict]:
     """Fetch from all sources, score, return items >= threshold sorted desc."""
+    items = _fetch_all_scored()
+    return [i for i in items if i["tiktok_score"] >= threshold]
+
+
+def _fetch_all_scored() -> List[Dict]:
     items: List[Dict] = []
     for item in _hn_top(query="ai", limit=20):
         item["source"] = "HN"
@@ -74,12 +80,20 @@ def fetch_and_score(threshold: int = 70) -> List[Dict]:
             item["tiktok_score"] = score_for_tiktok(item)
             items.append(item)
     items.sort(key=lambda x: x["tiktok_score"], reverse=True)
-    return [i for i in items if i["tiktok_score"] >= threshold]
+    return items
 
 
 def write_tiktok_trends(threshold: int = 70) -> Tuple[List[Dict], str]:
     """Fetch, score, write vault note. Returns (qualified_items, note_path)."""
-    items = fetch_and_score(threshold)
+    scored = _fetch_all_scored()
+    items = [i for i in scored if i["tiktok_score"] >= threshold]
+    save_trends([
+        {
+            **item,
+            "status": "qualified" if item["tiktok_score"] >= threshold else "below",
+        }
+        for item in scored[:20]
+    ])
     vault = os.environ.get(
         "OPENJARVIS_VAULT_PATH",
         str(Path.home() / "Claude" / "Obsidian" / "Claude" / "Brain"),
@@ -89,8 +103,8 @@ def write_tiktok_trends(threshold: int = 70) -> Tuple[List[Dict], str]:
     date_str = datetime.date.today().isoformat()
     note_path = out_dir / f"{date_str}-tiktok-scores.md"
     lines = [f"# TikTok Trend Scores — {date_str}\n\n",
-             f"Threshold: {threshold} | Qualified: {len(items)}\n\n"]
-    for item in items[:20]:
+             f"Threshold: {threshold} | Qualified: {len(items)} | Scanned: {len(scored)}\n\n"]
+    for item in scored[:20]:
         s = item["tiktok_score"]
         lines.append(f"- ✅ **{s}** [{item['title']}]({item.get('url','')}) — {item['source']}\n")
     note_path.write_text("".join(lines), encoding="utf-8")

@@ -68,9 +68,15 @@ def equity_universe() -> List[Dict[str, str]]:
     return out
 
 
-def crypto_universe() -> List[Dict[str, str]]:
-    """Return the dynamic top-100 crypto universe via CoinGecko."""
-    coins = coingecko.fetch_top_100()
+def crypto_universe(n: int = 1000) -> List[Dict[str, str]]:
+    """Return the dynamic top-n crypto universe via CoinGecko.
+
+    Default expanded to 1000 (was 100) so the briefing + pulse pages
+    can reason over the long tail. The `fetch_top_n` cache makes
+    repeated calls cheap; the first cold call paginates 4× with a
+    polite 2.5s gap.
+    """
+    coins = coingecko.fetch_top_n(n) if n > 100 else coingecko.fetch_top_100()
     out = []
     for c in coins:
         sym = (c.get("symbol") or "").upper()
@@ -105,7 +111,7 @@ def run(*, range_str: str = "3mo",
         include_crypto: bool = True,
         equity_gap_s: float = 0.25,
         crypto_gap_s: float = 2.5,
-        max_crypto: int = 100) -> Dict[str, Any]:
+        max_crypto: int = 1000) -> Dict[str, Any]:
     """Run the full backfill. Returns a summary dict.
 
     Politeness gaps are kept conservative — if yfinance starts 429ing
@@ -135,7 +141,7 @@ def run(*, range_str: str = "3mo",
             time.sleep(equity_gap_s)
 
     if include_crypto:
-        coins = crypto_universe()[:max_crypto]
+        coins = crypto_universe(max_crypto)[:max_crypto]
         for inst in coins:
             t, m = inst["ticker"], inst["market"]
             res = backfill_one(t, m, range_str=range_str)

@@ -379,7 +379,7 @@ function renderTrends(trends) {
     const sc = t.tiktok_score || 0;
     const cls = sc >= 80 ? 'score-high' : sc >= 60 ? 'score-med' : 'score-low';
     const status = t.status || 'below';
-    const pillCls = {scripting:'pill-scripting',generating:'pill-generating',queued:'pill-queued'}[status] || 'pill-below';
+    const pillCls = {qualified:'pill-queued',scripting:'pill-scripting',generating:'pill-generating',queued:'pill-queued'}[status] || 'pill-below';
     return `<div class="trend-item">
       <div class="score-badge ${cls}">${sc}</div>
       <div class="trend-info">
@@ -586,7 +586,15 @@ async function triggerScan(btn) {
   try {
     const r = await fetch('/tiktok/trigger', {method:'POST'});
     const d = await r.json();
-    alert(d.ok ? `Scan complete — ${d.qualified} trends qualified` : 'Error: ' + d.error);
+    if (!d.ok) {
+      alert('Error: ' + d.error);
+    } else if (d.qualified > 0) {
+      alert(`Scan complete - ${d.qualified} trends qualified`);
+    } else if (d.scanned > 0) {
+      alert(`Scan complete - 0 trends met threshold ${d.threshold}. Top score was ${d.top_score}; showing top ${d.scanned} candidates. Lower the threshold in Settings to qualify them.`);
+    } else {
+      alert('Scan complete - no trends fetched from HN or Reddit. Try again later.');
+    }
   } finally {
     btn.textContent = '▶ Scan Now'; btn.disabled = false;
     fetchState();

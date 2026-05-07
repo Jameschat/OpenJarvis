@@ -22,6 +22,7 @@ fetch happens.
 from __future__ import annotations
 
 import logging
+import re
 import threading
 import time
 from typing import Any, Dict, List, Optional
@@ -85,22 +86,91 @@ _top_100_cache: List[Dict[str, Any]] = []
 _top_100_cached_at: float = 0.0
 _TOP_100_TTL_S = 600.0   # refresh every 10 min
 
+# Wider universe cache keyed by n (e.g. 250, 500, 1000). Same TTL as top_100.
+_top_n_cache: Dict[int, List[Dict[str, Any]]] = {}
+_top_n_cached_at: Dict[int, float] = {}
+_TOP_N_TTL_S = 600.0
+
+
+def _slugify_coin_id(text: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", (text or "").strip().lower()).strip("-")
+
+
+def _coin_matches(c: Dict[str, Any], s_upper: str, slug: str) -> bool:
+    return (
+        (c.get("symbol") or "").upper() == s_upper
+        or (c.get("id") or "").lower() == slug
+        or _slugify_coin_id(c.get("name") or "") == slug
+    )
+
 
 def _resolve_id(symbol: str) -> Optional[str]:
-    """Return the CoinGecko coin id for a human ticker like 'BTC'."""
+    """Return the CoinGecko coin id for a ticker, coin name, or slug."""
     if not symbol:
         return None
-    s = symbol.strip().upper()
-    # Strip common GBP/USD suffixes
+    raw = symbol.strip()
+    s = raw.upper()
     for sfx in ("-GBP", "/GBP", "GBP", "-USD", "/USD", "USD"):
         if s.endswith(sfx) and s != sfx:
             s = s[: -len(sfx)] or s
+            raw = raw[: -len(sfx)] or raw
             break
+    slug = _slugify_coin_id(raw)
     with _lock:
         for c in _top_100_cache:
-            if c.get("symbol", "").upper() == s:
+            if _coin_matches(c, s, slug):
                 return c.get("id")
-    return _FALLBACK_SYMBOL_TO_ID.get(s)
+        for n in sorted(_top_n_cache.keys(), reverse=True):
+            for c in _top_n_cache[n]:
+                if _coin_matches(c, s, slug):
+                    return c.get("id")
+    if s in _FALLBACK_SYMBOL_TO_ID:
+        return _FALLBACK_SYMBOL_TO_ID.get(s)
+    searched = _search_coin_id(raw)
+    if searched:
+        return searched
+    if slug and "-" in slug:
+        return slug
+    return None
+
+
+def _search_coin_id(query: str, *, timeout: float = 8.0) -> Optional[str]:
+    """Resolve long-tail symbols/names through CoinGecko /search.
+
+    Needed for coins beyond the cached top-1000, e.g. Purple Pepe
+    (rank ~1600, symbol PURPE, id purple-pepe).
+    """
+    q = (query or "").strip()
+    if not q:
+        return None
+    q_upper = q.upper()
+    q_slug = _slugify_coin_id(q)
+    try:
+        import httpx  # type: ignore
+    except Exception:
+        return None
+    try:
+        with httpx.Client(timeout=timeout, headers=_HEADERS) as client:
+            r = client.get(_BASE + "/search", params={"query": q})
+            if r.status_code != 200:
+                logger.debug("coingecko search %s: HTTP %d", q, r.status_code)
+                return None
+            coins = (r.json() or {}).get("coins") or []
+    except Exception as exc:
+        logger.debug("coingecko search %s: %s", q, exc)
+        return None
+    if not coins:
+        return None
+    for c in coins:
+        if (c.get("symbol") or "").upper() == q_upper:
+            return c.get("id")
+    for c in coins:
+        if (c.get("id") or "").lower() == q_slug:
+            return c.get("id")
+    for c in coins:
+        if _slugify_coin_id(c.get("name") or "") == q_slug:
+            return c.get("id")
+    return coins[0].get("id")
 
 
 def fetch_top_100(*, vs_currency: str = "gbp",
@@ -184,6 +254,141 @@ def fetch_top_100(*, vs_currency: str = "gbp",
     return list(out)
 
 
+def fetch_top_n(n: int = 1000, *, vs_currency: str = "gbp",
+                timeout: float = 15.0,
+                page_gap_s: float = 2.5) -> List[Dict[str, Any]]:
+    """Fetch the top-n coins by market cap, paginating /coins/markets.
+
+    CoinGecko caps per_page at 250, so n=1000 → 4 sequential calls.
+    Stays under the free-tier 30/min ceiling with ``page_gap_s``
+    between pages. Cached for 10 minutes per ``n``. Returns a list of
+    dicts in the same shape as :func:`fetch_top_100`.
+    """
+    if n <= 100:
+        # Reuse the dedicated 100-cache so we don't double-paginate.
+        return fetch_top_100(vs_currency=vs_currency, timeout=timeout)[:n]
+
+    now = time.time()
+    with _lock:
+        cached = _top_n_cache.get(n)
+        cached_at = _top_n_cached_at.get(n, 0.0)
+        if cached and (now - cached_at) < _TOP_N_TTL_S:
+            return list(cached)
+
+    try:
+        import httpx  # type: ignore
+    except Exception:
+        with _lock:
+            return list(_top_n_cache.get(n) or [])
+
+    per_page = 250
+    pages = (n + per_page - 1) // per_page
+    out: List[Dict[str, Any]] = []
+    try:
+        with httpx.Client(timeout=timeout, headers=_HEADERS) as client:
+            for page in range(1, pages + 1):
+                if page > 1:
+                    time.sleep(page_gap_s)
+                r = client.get(_BASE + "/coins/markets", params={
+                    "vs_currency": vs_currency,
+                    "order": "market_cap_desc",
+                    "per_page": str(per_page),
+                    "page": str(page),
+                    "sparkline": "true",
+                    "price_change_percentage": "24h,7d,30d",
+                })
+                if r.status_code != 200:
+                    logger.debug("coingecko top_n page %d: HTTP %d",
+                                 page, r.status_code)
+                    break
+                data = r.json() or []
+                if not data:
+                    break
+                for c in data:
+                    try:
+                        out.append({
+                            "id": c.get("id"),
+                            "symbol": (c.get("symbol") or "").upper(),
+                            "name": c.get("name"),
+                            "last": float(c.get("current_price") or 0.0),
+                            "change_pct": (
+                                float(c["price_change_percentage_24h"])
+                                if c.get("price_change_percentage_24h") is not None else None
+                            ),
+                            "change_24h_pct": (
+                                float(c["price_change_percentage_24h"])
+                                if c.get("price_change_percentage_24h") is not None else None
+                            ),
+                            "change_7d_pct": (
+                                float(c["price_change_percentage_7d_in_currency"])
+                                if c.get("price_change_percentage_7d_in_currency") is not None else None
+                            ),
+                            "change_30d_pct": (
+                                float(c["price_change_percentage_30d_in_currency"])
+                                if c.get("price_change_percentage_30d_in_currency") is not None else None
+                            ),
+                            "market_cap": (
+                                float(c["market_cap"]) if c.get("market_cap") is not None else None
+                            ),
+                            "volume_24h": (
+                                float(c["total_volume"]) if c.get("total_volume") is not None else None
+                            ),
+                            "sparkline_7d": (
+                                list(c.get("sparkline_in_7d", {}).get("price", []))
+                                if c.get("sparkline_in_7d") else []
+                            ),
+                            "ts": now,
+                            "currency": vs_currency.upper(),
+                            "source": "coingecko",
+                        })
+                    except (TypeError, ValueError, KeyError):
+                        continue
+    except Exception as exc:
+        logger.debug("coingecko top_n: fetch failed: %s", exc)
+        if not out:
+            with _lock:
+                return list(_top_n_cache.get(n) or [])
+
+    out = out[:n]
+    with _lock:
+        _top_n_cache[n] = list(out)
+        _top_n_cached_at[n] = now
+    return list(out)
+
+
+def fetch_coin_detail(coin_id: str, *,
+                      timeout: float = 10.0) -> Optional[Dict[str, Any]]:
+    """Per-coin detail call — used for fields the bulk /coins/markets
+    endpoint omits, notably ``genesis_date`` for age-based risk scoring.
+
+    Expensive (1 call per coin), so callers should cache aggressively.
+    """
+    if not coin_id:
+        return None
+    try:
+        import httpx  # type: ignore
+    except Exception:
+        return None
+    try:
+        with httpx.Client(timeout=timeout, headers=_HEADERS) as client:
+            r = client.get(_BASE + f"/coins/{coin_id}", params={
+                "localization": "false",
+                "tickers": "false",
+                "market_data": "false",
+                "community_data": "false",
+                "developer_data": "false",
+                "sparkline": "false",
+            })
+            if r.status_code != 200:
+                logger.debug("coingecko coin_detail %s: HTTP %d",
+                             coin_id, r.status_code)
+                return None
+            return r.json() or None
+    except Exception as exc:
+        logger.debug("coingecko coin_detail %s: %s", coin_id, exc)
+        return None
+
+
 def fetch_quote(ticker: str, *, timeout: float = 8.0) -> Optional[Dict[str, Any]]:
     """Single-coin quote in GBP, normalised to match the yf/kraken
     shape so callers don't care which source ran."""
@@ -249,11 +454,49 @@ def fetch_quote(ticker: str, *, timeout: float = 8.0) -> Optional[Dict[str, Any]
         return None
 
 
+def _bars_from_market_chart(data: Dict[str, Any], *, bucket_s: int = 4 * 3600) -> List[Dict[str, Any]]:
+    prices = data.get("prices") or []
+    volumes = data.get("total_volumes") or []
+    vol_by_bucket: Dict[int, float] = {}
+    for row in volumes:
+        try:
+            b = int((float(row[0]) / 1000.0) // bucket_s) * bucket_s
+            vol_by_bucket[b] = vol_by_bucket.get(b, 0.0) + float(row[1] or 0.0)
+        except (IndexError, TypeError, ValueError):
+            continue
+    buckets: Dict[int, List[float]] = {}
+    for row in prices:
+        try:
+            ts = float(row[0]) / 1000.0
+            price = float(row[1])
+            b = int(ts // bucket_s) * bucket_s
+            buckets.setdefault(b, []).append(price)
+        except (IndexError, TypeError, ValueError):
+            continue
+    bars: List[Dict[str, Any]] = []
+    for ts in sorted(buckets):
+        vals = buckets[ts]
+        if not vals:
+            continue
+        bars.append({
+            "ts": float(ts),
+            "open": vals[0],
+            "high": max(vals),
+            "low": min(vals),
+            "close": vals[-1],
+            "volume": vol_by_bucket.get(ts),
+        })
+    return bars
+
+
 def fetch_history(ticker: str, range_str: str = "3mo", *,
                   timeout: float = 12.0) -> Optional[list]:
-    """OHLCV history. CoinGecko returns 4-hourly bars for ranges 8-90
-    days; daily bars for >90 days. Returned in the same bar shape as
-    yf/kraken: [{ts, open, high, low, close, volume}, ...]."""
+    """OHLCV history for a CoinGecko coin.
+
+    Prefer /ohlc when available. For long-tail coins where CoinGecko has
+    chart data but /ohlc returns no rows, fall back to /market_chart and
+    synthesize 4h OHLC bars from the price series.
+    """
     coin_id = _resolve_id(ticker)
     if coin_id is None:
         return None
@@ -268,29 +511,36 @@ def fetch_history(ticker: str, range_str: str = "3mo", *,
             r = client.get(_BASE + f"/coins/{coin_id}/ohlc", params={
                 "vs_currency": "gbp", "days": str(days),
             })
-            if r.status_code != 200:
+            bars = []
+            if r.status_code == 200:
+                for row in r.json() or []:
+                    try:
+                        bars.append({
+                            "ts": float(row[0]) / 1000.0,
+                            "open": float(row[1]),
+                            "high": float(row[2]),
+                            "low": float(row[3]),
+                            "close": float(row[4]),
+                            "volume": None,
+                        })
+                    except (IndexError, ValueError, TypeError):
+                        continue
+            else:
                 logger.debug("coingecko ohlc %s: HTTP %d", coin_id, r.status_code)
-                return None
-            data = r.json() or []
-    except Exception as exc:
-        logger.debug("coingecko ohlc %s: %s", coin_id, exc)
-        return None
-    bars = []
-    # CoinGecko OHLC row: [timestamp_ms, open, high, low, close]
-    # No volume on this endpoint — set to None.
-    for row in data:
-        try:
-            bars.append({
-                "ts": float(row[0]) / 1000.0,
-                "open": float(row[1]),
-                "high": float(row[2]),
-                "low": float(row[3]),
-                "close": float(row[4]),
-                "volume": None,
+            if bars:
+                return bars
+
+            r2 = client.get(_BASE + f"/coins/{coin_id}/market_chart", params={
+                "vs_currency": "gbp", "days": str(days),
             })
-        except (IndexError, ValueError, TypeError):
-            continue
-    return bars
+            if r2.status_code != 200:
+                logger.debug("coingecko market_chart %s: HTTP %d", coin_id, r2.status_code)
+                return None
+            fallback = _bars_from_market_chart(r2.json() or {})
+            return fallback or None
+    except Exception as exc:
+        logger.debug("coingecko history %s: %s", coin_id, exc)
+        return None
 
 
 _global_cache: Dict[str, Any] = {}
@@ -349,6 +599,7 @@ def is_available() -> bool:
 
 
 __all__ = [
-    "fetch_top_100", "fetch_quote", "fetch_history", "fetch_global",
+    "fetch_top_100", "fetch_top_n", "fetch_coin_detail",
+    "fetch_quote", "fetch_history", "fetch_global",
     "is_available",
 ]

@@ -5,6 +5,8 @@ from unittest.mock import patch, MagicMock
 def test_get_pipeline_state_structure(tmp_path):
     with patch("openjarvis.tiktok.state._TIKTOK_DIR", tmp_path), \
          patch("openjarvis.tiktok.trend_scorer.fetch_and_score", return_value=[]):
+        from openjarvis.tiktok.state import save_trends
+        save_trends([{"title": "AI agents are everywhere", "tiktok_score": 42}])
         from openjarvis.tiktok.pipeline import get_pipeline_state
         state = get_pipeline_state()
     assert "settings" in state
@@ -12,6 +14,7 @@ def test_get_pipeline_state_structure(tmp_path):
     assert "posted" in state
     assert "finance" in state
     assert "comments" in state
+    assert state["trends"] == [{"title": "AI agents are everywhere", "tiktok_score": 42}]
     assert "pending" in state["queue"]
 
 def test_video_generator_entry_no_key(tmp_path):

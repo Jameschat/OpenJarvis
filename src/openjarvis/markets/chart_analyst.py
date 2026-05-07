@@ -32,7 +32,7 @@ import logging
 import math
 import os
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -179,7 +179,7 @@ def _fetch_for_ticker(ticker: str, timeframe: str
         t0 = time.time()
         bars = _fetch_kraken(pair, tf)
         if bars:
-            print(f"[CHART] fetch: kraken {pair} → {len(bars)} bars "
+            print(f"[CHART] fetch: kraken {pair} -> {len(bars)} bars "
                   f"in {time.time()-t0:.1f}s", flush=True)
             return bars, f"kraken:{pair}", tf
         print(f"[CHART] fetch: kraken {pair} returned nothing, "
@@ -191,7 +191,7 @@ def _fetch_for_ticker(ticker: str, timeframe: str
         t0 = time.time()
         bars_cg = coingecko.fetch_history(ticker, range_str="1mo")
         if bars_cg:
-            print(f"[CHART] fetch: coingecko {ticker} → {len(bars_cg)} "
+            print(f"[CHART] fetch: coingecko {ticker} -> {len(bars_cg)} "
                   f"bars in {time.time()-t0:.1f}s (4h granularity)",
                   flush=True)
             return bars_cg, "coingecko (4h granularity)", "4h"
@@ -408,10 +408,55 @@ def _last(xs: List[Optional[float]]) -> Optional[float]:
 # 4. Render annotated chart — matplotlib
 # ---------------------------------------------------------------------------
 
+def _forecast_overlay_series(
+    last_ts: float,
+    step_seconds: int,
+    forecast: Optional[Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
+    if not forecast or not forecast.get("available"):
+        return None
+    scenarios = forecast.get("scenarios") or []
+    paths: Dict[str, List[float]] = {}
+    for scenario in scenarios:
+        key = str(scenario.get("key") or "").lower()
+        points = scenario.get("path") or []
+        vals = []
+        for point in points:
+            try:
+                vals.append(float(point["price"]))
+            except (KeyError, TypeError, ValueError):
+                continue
+        if key and vals:
+            paths[key] = vals
+    if not paths:
+        return None
+    max_len = max(len(v) for v in paths.values())
+    if max_len < 2:
+        return None
+    times = [
+        datetime.fromtimestamp(float(last_ts), timezone.utc).replace(tzinfo=None) +
+        timedelta(seconds=max(60, int(step_seconds)) * i)
+        for i in range(max_len)
+    ]
+    range_low = []
+    range_high = []
+    for i in range(max_len):
+        vals_i = [vals[i] for vals in paths.values() if i < len(vals)]
+        range_low.append(min(vals_i))
+        range_high.append(max(vals_i))
+    return {
+        "times": times,
+        "paths": paths,
+        "range_low": range_low,
+        "range_high": range_high,
+    }
+
+
 def _render_chart(ticker: str, timeframe: str,
                   bars: List[Dict[str, Any]],
                   ind: Dict[str, Any],
                   suggested: Optional[Dict[str, Any]] = None,
+                  forecast: Optional[Dict[str, Any]] = None,
                   ) -> Optional[Path]:
     """Render a candlestick chart with EMA overlays + RSI panel +
     marked support/resistance + suggested entry/stop/target zones.
@@ -438,6 +483,9 @@ def _render_chart(ticker: str, timeframe: str,
     highs  = [b["high"]  for b in bars]
     lows   = [b["low"]   for b in bars]
     closes = [b["close"] for b in bars]
+    step_seconds = 4 * 3600
+    if len(bars) >= 2:
+        step_seconds = max(60, int(bars[-1]["ts"] - bars[-2]["ts"]))
 
     fig = plt.figure(figsize=(13, 8), facecolor="#0a1422")
     gs = fig.add_gridspec(3, 1, height_ratios=[3, 1, 0.6], hspace=0.05)
@@ -519,6 +567,35 @@ def _render_chart(ticker: str, timeframe: str,
         color="#cfe7ff", fontsize=11, pad=10,
     )
 
+    overlay = _forecast_overlay_series(bars[-1]["ts"], step_seconds, forecast)
+    if overlay:
+        times_f = overlay["times"]
+        paths = overlay["paths"]
+        colours = {"base": "#5ed0e0", "bull": "#22c55e", "bear": "#ef4444"}
+        labels = {"base": "Base forecast", "bull": "Bull forecast",
+                  "bear": "Bear forecast"}
+        range_low = overlay.get("range_low")
+        range_high = overlay.get("range_high")
+        if range_low and range_high:
+            ax_p.fill_between(times_f, range_low, range_high,
+                              color="#5ed0e0", alpha=0.08,
+                              label="Forecast range")
+        ax_p.axvline(times_f[0], color="#7a90b0", linewidth=0.8,
+                     linestyle=":", alpha=0.7)
+        for key in ("base", "bull", "bear"):
+            vals = paths.get(key)
+            if not vals:
+                continue
+            ax_p.plot(times_f, vals, color=colours[key], linewidth=1.6,
+                      linestyle=(0, (2, 3)), alpha=0.95,
+                      label=labels[key])
+            ax_p.text(times_f[-1], vals[-1], f"  {key.upper()}",
+                      color=colours[key], fontsize=7, va="center",
+                      fontweight="bold")
+        ax_p.set_xlim(ts[0], times_f[-1])
+        ax_p.legend(loc="upper left", facecolor="#0a1422",
+                    edgecolor="#1e3554", labelcolor="#cfe7ff", fontsize=8)
+
     # RSI panel
     rsi = (ind.get("rsi_series") or [])[-len(ts):]
     ax_r.plot(ts, rsi, color="#5ed0e0", linewidth=1.0)
@@ -553,7 +630,7 @@ def _render_chart(ticker: str, timeframe: str,
     fig.savefig(out_path, dpi=120, facecolor=fig.get_facecolor(),
                 bbox_inches="tight")
     plt.close(fig)
-    print(f"[CHART] render: ok → {out_path.name}", flush=True)
+    print(f"[CHART] render: ok -> {out_path.name}", flush=True)
     return out_path
 
 
@@ -664,7 +741,7 @@ SUGGESTED LEVELS (mechanical, not predictions):
 Write a 220-word research note in this EXACT structure (the first \
 line MUST be the verdict heading — operator scans this first):
 
-## Verdict: LONG | SHORT | NEUTRAL — <conviction: low|mid|high>
+{risk_block}## Verdict: LONG | SHORT | NEUTRAL — <conviction: low|mid|high>
 
 ONE sentence stating the bias derived from the indicators. \
 Use the supplied bias field as the starting point but you may \
@@ -699,9 +776,92 @@ End. No disclaimers — they're added by the persistence layer.
 """
 
 
+def _risk_for_ticker(ticker: str, source: str) -> Optional[Dict[str, Any]]:
+    """Return a risk dict for a crypto ticker, or None for non-crypto.
+
+    Pulls the bulk row from CoinGecko's warm cache (populated by Pulse
+    or the 1000-coin backfill). Falls back to a single-coin quote if
+    the cache is cold. Lazily fetches /coins/{id} for the age penalty —
+    cheap because it's one call per analyzed chart, not per Pulse row.
+    """
+    is_crypto = (
+        ticker == "BTC" or ticker == "ETH"
+        or "kraken" in (source or "").lower()
+        or "coingecko" in (source or "").lower()
+    )
+    if not is_crypto:
+        return None
+    try:
+        from openjarvis.markets.sources import coingecko
+        from openjarvis.markets import risk as _risk
+    except Exception:
+        return None
+
+    bulk = coingecko.fetch_top_n(1000) or coingecko.fetch_top_100() or []
+    coin: Optional[Dict[str, Any]] = None
+    for c in bulk:
+        if (c.get("symbol") or "").upper() == ticker.upper():
+            coin = c
+            break
+
+    if coin is None:
+        q = coingecko.fetch_quote(ticker)
+        if not q:
+            return None
+        coin = {
+            "name": q.get("ticker") or ticker,
+            "symbol": ticker,
+            "market_cap": None, "volume_24h": q.get("volume"),
+            "last": q.get("last"),
+            "change_24h_pct": q.get("change_24h_pct"),
+            "sparkline_7d": [],
+        }
+
+    detail = None
+    if coin.get("id"):
+        try:
+            detail = coingecko.fetch_coin_detail(coin["id"])
+        except Exception:
+            detail = None
+
+    return _risk.score_coin(coin, detail=detail)
+
+
+def _format_risk_block(risk: Optional[Dict[str, Any]]) -> str:
+    """Inline directive for the synth prompt — empty when clean."""
+    if not risk:
+        return ""
+    key = risk.get("label_key")
+    if key == "rugpull":
+        reasons = "; ".join(risk.get("reasons") or []) or "multiple risk signals"
+        return (
+            "RUGPULL OVERRIDE — risk score "
+            f"{risk.get('score')} / 100 ({reasons}). This coin has a high "
+            "probability of being a pump-and-dump or rug-pull. The verdict "
+            "MUST be NEUTRAL with conviction low. State explicitly in the "
+            "Read section: 'High scam-risk profile — refusing directional "
+            "verdict regardless of TA setup'. Do NOT issue LONG.\n\n"
+        )
+    if key == "high":
+        reasons = "; ".join(risk.get("reasons") or [])
+        return (
+            f"HIGH-RISK ADVISORY — risk score {risk.get('score')} / 100 "
+            f"({reasons}). Downgrade conviction by one band (high→mid, "
+            "mid→low). Mention the risk profile in the Setup quality "
+            "paragraph.\n\n"
+        )
+    if key == "caution":
+        return (
+            f"Caution flag — risk score {risk.get('score')} / 100. Mention "
+            "the elevated risk profile briefly in Setup quality.\n\n"
+        )
+    return ""
+
+
 def _synthesize(image_path: Path, ticker: str, timeframe: str,
                 ind: Dict[str, Any], source: str,
-                suggested: Dict[str, Any]) -> Dict[str, Any]:
+                suggested: Dict[str, Any],
+                risk: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     print("[CHART] step 5/5: synthesise (gpt-4o vision)", flush=True)
     try:
         from openjarvis.cli.llm_fallback import _get_openai_client
@@ -734,6 +894,7 @@ def _synthesize(image_path: Path, ticker: str, timeframe: str,
         tp1=_fmt(suggested.get("tp1")),
         tp2=_fmt(suggested.get("tp2")),
         rr=_fmt(suggested.get("rr_to_tp1"), 2),
+        risk_block=_format_risk_block(risk),
     )
     content: List[Dict[str, Any]] = [{"type": "text", "text": prompt}]
     if b64:
@@ -800,6 +961,56 @@ def _fmt(v: Optional[float], decimals: int = 4) -> str:
     return f"{v:.{decimals}f}"
 
 
+def _format_forecast_markdown(forecast: Optional[Dict[str, Any]]) -> str:
+    if not forecast or not forecast.get("available"):
+        return ""
+
+    timeframe = str(forecast.get("timeframe") or "4h").upper()
+    horizon = str(forecast.get("horizon") or "3d").upper()
+    confidence = forecast.get("confidence")
+    regime = str(forecast.get("regime") or "unknown").replace("_", " ")
+    scenarios = forecast.get("scenarios") or []
+
+    lines = [
+        f"## {timeframe} Forecast Scenarios",
+        "",
+        (
+            f"- Horizon: {horizon}"
+            f" | Confidence: {confidence}%"
+            f" | Regime: {regime}"
+        ),
+        (
+            f"- Range: {_fmt(forecast.get('range_low'))}"
+            f" to {_fmt(forecast.get('range_high'))}"
+        ),
+        "",
+    ]
+
+    for scenario in scenarios:
+        label = str(scenario.get("label") or scenario.get("key") or "Scenario")
+        probability = scenario.get("probability")
+        lines.extend([
+            f"### {label}",
+            (
+                f"- Probability: {probability}%"
+                f" | Bias: {scenario.get('bias') or 'n/a'}"
+                f" | R/R: {_fmt(scenario.get('rr'), 2)}"
+            ),
+            (
+                f"- Trigger: {_fmt(scenario.get('trigger'))}"
+                f" | Target: {_fmt(scenario.get('target'))}"
+                f" | Stop: {_fmt(scenario.get('stop'))}"
+                f" | Invalidation: {_fmt(scenario.get('invalidation'))}"
+            ),
+        ])
+        reason = scenario.get("reason")
+        if reason:
+            lines.append(f"- Reason: {reason}")
+        lines.append("")
+
+    return "\n".join(lines).rstrip() + "\n\n"
+
+
 # ---------------------------------------------------------------------------
 # 6. Persist + emit widget
 # ---------------------------------------------------------------------------
@@ -810,7 +1021,9 @@ def _persist_analysis(ticker: str, timeframe: str,
                       ind: Dict[str, Any],
                       suggested: Dict[str, Any],
                       source: str,
-                      original_screenshot: Path) -> Path:
+                      original_screenshot: Path,
+                      risk: Optional[Dict[str, Any]] = None,
+                      forecast: Optional[Dict[str, Any]] = None) -> Path:
     out_dir = _charts_dir()
     stamp = datetime.now().strftime("%Y-%m-%d-%H%M")
     sym_safe = "".join(c for c in ticker if c.isalnum())
@@ -824,6 +1037,25 @@ def _persist_analysis(ticker: str, timeframe: str,
         except Exception:
             chart_md = ""
     body = analysis.get("body") or "_(no analysis text generated)_"
+    forecast_md = _format_forecast_markdown(forecast)
+
+    # Risk banner — prepended above the analysis body so it's the
+    # first thing visible. Only rendered for non-clean coins.
+    risk_md = ""
+    risk_fm = ""
+    if risk and risk.get("label_key") and risk["label_key"] != "clean":
+        key = risk["label_key"]
+        emoji = risk.get("label_emoji") or ""
+        label = risk.get("label") or key.upper()
+        score = risk.get("score")
+        reasons = "; ".join(risk.get("reasons") or [])
+        prefix = "> [!danger]" if key == "rugpull" else "> [!warning]"
+        risk_md = (
+            f"\n{prefix} {emoji} {label} — risk score {score}/100\n"
+            f"> {reasons}\n\n"
+        )
+        risk_fm = f"risk_label: {key}\nrisk_score: {score}\n"
+
     md = (
         "---\n"
         f"type: chart-analysis\n"
@@ -831,11 +1063,13 @@ def _persist_analysis(ticker: str, timeframe: str,
         f"ticker: {ticker}\n"
         f"timeframe: {timeframe}\n"
         f"source: {source}\n"
+        + risk_fm +
         "---\n\n"
         f"# Chart analysis — {ticker} · {timeframe}\n\n"
         "*Personal technical-analysis note for the operator. Levels "
         "are mechanically derived from indicators, not predictions or "
         "advice. Not for any third party.*\n"
+        + risk_md
         + chart_md
         + body
         + "\n\n## Audit footer\n\n"
@@ -881,7 +1115,8 @@ def _emit_chart_widget(chart_path: Optional[Path], caption: str) -> None:
 
 def analyze_chart(image_path: str,
                   ticker_hint: Optional[str] = None,
-                  timeframe: str = "2h") -> str:
+                  timeframe: str = "2h",
+                  forecast_horizon: str = "3d") -> str:
     """Main entry. Returns a JSON string with summary + paths."""
     print(f"[CHART] === analyze_chart start: {image_path!r} "
           f"hint={ticker_hint} tf={timeframe}", flush=True)
@@ -926,20 +1161,64 @@ def analyze_chart(image_path: str,
     ind = _compute_indicators(bars)
     suggested = _derive_suggested(ind)
 
+    # 3b. Risk profile (crypto only) — drives RUGPULL banner + verdict override
+    risk = _risk_for_ticker(ticker, source)
+    if risk:
+        print(f"[CHART] risk: {ticker} score={risk.get('score')} "
+              f"label={risk.get('label_key')} "
+              f"reasons={'; '.join(risk.get('reasons') or [])}",
+              flush=True)
+
+    # 3c. Three-path probabilistic forecast (deterministic TA, not LLM)
+    forecast = None
+    try:
+        from openjarvis.markets.forecast import generate_forecast
+        forecast = generate_forecast(
+            bars,
+            ind,
+            timeframe=actual_tf,
+            horizon=forecast_horizon,
+            risk=risk if isinstance(risk, dict) else None,
+        )
+    except Exception:
+        logger.exception("chart_analyst: forecast generation failed")
+        forecast = None
+
     # 4. Render annotated chart
-    chart_path = _render_chart(ticker, actual_tf, bars, ind, suggested)
+    chart_path = _render_chart(ticker, actual_tf, bars, ind, suggested,
+                               forecast=forecast)
 
     # 5. Synthesise
-    analysis = _synthesize(p, ticker, actual_tf, ind, source, suggested)
+    analysis = _synthesize(p, ticker, actual_tf, ind, source, suggested,
+                           risk=risk)
+
+    # 5b. Hard verdict override on rugpull — refuse LONG no matter what
+    # the LLM said. We've already prepended a directive in the prompt;
+    # this is the belt-and-braces post-process.
+    if risk and risk.get("label_key") == "rugpull":
+        v = (analysis.get("verdict") or "").upper()
+        if "LONG" in v or "BUY" in v:
+            print(f"[CHART] risk-override: stripping LONG verdict ({v!r})",
+                  flush=True)
+            forced = "NEUTRAL — low (forced by RUGPULL risk override)"
+            analysis["verdict"] = forced
+            analysis["headline"] = forced + " · high scam-risk profile"
 
     # 6. Persist
     md_path = _persist_analysis(ticker, actual_tf, analysis, chart_path,
-                                ind, suggested, source, p)
+                                ind, suggested, source, p, risk=risk,
+                                forecast=forecast)
 
     # 7. Emit widget for HUD
     headline = analysis.get("headline") or "TA read"
+    risk_caption = ""
+    if risk and risk.get("label_key") == "rugpull":
+        risk_caption = " · 🚨 RUGPULL"
+    elif risk and risk.get("label_key") == "high":
+        risk_caption = " · ⚠ HIGH RISK"
     print(f"[CHART] step 6/6: emit widget", flush=True)
-    _emit_chart_widget(chart_path, f"{ticker} · {actual_tf} · {headline}")
+    _emit_chart_widget(chart_path,
+                       f"{ticker} · {actual_tf}{risk_caption} · {headline}")
     print(f"[CHART] === analyze_chart DONE in "
           f"{time.time()-started:.1f}s · {ticker}/{actual_tf} · "
           f"verdict={analysis.get('verdict')} · widget={'yes' if chart_path else 'no'}",
@@ -952,6 +1231,8 @@ def analyze_chart(image_path: str,
         "timeframe_actual": actual_tf,
         "source": source,
         "verdict": analysis.get("verdict") or (suggested.get("bias") or "neutral").upper(),
+        "risk": risk,
+        "forecast": forecast,
         "vision_notes": vision_notes,
         "indicators": {
             "last":    ind.get("last"),

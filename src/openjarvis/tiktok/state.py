@@ -133,6 +133,14 @@ def save_finance(finance: dict) -> None:
 
 # ── Comments (reply approval queue) ──────────────────────────────────────────
 
+def load_trends() -> list:
+    return _load("trends.json")
+
+
+def save_trends(trends: list) -> None:
+    _save("trends.json", trends)
+
+
 def load_comments() -> list:
     return _load("comments.json")
 

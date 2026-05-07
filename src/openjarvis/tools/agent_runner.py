@@ -368,6 +368,32 @@ DEFAULT_AGENTS: List[Dict[str, Any]] = [
         "color": "#5ed0e0",   # research cyan
         "provider": "claude",
     },
+    {
+        "id": "learning-reviewer",
+        "name": "learning-reviewer",
+        "role": (
+            "Reviews Jarvis outcomes and capability gaps, extracts patterns, "
+            "and writes a Brain learning digest. It may recommend tool research "
+            "but must not install or mutate external systems."
+        ),
+        "skills": ["learning", "autonomy", "outcomes", "github"],
+        "color": "#9ee493",
+        "provider": "python",
+        "python_entry": "openjarvis.tools.learning_reviewer:run_as_agent_task",
+    },
+    {
+        "id": "capability-scout",
+        "name": "capability-scout",
+        "role": (
+            "Searches GitHub for tools, MCP servers, APIs, CLIs, and libraries "
+            "that could close recorded Jarvis capability gaps. It ranks candidates "
+            "and writes Brain recommendations, but never installs or mutates systems."
+        ),
+        "skills": ["github", "tools", "mcp", "autonomy", "research"],
+        "color": "#f4d35e",
+        "provider": "python",
+        "python_entry": "openjarvis.tools.capability_scout:run_as_agent_task",
+    },
 
     # ---- Department heads (agency-agents integration, 2026-04-28) -------
     # Each head is a Claude-provider coordinator that orchestrates the

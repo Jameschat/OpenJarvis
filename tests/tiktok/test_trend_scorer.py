@@ -38,3 +38,18 @@ def test_write_tiktok_trends_creates_file(tmp_path):
     assert len(items) >= 1
     from pathlib import Path
     assert Path(note_path).exists()
+
+def test_write_tiktok_trends_saves_scored_items_below_threshold(tmp_path):
+    from openjarvis.tiktok.trend_scorer import write_tiktok_trends
+    from openjarvis.tiktok.state import load_trends
+    mock_items = [{"title": "AI agents are useful", "points": 20, "url": "http://a.com", "source": "HN"}]
+    with patch("openjarvis.tiktok.trend_scorer._hn_top", return_value=mock_items), \
+         patch("openjarvis.tiktok.trend_scorer._reddit_top", return_value=[]), \
+         patch("openjarvis.tiktok.state._TIKTOK_DIR", tmp_path / "state"), \
+         patch.dict("os.environ", {"OPENJARVIS_VAULT_PATH": str(tmp_path / "vault")}):
+        items, note_path = write_tiktok_trends(threshold=70)
+        trends = load_trends()
+    assert items == []
+    assert len(trends) == 1
+    assert trends[0]["title"] == "AI agents are useful"
+    assert trends[0]["status"] == "below"
