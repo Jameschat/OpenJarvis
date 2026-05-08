@@ -946,6 +946,13 @@ class _Handler(SimpleHTTPRequestHandler):
             # requested date (defaults to most-recent), plus a list of
             # available dates so the HUD widget can populate a dropdown.
             self._handle_briefing_get()
+        elif self.path.startswith("/digest"):
+            # Learning digest reader — /digest or /digest?date=YYYY-MM-DD.
+            # Returns the Jarvis learning digest from Brain/Knowledge/ for
+            # the requested date (defaults to most-recent). Mirrors the
+            # /briefing contract so the HUD can present digest + briefing
+            # with the same UX. Source: learning-reviewer agent, daily.
+            self._handle_digest_get()
         elif self.path.startswith("/markets/"):
             # Markets subsystem — Day-1 read endpoints for the HUD panel.
             # /markets/watchlist  → operator's tracked tickers + cached prices
@@ -2358,6 +2365,70 @@ class _Handler(SimpleHTTPRequestHandler):
                     content = target.read_text(encoding="utf-8")
             except Exception:
                 logger.exception("briefing read failed for %s", chosen)
+
+        return self._json_response(200, {
+            "available": available,
+            "date": chosen["date"] if chosen else None,
+            "content": content,
+        })
+
+    def _handle_digest_get(self) -> None:
+        """GET /digest[?date=YYYY-MM-DD] — return one Jarvis learning digest
+        from Brain/Knowledge/ plus a list of all available dates so the HUD
+        widget can offer a dropdown of past digests.
+
+        File pattern: '<YYYY-MM-DD> - Jarvis learning digest.md' produced
+        daily by the learning-reviewer agent. If date= isn't supplied (or
+        no exact match), falls back to most-recent available."""
+        try:
+            from openjarvis.tools.obsidian_brain import KNOWLEDGE_DIR
+        except Exception:
+            return self._json_response(503, {"error": "vault not initialised"})
+        if not KNOWLEDGE_DIR.exists():
+            return self._json_response(200, {
+                "available": [], "date": None, "content": "",
+                "note": "Knowledge dir not yet created.",
+            })
+
+        # Discover available digests. Pattern is
+        # "<YYYY-MM-DD> - Jarvis learning digest.md".
+        # Sort newest-first by the date in the filename.
+        import re
+        digest_re = re.compile(
+            r"^(\d{4}-\d{2}-\d{2}) - Jarvis learning digest\.md$",
+            re.IGNORECASE,
+        )
+        available: List[Dict[str, Any]] = []
+        for p in KNOWLEDGE_DIR.iterdir():
+            if not p.is_file():
+                continue
+            m = digest_re.match(p.name)
+            if not m:
+                continue
+            available.append({"date": m.group(1), "filename": p.name})
+        available.sort(key=lambda x: x["date"], reverse=True)
+
+        # Pick which one to return
+        from urllib.parse import urlparse, parse_qs
+        q = parse_qs(urlparse(self.path).query)
+        wanted = (q.get("date") or [None])[0]
+        chosen = None
+        if wanted:
+            chosen = next((a for a in available if a["date"] == wanted), None)
+        if chosen is None and available:
+            chosen = available[0]
+
+        content = ""
+        if chosen:
+            try:
+                # Defence-in-depth: never read outside KNOWLEDGE_DIR even if
+                # filenames-from-disk look fine. Construct the path explicitly
+                # from the validated date string + suffix.
+                target = KNOWLEDGE_DIR / f"{chosen['date']} - Jarvis learning digest.md"
+                if target.is_file() and target.resolve().is_relative_to(KNOWLEDGE_DIR.resolve()):
+                    content = target.read_text(encoding="utf-8")
+            except Exception:
+                logger.exception("digest read failed for %s", chosen)
 
         return self._json_response(200, {
             "available": available,
