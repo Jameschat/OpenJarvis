@@ -11,6 +11,38 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 
+def _group_repeated_failures(failed: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Group failed agent-tasks by agent_id; return any with count >= 2.
+
+    A single failure is a hiccup; two or more in the review window means
+    a systemic issue — wrong prompt, missing data prereq, broken upstream.
+    The operator should see this even when no formal capability gap was
+    recorded (e.g. data-prereq failures don't trip capability_gaps).
+    Sorted by count desc, then agent_id asc for stable rendering.
+    """
+    by_agent: Dict[str, List[Dict[str, Any]]] = {}
+    for rec in failed:
+        aid = rec.get("agent_id") or "unknown"
+        by_agent.setdefault(aid, []).append(rec)
+    repeated_failures: List[Dict[str, Any]] = []
+    for aid, recs in by_agent.items():
+        if len(recs) < 2:
+            continue
+        # Take the most recent error string as the representative — the
+        # earliest may be stale if the operator already started fixing it.
+        last_error = next(
+            (r.get("error") for r in reversed(recs) if r.get("error")),
+            "no error captured",
+        )
+        repeated_failures.append({
+            "agent_id": aid,
+            "count": len(recs),
+            "last_error": last_error,
+        })
+    repeated_failures.sort(key=lambda x: (-x["count"], x["agent_id"]))
+    return repeated_failures
+
+
 def build_learning_digest(
     date_str: str,
     outcomes: List[Dict[str, Any]],
@@ -24,6 +56,7 @@ def build_learning_digest(
     refusals = [r for r in outcomes if r.get("refusal")]
     recent_gaps = gap_summary.get("recent") or []
     repeated = gap_summary.get("repeated") or []
+    repeated_failures = _group_repeated_failures(failed)
 
     lines = [
         "---",
@@ -70,6 +103,15 @@ def build_learning_digest(
             lines.append(f"- **{item['capability']}** - {item['count']} occurrences")
     else:
         lines.append("- No repeated gaps yet.")
+    lines.extend(["", "## Repeated Failures", ""])
+    if repeated_failures:
+        for item in repeated_failures[:10]:
+            lines.append(
+                f"- **{item['agent_id']}** failed {item['count']}x in window — "
+                f"last error: {item['last_error']}"
+            )
+    else:
+        lines.append("- No agent failed twice or more in the review window.")
     lines.extend(["", "## Recommended Next Actions", ""])
     if repeated:
         for item in repeated[:5]:
@@ -82,6 +124,13 @@ def build_learning_digest(
         lines.append("- No capability-scout queue needed yet; wait for repeated or high-severity gaps.")
         if recent_gaps:
             lines.append("- Run `capability-queue` if the operator wants a prioritized evolution backlog now.")
+    if repeated_failures:
+        for item in repeated_failures[:5]:
+            lines.append(
+                f"- **Investigate `{item['agent_id']}`** — failing {item['count']}x with "
+                f"`{item['last_error']}`. Fix the underlying cause (data prereq, env var, "
+                f"prompt) before next scheduled run."
+            )
     lines.append("- For failed task patterns, update agent prompts only after a concrete repeated pattern appears.")
     lines.extend([
         "",
