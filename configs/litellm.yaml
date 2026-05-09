@@ -61,7 +61,11 @@ litellm_settings:
   # Retry handling — LiteLLM will retry within the same tier before falling
   # through to the next. Keep tight to avoid stacking latency on a real outage.
   num_retries: 1
-  request_timeout: 60   # seconds; covers slow local model warm-up
+  # Upstream call budget. Cloud calls return in <30s; we need this only
+  # for the local qwen3:32b leg, which on RTX 4090 with thinking-mode
+  # enabled needs 150–400s for a 4000-token study note. Set to 600 so
+  # the local fallback never aborts on a real generation.
+  request_timeout: 600
 
   # Drop unsupported params (e.g. OpenAI-only kwargs sent to ollama) rather
   # than erroring — keeps fallthrough working when JARVIS uses
