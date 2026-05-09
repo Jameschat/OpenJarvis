@@ -374,6 +374,111 @@ def write_study_note(
     return path
 
 
+# ---------------------------------------------------------------------------
+# Discipline rotation + agent entry point
+# ---------------------------------------------------------------------------
+
+
+_DISCIPLINE_ORDER = ["web-dev", "game-dev", "software-dev", "intelligence"]
+
+
+def _pick_next_discipline(state: Dict[str, Any]) -> str:
+    history = state.get("rotation_history") or []
+    if not history:
+        return _DISCIPLINE_ORDER[0]
+    last = history[-1]["discipline"]
+    try:
+        idx = _DISCIPLINE_ORDER.index(last)
+    except ValueError:
+        return _DISCIPLINE_ORDER[0]
+    return _DISCIPLINE_ORDER[(idx + 1) % len(_DISCIPLINE_ORDER)]
+
+
+def _vault_root() -> Path:
+    """Resolve vault root from the existing obsidian_brain helper."""
+    from openjarvis.tools import obsidian_brain as ob
+    return ob.BRAIN_ROOT
+
+
+def _call_qwen(prompt: str, *, max_tokens: int = 4000) -> Optional[str]:
+    """Call qwen3:32b via the LiteLLM proxy. Returns body or None on error."""
+    import os
+    try:
+        from openai import OpenAI
+    except ImportError:
+        return None
+    base_url = os.environ.get("OPENAI_BASE_URL", "http://localhost:4000")
+    # The proxy ignores the API key for the local model, but the OpenAI
+    # client SDK still requires *some* string. Use whatever is set; if
+    # nothing is set, "sk-noop" works against LiteLLM for local models.
+    api_key = os.environ.get("OPENAI_API_KEY", "sk-noop")
+    client = OpenAI(base_url=base_url, api_key=api_key)
+    try:
+        resp = client.chat.completions.create(
+            model="qwen3-32b-local",
+            messages=[
+                {"role": "system", "content": prompt},
+                {"role": "user", "content": "Produce the study note now."},
+            ],
+            max_tokens=max_tokens,
+            timeout=300,  # qwen3:32b on a 4090 may take 60-180s
+        )
+    except Exception:
+        return None
+    if not resp.choices:
+        return None
+    return resp.choices[0].message.content
+
+
+def run_as_agent_task(prompt: str = "") -> Dict[str, Any]:
+    """Entry point for agent_runner's python provider.
+
+    Returns a dict the agent_runner records as the task result. Never raises
+    — failures become structured 'skipped' / 'error' results.
+    """
+    now = datetime.now(timezone.utc)
+    if is_gpu_busy():
+        return {"ok": False, "skipped": True, "reason": "gpu busy"}
+
+    vault = _vault_root()
+    state = load_state(vault)
+    started_disc = _pick_next_discipline(state)
+    chosen: Optional[Topic] = None
+    for offset in range(len(_DISCIPLINE_ORDER)):
+        idx = (_DISCIPLINE_ORDER.index(started_disc) + offset) % len(_DISCIPLINE_ORDER)
+        disc = _DISCIPLINE_ORDER[idx]
+        candidate = pick_next_topic(disc, vault, now=now)
+        if candidate is not None:
+            chosen = candidate
+            break
+    if chosen is None:
+        return {"ok": False, "skipped": True, "reason": "all disciplines exhausted"}
+
+    body = _call_qwen(build_study_prompt(chosen))
+    if not body:
+        return {
+            "ok": False,
+            "error": "qwen call failed (proxy down? rate limit? timeout?)",
+            "discipline": chosen.discipline,
+            "topic": chosen.slug,
+        }
+
+    path = write_study_note(topic=chosen, body=body, vault_root=vault, now=now)
+    record_studied(
+        discipline=chosen.discipline,
+        topic_slug=chosen.slug,
+        vault_root=vault,
+        now=now,
+    )
+    return {
+        "ok": True,
+        "discipline": chosen.discipline,
+        "topic": chosen.slug,
+        "status": chosen.status,
+        "path": str(path),
+    }
+
+
 __all__ = [
     "Topic",
     "load_state",
@@ -383,4 +488,5 @@ __all__ = [
     "is_gpu_busy",
     "build_study_prompt",
     "write_study_note",
+    "run_as_agent_task",
 ]

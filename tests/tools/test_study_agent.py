@@ -248,3 +248,30 @@ def test_write_study_note_self_grade_defaults_when_unparseable(vault_root):
     )
     content = path.read_text(encoding="utf-8")
     assert "self_grade: 0" in content   # 0 = unparseable, audit will flag
+
+
+def test_pick_next_discipline_starts_with_web_dev_on_empty_history():
+    state = {"version": 1, "disciplines": {}, "rotation_history": []}
+    assert study_agent._pick_next_discipline(state) == "web-dev"
+
+
+def test_pick_next_discipline_advances_after_web_dev():
+    state = {
+        "version": 1,
+        "disciplines": {},
+        "rotation_history": [
+            {"discipline": "web-dev", "topic": "x", "started_at": "2026-05-08T02:00:00"}
+        ],
+    }
+    assert study_agent._pick_next_discipline(state) == "game-dev"
+
+
+def test_pick_next_discipline_wraps_after_intelligence():
+    state = {
+        "version": 1,
+        "disciplines": {},
+        "rotation_history": [
+            {"discipline": "intelligence", "topic": "x", "started_at": "2026-05-08T02:00:00"}
+        ],
+    }
+    assert study_agent._pick_next_discipline(state) == "web-dev"
