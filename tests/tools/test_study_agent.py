@@ -169,3 +169,82 @@ def test_gpu_busy_false_when_vram_below_threshold(monkeypatch):
         stdout = "5000, 24576\n"   # 20%
     monkeypatch.setattr(subprocess, "run", lambda *a, **kw: _FakeResult())
     assert study_agent.is_gpu_busy(threshold_pct=80) is False
+
+
+def test_build_study_prompt_includes_discipline_and_topic():
+    topic = study_agent.Topic(
+        discipline="web-dev",
+        slug="semantic-html-landmarks",
+        description="header/nav/main/section/article/aside",
+        status="unvisited",
+    )
+    prompt = study_agent.build_study_prompt(topic)
+    # Disciplines map to specific guidance — web-dev should mention MDN.
+    assert "web-dev" in prompt or "web development" in prompt.lower()
+    assert "semantic-html-landmarks" in prompt
+    assert "MDN" in prompt
+    # The output contract must be in the prompt — qwen3 needs to know
+    # the markdown structure required.
+    assert "## Key concepts" in prompt
+    assert "## Worked example" in prompt
+    assert "## Common pitfalls" in prompt
+    assert "self-grade" in prompt.lower()
+
+
+def test_build_study_prompt_revisit_status_changes_framing():
+    topic = study_agent.Topic(
+        discipline="web-dev",
+        slug="semantic-html-landmarks",
+        description="header/nav/main/section/article/aside",
+        status="revisit",
+    )
+    prompt = study_agent.build_study_prompt(topic)
+    # Revisit sessions should ask for newer/deeper material, not a repeat.
+    assert "revisit" in prompt.lower() or "what's changed" in prompt.lower()
+
+
+def test_write_study_note_creates_file_at_expected_path(vault_root):
+    topic = study_agent.Topic(
+        discipline="web-dev",
+        slug="semantic-html-landmarks",
+        description="header/nav/main/section/article/aside",
+        status="unvisited",
+    )
+    qwen_response = (
+        "## Key concepts\n- ...\n\n## Worked example\n```html\n...\n```\n\n"
+        "## Common pitfalls\n- ...\n\n## Self-grade and reasoning\n4/5 — solid.\n\n"
+        "## References\n- https://developer.mozilla.org/...\n"
+    )
+    now = datetime(2026, 5, 9, 2, 0, tzinfo=timezone.utc)
+    path = study_agent.write_study_note(
+        topic=topic,
+        body=qwen_response,
+        vault_root=vault_root,
+        now=now,
+    )
+    assert path.exists()
+    assert path.name == "2026-05-09 - semantic-html-landmarks.md"
+    assert path.parent.name == "web-dev"
+    content = path.read_text(encoding="utf-8")
+    assert "type: study" in content
+    assert "discipline: web-dev" in content
+    assert "topic: semantic-html-landmarks" in content
+    assert "model: qwen3:32b" in content
+    assert "self_grade: 4" in content   # parsed from "4/5 — solid"
+    assert "## Key concepts" in content
+
+
+def test_write_study_note_self_grade_defaults_when_unparseable(vault_root):
+    topic = study_agent.Topic(
+        discipline="web-dev",
+        slug="semantic-html-landmarks",
+        description="...",
+        status="unvisited",
+    )
+    body_without_grade = "## Key concepts\n- ...\n\n## References\n- ..."
+    now = datetime(2026, 5, 9, 2, 0, tzinfo=timezone.utc)
+    path = study_agent.write_study_note(
+        topic=topic, body=body_without_grade, vault_root=vault_root, now=now,
+    )
+    content = path.read_text(encoding="utf-8")
+    assert "self_grade: 0" in content   # 0 = unparseable, audit will flag

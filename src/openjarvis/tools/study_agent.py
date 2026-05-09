@@ -225,6 +225,155 @@ def is_gpu_busy(*, threshold_pct: int = 80) -> bool:
     return pct >= threshold_pct
 
 
+# ---------------------------------------------------------------------------
+# Prompt building
+# ---------------------------------------------------------------------------
+
+
+_DISCIPLINE_GUIDANCE = {
+    "web-dev": (
+        "You are a senior web developer mentor. Cite primary sources where "
+        "possible: MDN, the W3C spec, and recent (2024+) blog posts from "
+        "well-known engineers. Avoid framework hype; explain trade-offs."
+    ),
+    "game-dev": (
+        "You are a senior game developer mentor with cross-engine experience "
+        "(Unreal, Unity, Godot). Cite primary engine docs (docs.unrealengine.com, "
+        "docs.unity3d.com, docs.godotengine.org) and well-regarded GDC talks "
+        "where applicable. Discuss trade-offs honestly — engines have failure "
+        "modes."
+    ),
+    "software-dev": (
+        "You are a senior software engineer mentor. Cite original papers, "
+        "RFCs, and authoritative documentation. Avoid hype; quantify "
+        "trade-offs with rough numbers where possible (latency, memory, ops "
+        "complexity)."
+    ),
+    "intelligence": (
+        "You are a senior intelligence analyst / research-methodology "
+        "instructor. Cite primary sources (academic papers, government "
+        "manuals, foundational books). Emphasise epistemic humility and "
+        "structured techniques over confidence-projection."
+    ),
+}
+
+
+_OUTPUT_CONTRACT = """\
+[OUTPUT CONTRACT]
+
+Produce a markdown study note matching this structure EXACTLY:
+
+## Key concepts
+
+- 4-8 bullets covering the core ideas. Each bullet starts with a bold
+  noun phrase, then a one-sentence explanation.
+
+## Worked example
+
+A short concrete example — code block, walk-through, or scenario — that
+demonstrates one of the key concepts in action. Real, runnable / verifiable.
+
+## Common pitfalls
+
+- 3-5 bullets covering mistakes a competent-but-new practitioner makes,
+  with a one-sentence remedy each.
+
+## Self-grade and reasoning
+
+A single line: `<N>/5 — <one-sentence justification>` where N is your
+honest assessment of this note's quality (1=guesswork, 5=confident on
+all points, all sources verified).
+
+## References
+
+- 3-6 URLs you would expect to be authoritative for this topic. Bare URLs
+  preferred over [text](url) form so the operator can spot-check them.
+
+[FORBIDDEN]
+- Hedging without justification ("might", "could be" without why).
+- Inventing URLs you don't actually believe exist.
+- Padding — if you don't have 8 key concepts, give 4.
+"""
+
+
+def build_study_prompt(topic: Topic) -> str:
+    guidance = _DISCIPLINE_GUIDANCE.get(
+        topic.discipline,
+        "You are a senior subject-matter expert. Cite primary sources.",
+    )
+    framing = (
+        "This is a REVISIT of a topic studied previously — focus on what's "
+        "changed in the field over the past 30+ days OR a deeper layer not "
+        "covered last time. Do not simply restate basics."
+        if topic.status == "revisit"
+        else "This is a fresh topic — assume the reader is competent in "
+             "adjacent areas but not this specific one."
+    )
+    return (
+        f"[PERSONA]\n{guidance}\n\n"
+        f"[ROLE]\n{framing}\n\n"
+        f"[TOPIC]\n"
+        f"discipline: {topic.discipline}\n"
+        f"slug: {topic.slug}\n"
+        f"focus: {topic.description}\n\n"
+        f"{_OUTPUT_CONTRACT}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Note writer
+# ---------------------------------------------------------------------------
+
+
+_GRADE_LINE = re.compile(r"(?P<n>[1-5])\s*/\s*5\b")
+
+
+def _extract_self_grade(body: str) -> int:
+    """Pull `<N>/5` from the Self-grade section. 0 = unparseable."""
+    # Search only the section after "Self-grade" if present, else whole body.
+    section = body
+    if "Self-grade" in body or "self-grade" in body:
+        # Take everything from the first match of the Self-grade heading on.
+        idx = body.lower().find("self-grade")
+        section = body[idx:]
+    m = _GRADE_LINE.search(section)
+    return int(m.group("n")) if m else 0
+
+
+def write_study_note(
+    *,
+    topic: Topic,
+    body: str,
+    vault_root: Path,
+    now: datetime,
+) -> Path:
+    """Write a study note, returning the written path.
+
+    Path: `<vault_root>/Study/<discipline>/<YYYY-MM-DD> - <slug>.md`
+    """
+    date_str = now.strftime("%Y-%m-%d")
+    target_dir = vault_root / "Study" / topic.discipline
+    target_dir.mkdir(parents=True, exist_ok=True)
+    path = target_dir / f"{date_str} - {topic.slug}.md"
+    grade = _extract_self_grade(body)
+    frontmatter = (
+        "---\n"
+        "type: study\n"
+        f"date: {date_str}\n"
+        f"discipline: {topic.discipline}\n"
+        f"topic: {topic.slug}\n"
+        "model: qwen3:32b\n"
+        f"status: {topic.status}\n"
+        f"self_grade: {grade}\n"
+        "---\n\n"
+        f"# Study — {topic.slug}\n\n"
+        f"**Focus:** {topic.description}\n\n"
+    )
+    footer = "\n\n_Compiled by `study-agent` (qwen3:32b via LiteLLM)._\n"
+    path.write_text(frontmatter + body.strip() + footer, encoding="utf-8")
+    return path
+
+
 __all__ = [
     "Topic",
     "load_state",
@@ -232,4 +381,6 @@ __all__ = [
     "record_studied",
     "pick_next_topic",
     "is_gpu_busy",
+    "build_study_prompt",
+    "write_study_note",
 ]
