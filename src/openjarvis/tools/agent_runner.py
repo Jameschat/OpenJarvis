@@ -382,6 +382,24 @@ DEFAULT_AGENTS: List[Dict[str, Any]] = [
         "python_entry": "openjarvis.tools.learning_reviewer:run_as_agent_task",
     },
     {
+        "id": "study-agent",
+        "name": "study-agent",
+        "role": (
+            "Nightly self-study agent. Picks one topic from "
+            "Brain/Curriculum/<discipline>.md (rotating web-dev → game-dev → "
+            "software-dev → intelligence), runs a structured prompt against "
+            "qwen3:32b via the LiteLLM proxy, writes a study note to "
+            "Brain/Study/<discipline>/. No cloud tokens consumed. Skips when "
+            "GPU is busy with ACE-Step generation. Operator promotes vetted "
+            "notes to Brain/Knowledge/ manually — no auto-injection in v1."
+        ),
+        "model": "qwen3:32b",
+        "skills": ["study", "self-improvement", "knowledge-curation"],
+        "color": "#a8e0ff",
+        "provider": "python",
+        "python_entry": "openjarvis.tools.study_agent:run_as_agent_task",
+    },
+    {
         "id": "capability-scout",
         "name": "capability-scout",
         "role": (
