@@ -181,10 +181,55 @@ def pick_next_topic(
     return None
 
 
+# ---------------------------------------------------------------------------
+# GPU contention guard
+# ---------------------------------------------------------------------------
+
+
+def is_gpu_busy(*, threshold_pct: int = 80) -> bool:
+    """True if VRAM utilisation on GPU 0 is above `threshold_pct`.
+
+    Uses `nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader,nounits`.
+    Returns False if nvidia-smi is missing — non-GPU hosts (CI, dev laptops)
+    should let the rest of the agent run unblocked.
+    """
+    import subprocess
+    try:
+        result = subprocess.run(
+            [
+                "nvidia-smi",
+                "--query-gpu=memory.used,memory.total",
+                "--format=csv,noheader,nounits",
+                "--id=0",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
+    if result.returncode != 0:
+        return False
+    line = result.stdout.strip().splitlines()[0] if result.stdout.strip() else ""
+    parts = [p.strip() for p in line.split(",")]
+    if len(parts) != 2:
+        return False
+    try:
+        used = int(parts[0])
+        total = int(parts[1])
+    except ValueError:
+        return False
+    if total == 0:
+        return False
+    pct = (used / total) * 100
+    return pct >= threshold_pct
+
+
 __all__ = [
     "Topic",
     "load_state",
     "save_state",
     "record_studied",
     "pick_next_topic",
+    "is_gpu_busy",
 ]

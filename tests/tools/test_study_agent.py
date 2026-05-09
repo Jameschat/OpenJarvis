@@ -140,3 +140,32 @@ def test_state_round_trip(vault_root: Path):
     assert state["disciplines"]["web-dev"]["studied"]["semantic-html-landmarks"].startswith("2026-05-09")
     assert len(state["rotation_history"]) == 1
     assert state["rotation_history"][0]["topic"] == "semantic-html-landmarks"
+
+
+def test_gpu_busy_returns_false_when_nvidia_smi_missing(monkeypatch):
+    """If nvidia-smi isn't on PATH (no NVIDIA driver / non-GPU host),
+    treat as 'not busy' so the study agent can run anywhere for testing."""
+    import subprocess
+    def fake_run(*a, **kw):
+        raise FileNotFoundError("nvidia-smi not found")
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    assert study_agent.is_gpu_busy(threshold_pct=80) is False
+
+
+def test_gpu_busy_true_when_vram_above_threshold(monkeypatch):
+    import subprocess
+    class _FakeResult:
+        returncode = 0
+        # 22000 MiB used out of 24576 MiB total = 89%
+        stdout = "22000, 24576\n"
+    monkeypatch.setattr(subprocess, "run", lambda *a, **kw: _FakeResult())
+    assert study_agent.is_gpu_busy(threshold_pct=80) is True
+
+
+def test_gpu_busy_false_when_vram_below_threshold(monkeypatch):
+    import subprocess
+    class _FakeResult:
+        returncode = 0
+        stdout = "5000, 24576\n"   # 20%
+    monkeypatch.setattr(subprocess, "run", lambda *a, **kw: _FakeResult())
+    assert study_agent.is_gpu_busy(threshold_pct=80) is False
