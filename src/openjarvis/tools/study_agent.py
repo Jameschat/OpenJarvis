@@ -401,7 +401,15 @@ def _vault_root() -> Path:
 
 
 def _call_qwen(prompt: str, *, max_tokens: int = 4000) -> Optional[str]:
-    """Call qwen3:32b via the LiteLLM proxy. Returns body or None on error."""
+    """Call qwen3:32b via the LiteLLM proxy. Returns body or None on error.
+
+    Timeout 600s. Empirical (2026-05-09): qwen3:32b at Q4_K_M on RTX 4090
+    with thinking-mode enabled runs ~24 tok/s end-to-end. A 4000-token
+    study note (including ~1500 reasoning tokens burned silently) lands
+    in 150-250s; long topics or first-call-after-eviction can push to
+    400s+. Don't shrink this without first disabling thinking-mode via
+    the qwen3 chat-template flag.
+    """
     import os
     try:
         from openai import OpenAI
@@ -421,7 +429,7 @@ def _call_qwen(prompt: str, *, max_tokens: int = 4000) -> Optional[str]:
                 {"role": "user", "content": "Produce the study note now."},
             ],
             max_tokens=max_tokens,
-            timeout=300,  # qwen3:32b on a 4090 may take 60-180s
+            timeout=600,
         )
     except Exception:
         return None
