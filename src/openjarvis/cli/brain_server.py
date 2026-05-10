@@ -903,6 +903,7 @@ class _Handler(SimpleHTTPRequestHandler):
             return self._json_response(200, _vault_openapi_schema())
         if path_only in ("/", "/brain", "/brain.html", "/phone", "/phone.html",
                           "/markets", "/markets.html",
+                          "/jarvis-os", "/jarvis-os.html",
                           "/manifest.webmanifest"):
             # Static shell — auth happens client-side via the modal
             if path_only in ("/", "/brain", "/brain.html"):
@@ -911,6 +912,8 @@ class _Handler(SimpleHTTPRequestHandler):
                 self.path = "/phone.html"
             elif path_only in ("/markets", "/markets.html"):
                 self.path = "/markets.html"
+            elif path_only in ("/jarvis-os", "/jarvis-os.html"):
+                self.path = "/jarvis-os.html"
             return super().do_GET()
         if path_only.startswith("/icons/"):
             return super().do_GET()
@@ -1051,6 +1054,9 @@ class _Handler(SimpleHTTPRequestHandler):
             super().do_GET()
         elif self.path in ("/phone", "/phone.html"):
             self.path = "/phone.html"
+            super().do_GET()
+        elif self.path in ("/jarvis-os", "/jarvis-os.html"):
+            self.path = "/jarvis-os.html"
             super().do_GET()
         else:
             super().do_GET()
@@ -1200,6 +1206,25 @@ class _Handler(SimpleHTTPRequestHandler):
         except Exception as exc:
             logger.exception("/graphify/status failed")
             self._json_response(500, {"error": "internal error", "ref": _err_ref()})
+
+    def _handle_vault_summary(self) -> None:
+        """GET /vault/summary — at-a-glance vault stats for the HUD VAULT
+        button. Returns total_notes, total_bytes, last_write_iso,
+        daily_today. Mirrors the contract of /graphify/status."""
+        try:
+            from datetime import datetime, timezone
+            from openjarvis.tools import vault_stats
+            from openjarvis.tools.obsidian_brain import BRAIN_ROOT
+            now = datetime.now(timezone.utc)
+            s = vault_stats.summary(BRAIN_ROOT, now=now)
+            return self._json_response(200, {
+                "online": s["total_notes"] > 0,
+                **s,
+                "vault_root": str(BRAIN_ROOT),
+            })
+        except Exception:
+            logger.exception("/vault/summary failed")
+            return self._json_response(500, {"error": "internal error", "ref": _err_ref()})
 
     def _handle_music_status(self) -> None:
         """Check whether ACE-Step UI (Vite dev server) is reachable. Probe
