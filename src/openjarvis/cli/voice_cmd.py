@@ -1630,6 +1630,18 @@ def voice(
         except Exception:
             pass
 
+        # TikTok fast-path — must come before _try_browse since a TikTok URL
+        # would also match the generic "browse" trigger. Routes via architect
+        # with the tiktok_brief_url tool prompt.
+        try:
+            from openjarvis.tools.tiktok_pilot import _try_tiktok
+            tt = _try_tiktok(text)
+            if tt:
+                _record_fp("_try_tiktok", text, tt)
+                return tt
+        except Exception:
+            pass
+
         # Browser pilot — "watch X on YouTube", "look up Y online", "browse to Z".
         # Sits before team-task so research intents brief instead of spawning
         # a coding team. Mirrors the wiring in process_voice_command above.
@@ -1843,6 +1855,24 @@ def voice(
             logger.exception("content fast-path failed")
 
         # --- Fast-path: browser pilot ("watch X on YouTube", "look up Y online") ---
+        # TikTok fast-path — must come before _try_browse since a TikTok URL
+        # would also match the generic "browse" trigger. Routes via architect
+        # with the tiktok_brief_url tool prompt.
+        try:
+            from openjarvis.tools.tiktok_pilot import _try_tiktok
+            tt = _try_tiktok(text)
+            if tt:
+                _record_fp("_try_tiktok", text, tt)
+                console.print(f"[cyan]J.A.R.V.I.S.>[/cyan] {tt}")
+                if tts_backend:
+                    _speak_response(tt, tts_backend, config, ui, console)
+                elif ui:
+                    from openjarvis.cli.jarvis_ui import JarvisState
+                    ui.set_state(JarvisState.IDLE)
+                return
+        except Exception:
+            logger.exception("tiktok fast-path failed")
+
         # Routes "watch / browse / search the web" intents to the in-process
         # browser-pilot agent (gpt-4o vision driving Playwright). Sits BEFORE
         # team-task because phrases like "search the web for X" should brief,
