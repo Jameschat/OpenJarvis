@@ -86,4 +86,28 @@ def iter_retrievals(
             continue
 
 
-__all__ = ["log_retrieval", "iter_retrievals"]
+def helpfulness_score(
+    note_path: Path,
+    *,
+    log_dir: Optional[Path] = None,
+    window_days: int = 30,
+    now: float,
+) -> float:
+    """Frequency-based usefulness score: count of retrievals in window.
+
+    v1 proxy for "did this note help?" — the assumption is that notes
+    retrieved often have proven their utility by being recalled
+    repeatedly. Phase 3 will tighten this to retrieval × task-success
+    correlation once per-task retrieval tracking is wired through.
+    """
+    if log_dir is None:
+        log_dir = _default_log_dir()
+    target = str(note_path).replace("\\", "/")
+    count = 0
+    for rec in iter_retrievals(log_dir, window_days=window_days, now=now):
+        if rec.get("path") == target:
+            count += 1
+    return float(count)
+
+
+__all__ = ["log_retrieval", "iter_retrievals", "helpfulness_score"]
