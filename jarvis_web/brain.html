@@ -1411,6 +1411,17 @@ canvas { display: block; }
   color: #ffd76a;
   animation: pulse 2.4s ease-in-out infinite;
 }
+.mc-mute.mc-vault {
+  margin-left: 6px;
+  background: rgba(255,207,106,0.14);
+  border-color: rgba(255,207,106,0.50);
+  color: #ffe6a8;
+}
+.mc-mute.mc-vault:hover {
+  background: rgba(255,207,106,0.24);
+  border-color: rgba(255,207,106,0.75);
+  color: #fff2c8;
+}
 .mc-mute.mc-music {
   margin-left: 6px;
   background: rgba(255,107,197,0.16);
@@ -3130,6 +3141,7 @@ canvas { display: block; }
     <span class="mc-dot" style="background:#5ee0a1"></span>
     SYSTEM · ACTIVITY
     <button id="graphify-btn" class="mc-mute mc-graphify" title="Open the graphify knowledge graph of your vault" style="display:none">◉ GRAPHIFY</button>
+    <button id="vault-btn" class="mc-mute mc-vault" title="Vault stats" style="display:none">📓 VAULT</button>
     <button id="music-btn" class="mc-mute mc-music" title="Open ACE-Step music UI" style="display:none">♫ MUSIC</button>
     <button id="provider-btn" class="mc-mute mc-provider" title="Force a specific provider for every dispatched task. Cycles AUTO → CLAUDE → CODEX.">⇄ AUTO</button>
     <button id="mute-btn" class="mc-mute" title="Toggle audio cues">♪ off</button>
@@ -8474,6 +8486,38 @@ if (elGraphifyBtn) {
   });
   refreshGraphify();
   setInterval(refreshGraphify, 30000);
+}
+
+// --- Vault summary button (mirrors graphify-btn pattern) ---
+const elVaultBtn = document.getElementById('vault-btn');
+async function refreshVault() {
+  if (!elVaultBtn) return;
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const host = params.get('host') || window.location.host || 'localhost:7710';
+    const proto = window.location.protocol === 'https:' ? 'https' : 'http';
+    const r = await fetch(`${proto}://${host}/vault/summary`, { credentials: 'include' });
+    if (!r.ok) return;
+    const d = await r.json();
+    if (d.online && d.total_notes) {
+      elVaultBtn.style.display = '';
+      const mb = (d.total_bytes / (1024 * 1024)).toFixed(1);
+      const today = d.daily_today || 0;
+      let label = `📓 VAULT · ${d.total_notes}n · ${mb}MB`;
+      if (today > 0) label += ` · ${today} today`;
+      elVaultBtn.textContent = label;
+      const lastWrite = d.last_write_iso ? d.last_write_iso.replace('T', ' ').slice(0, 16) + ' UTC' : 'unknown';
+      elVaultBtn.title =
+        `${d.total_notes} notes · ${mb} MB · last write: ${lastWrite}\n` +
+        `${today} daily note${today === 1 ? '' : 's'} written today.`;
+    } else {
+      elVaultBtn.style.display = 'none';
+    }
+  } catch (_) { /* leave hidden */ }
+}
+if (elVaultBtn) {
+  refreshVault();
+  setInterval(refreshVault, 30000);
 }
 
 // --- Music (ACE-Step UI) button ---
