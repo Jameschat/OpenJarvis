@@ -271,6 +271,14 @@ canvas { display: block; }
   box-shadow: 0 0 8px rgba(94,224,255,0.35);
 }
 #ops-banner .ob-chat-btn svg { width: 14px; height: 14px; pointer-events: none; }
+#ops-banner #ob-jarvis-os-btn {
+  width: auto;
+  min-width: 74px;
+  padding: 0 9px;
+  font-size: 10px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+}
 
 /* Daily-briefing widget — slide-out from the right like the chat
    widget but anchored to the AI-pulse Knowledge notes. Opens a panel
@@ -2921,6 +2929,7 @@ canvas { display: block; }
     </svg>
   </button>
   <button id="ob-tiktok-btn" class="ob-chat-btn" onclick="window.location='/tiktok'" title="TikTok Business — dashboard" style="background:rgba(255,45,85,0.15);border-color:#ff2d55;color:#ff6b8a;font-size:10px;letter-spacing:0.06em;width:auto;padding:0 10px;">📱 TIKTOK</button>
+  <button id="ob-jarvis-os-btn" class="ob-chat-btn" title="Open Jarvis OS" onclick="window.location='/jarvis-os'">Jarvis OS</button>
   <a class="ob-chat-btn" id="ob-markets-pro-link" href="/markets.html" target="_blank"
      title="Open Markets Pro — full-page Dashboard / Pulse / Analyze (new tab)"
      style="display:inline-flex; align-items:center; justify-content:center; text-decoration:none;">
