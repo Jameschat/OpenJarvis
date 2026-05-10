@@ -102,6 +102,8 @@ def test_jarvis_os_page_uses_safe_text_assignment_for_state():
     assert "function setText(id, value)" in html
     assert ".textContent = value == null ? '' : String(value)" in html
     assert "innerHTML = state" not in html
+    assert "if (!res.ok) throw new Error('state unavailable')" in html
+    assert "updateClock();\n    fetchState();" in html
 
 
 def test_jarvis_os_mobile_layout_uses_scrollable_document_flow():
