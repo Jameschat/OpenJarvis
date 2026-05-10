@@ -15,7 +15,7 @@ import time
 import webbrowser
 from http.server import HTTPServer, SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any, Callable, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from openjarvis.cli import orch_bridge
 # UniFi bridge removed from active use 2026-04-26 — operator didn't find
@@ -733,6 +733,66 @@ def _markets_pro_analyze(body: Dict[str, Any]) -> Dict[str, Any]:
     return result
 
 
+def _jarvis_os_state() -> Dict[str, Any]:
+    """Assemble the first Jarvis OS desktop payload.
+
+    The first build intentionally returns stable, conservative widget
+    contracts. Where live data is unavailable or expensive, the widget marks
+    itself as "pending" rather than triggering heavy work on page load.
+    """
+    now = time.strftime("%H:%M")
+    widgets: Dict[str, Any] = {
+        "missions": {"label": "Active missions", "value": 0, "status": "pending"},
+        "agents": {"label": "Agent queue", "value": 0, "status": "pending"},
+        "plugins": {"label": "Plugin learning queue", "value": "Ready", "status": "ready"},
+        "markets": {"label": "Market pulse", "value": "Idle", "status": "pending"},
+        "gpu": {"label": "GPU / local load", "value": "Local", "status": "pending"},
+        "schedule": {"label": "Scheduled work", "value": 0, "status": "pending"},
+        "inbox": {"label": "Approvals / escalations", "value": 0, "status": "ready"},
+        "memory": {"label": "Brain memory", "value": "Loaded", "status": "ready"},
+    }
+    try:
+        snapshot = orch_bridge.get_snapshot()
+        tasks = snapshot.get("tasks") or []
+        agents = snapshot.get("agents") or []
+        active_tasks = [
+            t for t in tasks
+            if (t.get("status") or "").lower() in {"running", "queued", "pending"}
+        ]
+        widgets["missions"]["value"] = len(active_tasks)
+        widgets["missions"]["status"] = "ready"
+        widgets["agents"]["value"] = len(agents)
+        widgets["agents"]["status"] = "ready"
+    except Exception:
+        logger.debug("jarvis os orch snapshot unavailable", exc_info=True)
+    try:
+        from openjarvis.tools import agent_runner
+        schedules = agent_runner.list_scheduled() or []
+        widgets["schedule"]["value"] = len(schedules)
+        widgets["schedule"]["status"] = "ready"
+    except Exception:
+        logger.debug("jarvis os schedule snapshot unavailable", exc_info=True)
+    return {
+        "ok": True,
+        "time": now,
+        "model": {
+            "primary": "qwen3.6:27b",
+            "alias": "qwen3.6-27b-local",
+            "mode": "local-first",
+            "escalation": "Claude/Codex standby",
+        },
+        "widgets": widgets,
+        "actions": [
+            "New Mission",
+            "New Project",
+            "Plugin Studio",
+            "Model Center",
+            "Memory",
+            "Settings",
+        ],
+    }
+
+
 def emit_chat_widget_toggle(action: str) -> None:
     """Public bridge for voice_cmd / fast-paths to nudge the HUD's chat
     widget open or closed. Decoupled from _chat_history's internal class
@@ -1012,6 +1072,8 @@ class _Handler(SimpleHTTPRequestHandler):
             self._handle_vault_journal()
         elif self.path == "/orch":
             self._json_response(200, orch_bridge.get_snapshot())
+        elif self.path == "/jarvis-os/state":
+            self._json_response(200, _jarvis_os_state())
         elif self.path == "/provider":
             try:
                 from openjarvis.tools import agent_runner
