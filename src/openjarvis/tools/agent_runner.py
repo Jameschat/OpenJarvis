@@ -425,6 +425,70 @@ DEFAULT_AGENTS: List[Dict[str, Any]] = [
         "provider": "python",
         "python_entry": "openjarvis.tools.capability_queue:run_as_agent_task",
     },
+    # ---- Local Qwen team (provider=qwen, LiteLLM -> Ollama) --------------
+    # Safe first wave: research, planning, docs, self-study, and capability
+    # scouting. These agents write RESULT.md from local qwen3.6:27b output
+    # and do not get shell/file-edit tool authority beyond their workspace.
+    {
+        "id": "qwen-researcher",
+        "name": "qwen-researcher",
+        "role": (
+            "Local Qwen research agent. Synthesises notes, compares options, "
+            "and produces clear written findings using local qwen3.6:27b."
+        ),
+        "model": "qwen3.6-27b-local",
+        "skills": ["research", "local", "synthesis"],
+        "color": "#7dd3fc",
+        "provider": "qwen",
+    },
+    {
+        "id": "qwen-planner",
+        "name": "qwen-planner",
+        "role": (
+            "Local Qwen planning agent. Breaks requests into concrete steps, "
+            "risks, verification checks, and handoff notes."
+        ),
+        "model": "qwen3.6-27b-local",
+        "skills": ["planning", "local", "handoff"],
+        "color": "#67e8f9",
+        "provider": "qwen",
+    },
+    {
+        "id": "qwen-docs",
+        "name": "qwen-docs",
+        "role": (
+            "Local Qwen documentation agent. Writes concise docs, summaries, "
+            "and operator-readable explanations."
+        ),
+        "model": "qwen3.6-27b-local",
+        "skills": ["docs", "local", "writing"],
+        "color": "#a7f3d0",
+        "provider": "qwen",
+    },
+    {
+        "id": "qwen-study",
+        "name": "qwen-study",
+        "role": (
+            "Local Qwen study agent. Produces structured learning notes and "
+            "self-improvement research without cloud tokens."
+        ),
+        "model": "qwen3.6-27b-local",
+        "skills": ["study", "local", "self-improvement"],
+        "color": "#bae6fd",
+        "provider": "qwen",
+    },
+    {
+        "id": "qwen-capability-scout",
+        "name": "qwen-capability-scout",
+        "role": (
+            "Local Qwen capability scout. Reviews capability gaps and drafts "
+            "candidate tool/module research briefs for operator approval."
+        ),
+        "model": "qwen3.6-27b-local",
+        "skills": ["tools", "github", "local", "autonomy"],
+        "color": "#99f6e4",
+        "provider": "qwen",
+    },
 
     # ---- Department heads (agency-agents integration, 2026-04-28) -------
     # Each head is a Claude-provider coordinator that orchestrates the
@@ -1859,6 +1923,96 @@ def _build_brain_context() -> str:
     return "\n".join(lines)
 
 
+def _run_qwen_task(task: Task, agent_spec: Dict[str, Any]) -> None:
+    """Run a local Qwen-backed single-shot agent through LiteLLM.
+
+    Qwen agents are deliberately conservative in v1: they produce written
+    deliverables in their workspace, but they do not get shell/tool execution
+    authority. This makes them useful for planning, research, docs, and
+    capability scouting before we trust local models with code mutation.
+    """
+    if task.project_id:
+        ws = PROJECTS_DIR / task.project_id
+        stdout_log = ws / f"{task.id}.stdout.log"
+        stderr_log = ws / f"{task.id}.stderr.log"
+    else:
+        ws = RUNS_DIR / task.id
+        stdout_log = ws / "stdout.log"
+        stderr_log = ws / "stderr.log"
+    ws.mkdir(parents=True, exist_ok=True)
+    (ws / "prompt.txt").write_text(task.prompt or "", encoding="utf-8")
+    task.workspace = str(ws)
+    _reg.mark_running(task.id, str(ws))
+
+    model = (agent_spec.get("model") or "qwen3.6-27b-local").strip()
+    role = (agent_spec.get("role") or "Local Qwen agent.").strip()
+    brain_block = _build_brain_context()
+    prompt = "\n\n".join(
+        part for part in (
+            role,
+            "You are running as a local Qwen agent inside J.A.R.V.I.S.",
+            "Write a concrete, useful result for the operator. Do not claim "
+            "you changed external systems or installed tools. If action is "
+            "needed, provide a clear next-step plan and verification checks.",
+            f"TASK:\n{task.prompt or ''}",
+            brain_block,
+        )
+        if part
+    )
+
+    started = time.time()
+    try:
+        try:
+            from openai import OpenAI
+        except ImportError as exc:
+            raise RuntimeError("openai package unavailable for qwen provider") from exc
+
+        base_url = os.environ.get("OPENAI_BASE_URL", "http://localhost:4000")
+        api_key = os.environ.get("OPENAI_API_KEY", "sk-noop")
+        client = OpenAI(base_url=base_url, api_key=api_key)
+        resp = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": prompt},
+                {"role": "user", "content": "Produce RESULT.md now."},
+            ],
+            max_tokens=2500,
+            timeout=600,
+        )
+        content = ""
+        if resp.choices:
+            content = resp.choices[0].message.content or ""
+        if not content.strip():
+            raise RuntimeError("qwen returned empty content")
+
+        result_md = (
+            f"# {task.title}\n\n"
+            f"Provider: qwen\n\n"
+            f"Model: {model}\n\n"
+            f"Agent: {task.agent_id}\n\n"
+            "## Result\n\n"
+            f"{content.strip()}\n"
+        )
+        (ws / "RESULT.md").write_text(result_md, encoding="utf-8")
+        stdout_log.write_text(content, encoding="utf-8")
+        stderr_log.write_text("", encoding="utf-8")
+        _reg.mark_finished(task.id, exit_code=0)
+        try:
+            _write_agent_task_note(task, ws, 0, "qwen")
+        except Exception:
+            logger.exception("could not write qwen task session note (non-fatal)")
+    except Exception as exc:
+        logger.exception("qwen agent %s failed (task %s)", task.agent_id, task.id)
+        stderr_log.write_text(str(exc), encoding="utf-8")
+        _reg.mark_finished(task.id, exit_code=-1, error=f"qwen agent failed: {exc}")
+    finally:
+        logger.info(
+            "agent_runner: qwen task %s finished in %.1fs",
+            task.id,
+            time.time() - started,
+        )
+
+
 def _run_task(task: Task) -> None:
     """Execute a single task by spawning the right CLI for the agent's provider.
 
@@ -1907,6 +2061,10 @@ def _run_task(task: Task) -> None:
         except Exception as exc:
             logger.exception("python agent %s crashed (task %s)", task.agent_id, task.id)
             _reg.mark_finished(task.id, exit_code=-1, error=f"python agent crashed: {exc}")
+        return
+
+    if provider == "qwen":
+        _run_qwen_task(task, agent_spec or {})
         return
 
     if provider == "codex":
