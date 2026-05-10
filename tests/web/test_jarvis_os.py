@@ -61,3 +61,44 @@ def test_brain_server_exposes_jarvis_os_state_endpoint():
 
     assert 'elif self.path == "/jarvis-os/state":' in source
     assert "_jarvis_os_state()" in source
+
+
+def test_jarvis_os_page_contains_desktop_shell_landmarks():
+    html = (ROOT / "jarvis_web" / "jarvis-os.html").read_text(encoding="utf-8")
+
+    for marker in (
+        'id="jarvis-os-root"',
+        'class="desktop-shell"',
+        'class="desktop-shortcuts"',
+        'id="start-menu"',
+        'class="taskbar"',
+        'id="mission-window"',
+        'id="widget-grid"',
+        'fetch("/jarvis-os/state")',
+    ):
+        assert marker in html
+
+
+def test_jarvis_os_page_declares_required_widget_targets():
+    html = (ROOT / "jarvis_web" / "jarvis-os.html").read_text(encoding="utf-8")
+
+    for widget_id in (
+        "widget-model",
+        "widget-missions",
+        "widget-agents",
+        "widget-plugins",
+        "widget-markets",
+        "widget-gpu",
+        "widget-schedule",
+        "widget-inbox",
+        "widget-memory",
+    ):
+        assert f'id="{widget_id}"' in html
+
+
+def test_jarvis_os_page_uses_safe_text_assignment_for_state():
+    html = (ROOT / "jarvis_web" / "jarvis-os.html").read_text(encoding="utf-8")
+
+    assert "function setText(id, value)" in html
+    assert ".textContent = value == null ? '' : String(value)" in html
+    assert "innerHTML = state" not in html

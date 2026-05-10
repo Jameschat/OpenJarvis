@@ -4,10 +4,345 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Jarvis OS</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg-a: #0d141d;
+      --bg-b: #14202b;
+      --bg-c: #14312d;
+      --panel: rgba(15, 23, 42, 0.84);
+      --panel-strong: rgba(8, 17, 31, 0.9);
+      --line: rgba(255,255,255,0.16);
+      --text: #e7eef7;
+      --muted: #9fb2c6;
+      --accent: #8ee7c6;
+      --blue: #38bdf8;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      font-family: Inter, "Segoe UI", system-ui, sans-serif;
+      background: #050a12;
+      color: var(--text);
+      overflow: hidden;
+    }
+    button, input { font: inherit; }
+    .desktop-shell {
+      min-height: 100vh;
+      padding: 24px;
+      display: grid;
+      grid-template-rows: 1fr auto;
+      gap: 16px;
+      background:
+        radial-gradient(circle at 50% 0%, rgba(123,97,255,0.38), transparent 38%),
+        linear-gradient(135deg, var(--bg-a), var(--bg-b) 46%, var(--bg-c));
+      overflow: hidden;
+    }
+    .desktop-canvas {
+      position: relative;
+      min-height: 0;
+      border-radius: 24px;
+      overflow: hidden;
+    }
+    .desktop-shortcuts {
+      position: absolute;
+      top: 8px;
+      left: 8px;
+      display: grid;
+      grid-template-columns: repeat(2, 82px);
+      gap: 16px 12px;
+      z-index: 5;
+    }
+    .shortcut {
+      appearance: none;
+      border: 0;
+      color: var(--text);
+      background: transparent;
+      display: grid;
+      gap: 7px;
+      justify-items: center;
+      cursor: pointer;
+    }
+    .shortcut-icon {
+      width: 54px;
+      height: 54px;
+      border-radius: 16px;
+      display: grid;
+      place-items: center;
+      background: rgba(255,255,255,0.12);
+      border: 1px solid rgba(255,255,255,0.22);
+      box-shadow: 0 14px 36px rgba(0,0,0,0.38);
+    }
+    .ambient-clock {
+      position: absolute;
+      left: 130px;
+      top: 34px;
+      font-size: clamp(48px, 8vw, 104px);
+      font-weight: 300;
+      color: rgba(231,238,247,0.34);
+      letter-spacing: 0;
+      pointer-events: none;
+    }
+    .widget-grid {
+      position: absolute;
+      top: 34px;
+      right: 22px;
+      width: min(430px, calc(100vw - 330px));
+      display: grid;
+      grid-template-columns: repeat(2, minmax(150px, 1fr));
+      gap: 12px;
+      z-index: 4;
+    }
+    .widget {
+      min-height: 94px;
+      padding: 13px 14px;
+      border-radius: 18px;
+      background: rgba(8, 17, 31, 0.72);
+      border: 1px solid var(--line);
+      box-shadow: 0 18px 48px rgba(0,0,0,0.34);
+      backdrop-filter: blur(20px);
+    }
+    .widget .label {
+      font-size: 11px;
+      color: var(--accent);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .widget .value {
+      margin-top: 8px;
+      font-size: 24px;
+      font-weight: 700;
+    }
+    .widget .sub {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .app-window {
+      position: absolute;
+      left: min(36vw, 420px);
+      bottom: 74px;
+      width: min(620px, 52vw);
+      min-height: 310px;
+      border-radius: 18px;
+      overflow: hidden;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      box-shadow: 0 28px 90px rgba(0,0,0,0.55);
+      backdrop-filter: blur(22px);
+      z-index: 6;
+    }
+    .window-titlebar {
+      height: 46px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 15px;
+      background: rgba(17, 28, 45, 0.82);
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+    }
+    .window-body { padding: 16px; }
+    .tabs { display: flex; gap: 8px; flex-wrap: wrap; }
+    .chip {
+      border: 1px solid rgba(142,231,198,0.24);
+      background: rgba(142,231,198,0.08);
+      color: var(--text);
+      border-radius: 999px;
+      padding: 7px 11px;
+    }
+    .transcript {
+      margin-top: 14px;
+      height: 156px;
+      border-radius: 14px;
+      padding: 12px;
+      background: var(--panel-strong);
+      border: 1px solid rgba(255,255,255,0.1);
+      color: #cbd5e1;
+      overflow: auto;
+      line-height: 1.55;
+    }
+    .command-row { margin-top: 12px; display: flex; gap: 8px; }
+    .command-row input {
+      flex: 1;
+      min-width: 0;
+      border: 1px solid rgba(255,255,255,0.16);
+      background: rgba(8,17,31,0.82);
+      color: var(--text);
+      border-radius: 13px;
+      padding: 10px 12px;
+    }
+    .command-row button, .start-menu button, .taskbar button {
+      border: 1px solid rgba(255,255,255,0.16);
+      background: rgba(255,255,255,0.10);
+      color: var(--text);
+      border-radius: 12px;
+      padding: 9px 12px;
+      cursor: pointer;
+    }
+    .start-menu {
+      position: absolute;
+      left: 50%;
+      bottom: 82px;
+      transform: translateX(-50%);
+      width: min(420px, calc(100vw - 32px));
+      display: none;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+      padding: 14px;
+      background: rgba(15, 23, 42, 0.88);
+      border: 1px solid var(--line);
+      box-shadow: 0 24px 80px rgba(0,0,0,0.58);
+      border-radius: 20px;
+      backdrop-filter: blur(22px);
+      z-index: 10;
+    }
+    .start-menu.open { display: grid; }
+    .taskbar {
+      height: 62px;
+      justify-self: center;
+      width: min(760px, calc(100vw - 32px));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      padding: 0 16px;
+      border-radius: 21px;
+      background: rgba(11,18,32,0.88);
+      border: 1px solid rgba(255,255,255,0.16);
+      box-shadow: 0 20px 58px rgba(0,0,0,0.56);
+      backdrop-filter: blur(22px);
+    }
+    .tray {
+      margin-left: 10px;
+      color: var(--muted);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+    @media (max-width: 820px) {
+      body { overflow: auto; }
+      .desktop-shell { min-height: 100dvh; padding: 12px; overflow: visible; }
+      .desktop-canvas { min-height: 980px; }
+      .desktop-shortcuts { grid-template-columns: repeat(4, 72px); }
+      .ambient-clock { top: 128px; left: 18px; font-size: 48px; }
+      .widget-grid {
+        top: 210px;
+        left: 0;
+        right: 0;
+        width: auto;
+        grid-template-columns: 1fr;
+      }
+      .app-window {
+        left: 0;
+        right: 0;
+        bottom: 86px;
+        width: auto;
+      }
+      .taskbar { position: sticky; bottom: 10px; overflow-x: auto; justify-content: flex-start; }
+    }
+  </style>
 </head>
 <body>
-  <main id="jarvis-os-root">
-    <h1>Jarvis OS</h1>
+  <main id="jarvis-os-root" class="desktop-shell">
+    <section class="desktop-canvas" aria-label="Jarvis OS desktop">
+      <div class="desktop-shortcuts">
+        <button class="shortcut" data-open="mission"><span class="shortcut-icon">J</span><span>Jarvis</span></button>
+        <button class="shortcut" data-open="mission"><span class="shortcut-icon">Run</span><span>Missions</span></button>
+        <button class="shortcut" data-open="projects"><span class="shortcut-icon">Dev</span><span>Projects</span></button>
+        <button class="shortcut" data-open="plugins"><span class="shortcut-icon">Add</span><span>Plugins</span></button>
+        <button class="shortcut" data-open="memory"><span class="shortcut-icon">Mem</span><span>Memory</span></button>
+        <button class="shortcut" data-open="models"><span class="shortcut-icon">AI</span><span>Models</span></button>
+      </div>
+
+      <div id="desktop-clock" class="ambient-clock">--:--</div>
+
+      <section id="widget-grid" class="widget-grid" aria-label="Jarvis OS widgets">
+        <article id="widget-model" class="widget"><div class="label">Local Model</div><div id="model-value" class="value">Qwen</div><div id="model-sub" class="sub">Loading</div></article>
+        <article id="widget-missions" class="widget"><div class="label">Missions</div><div id="missions-value" class="value">--</div><div id="missions-sub" class="sub">Active work</div></article>
+        <article id="widget-agents" class="widget"><div class="label">Agents</div><div id="agents-value" class="value">--</div><div id="agents-sub" class="sub">Queue</div></article>
+        <article id="widget-plugins" class="widget"><div class="label">Plugins</div><div id="plugins-value" class="value">--</div><div id="plugins-sub" class="sub">Learning queue</div></article>
+        <article id="widget-markets" class="widget"><div class="label">Markets</div><div id="markets-value" class="value">--</div><div id="markets-sub" class="sub">Pulse</div></article>
+        <article id="widget-gpu" class="widget"><div class="label">GPU</div><div id="gpu-value" class="value">--</div><div id="gpu-sub" class="sub">Local load</div></article>
+        <article id="widget-schedule" class="widget"><div class="label">Calendar</div><div id="schedule-value" class="value">--</div><div id="schedule-sub" class="sub">Scheduled work</div></article>
+        <article id="widget-inbox" class="widget"><div class="label">Inbox</div><div id="inbox-value" class="value">--</div><div id="inbox-sub" class="sub">Approvals</div></article>
+        <article id="widget-memory" class="widget"><div class="label">Memory</div><div id="memory-value" class="value">--</div><div id="memory-sub" class="sub">Brain recall</div></article>
+      </section>
+
+      <section id="mission-window" class="app-window" aria-label="Mission Session">
+        <div class="window-titlebar"><strong>Mission Session</strong><span id="mission-model">local Qwen</span></div>
+        <div class="window-body">
+          <div class="tabs"><button class="chip">Chat</button><button class="chip">Plan</button><button class="chip">Files</button><button class="chip">Tools</button><button class="chip">Logs</button></div>
+          <div class="transcript">Jarvis OS is ready. Start a mission, open a project, create a plugin, or inspect memory. Local Qwen 3.6 27B is the default engine.</div>
+          <div class="command-row"><input id="mission-input" aria-label="Create a mission for Jarvis OS"><button type="button">Start</button></div>
+        </div>
+      </section>
+
+      <nav id="start-menu" class="start-menu" aria-label="Jarvis OS Start menu">
+        <button type="button">New Mission</button>
+        <button type="button">New Project</button>
+        <button type="button">Plugin Studio</button>
+        <button type="button">Model Center</button>
+        <button type="button">Memory</button>
+        <button type="button">Settings</button>
+      </nav>
+    </section>
+
+    <footer class="taskbar" aria-label="Jarvis OS taskbar">
+      <button id="start-button" type="button">Start</button>
+      <button type="button" data-open="mission">Mission</button>
+      <button type="button" data-open="operations">Operations</button>
+      <button type="button" data-open="plugins">Plugins</button>
+      <button type="button" data-open="memory">Memory</button>
+      <button type="button" data-open="models">Models</button>
+      <span id="tray-status" class="tray">Qwen 3.6 27B · Local-first</span>
+    </footer>
   </main>
+
+  <script>
+    function setText(id, value) {
+      const node = document.getElementById(id);
+      if (node) node.textContent = value == null ? '' : String(value);
+    }
+    function setWidget(name, widget) {
+      if (!widget) return;
+      setText(name + '-value', widget.value);
+      setText(name + '-sub', widget.label + ' · ' + widget.status);
+    }
+    function updateClock(value) {
+      setText('desktop-clock', value || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+    }
+    async function fetchState() {
+      try {
+        const res = await fetch("/jarvis-os/state");
+        const state = await res.json();
+        updateClock(state.time);
+        setText('model-value', state.model && state.model.primary);
+        setText('model-sub', state.model && (state.model.mode + ' · ' + state.model.escalation));
+        setText('mission-model', state.model && state.model.alias);
+        setText('tray-status', (state.model && state.model.primary ? state.model.primary : 'Qwen') + ' · Local-first');
+        const widgets = state.widgets || {};
+        setWidget('missions', widgets.missions);
+        setWidget('agents', widgets.agents);
+        setWidget('plugins', widgets.plugins);
+        setWidget('markets', widgets.markets);
+        setWidget('gpu', widgets.gpu);
+        setWidget('schedule', widgets.schedule);
+        setWidget('inbox', widgets.inbox);
+        setWidget('memory', widgets.memory);
+      } catch (err) {
+        updateClock();
+        setText('tray-status', 'Jarvis OS state offline');
+      }
+    }
+    document.getElementById('start-button').addEventListener('click', () => {
+      document.getElementById('start-menu').classList.toggle('open');
+    });
+    document.addEventListener('click', (event) => {
+      if (!event.target.closest('#start-menu') && !event.target.closest('#start-button')) {
+        document.getElementById('start-menu').classList.remove('open');
+      }
+    });
+    fetchState();
+    setInterval(fetchState, 10000);
+  </script>
 </body>
 </html>
