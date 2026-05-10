@@ -146,10 +146,112 @@ def _transcribe_audio(audio_path):
     return text, getattr(info, "language", None), float(getattr(info, "duration", 0.0))
 
 
+# ---------------------------------------------------------------------------
+# Keyframe extraction + vision description
+# ---------------------------------------------------------------------------
+
+
+# Cost per 1k tokens for gpt-4o-mini vision (May 2026 pricing).
+# Vision images count as ~85 tokens each at low detail.
+_VISION_COST_PER_IMAGE_USD = 0.0001  # rough; conservative
+
+
+def _extract_keyframes(video_path, *, duration_s: float, n: int = 4):
+    """Use ffmpeg to extract `n` evenly-spaced keyframes. Returns list of
+    JPEG paths, oldest to newest. Returns [] for zero-duration videos."""
+    from pathlib import Path
+    import subprocess
+    if duration_s <= 0.0:
+        return []
+    # Sample at 10%, 40%, 60%, 90% of duration for n=4. Generalises:
+    # i/(n+1) * duration for i in 1..n would be evenly spaced; slightly
+    # off-edge to skip blank intro/outro frames is the chosen heuristic.
+    fractions = [0.1, 0.4, 0.6, 0.9] if n == 4 else [
+        (i + 1) / (n + 1) for i in range(n)
+    ]
+    paths = []
+    base = Path(video_path).parent
+    stem = Path(video_path).stem
+    for i, frac in enumerate(fractions[:n]):
+        ts = duration_s * frac
+        out_path = base / f"{stem}_kf{i:02d}.jpg"
+        try:
+            result = subprocess.run(
+                [
+                    "ffmpeg", "-y",
+                    "-ss", f"{ts:.2f}",
+                    "-i", str(video_path),
+                    "-frames:v", "1",
+                    "-q:v", "2",
+                    str(out_path),
+                ],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+        except Exception:
+            logger.exception("tiktok: ffmpeg keyframe extraction failed at ts=%s", ts)
+            continue
+        if result.returncode == 0 and out_path.exists():
+            paths.append(out_path)
+    return paths
+
+
+def _describe_keyframes(paths):
+    """Call gpt-4o-mini vision per frame. Returns (descriptions, cost_usd).
+    On per-frame failure: skip that frame, continue with the rest."""
+    if not paths:
+        return [], 0.0
+    import base64
+    import os
+    try:
+        from openai import OpenAI
+    except ImportError:
+        return [], 0.0
+    base_url = os.environ.get("OPENAI_BASE_URL", "http://localhost:4000")
+    api_key = os.environ.get("OPENAI_API_KEY", "sk-noop")
+    client = OpenAI(base_url=base_url, api_key=api_key)
+    descriptions = []
+    cost = 0.0
+    prompt = (
+        "Describe this TikTok video frame in 1-2 sentences. Focus on: "
+        "visible text overlays, what the person/subject is doing, any "
+        "demo or product on screen. Skip generic descriptions of style "
+        "or 'a person on TikTok'."
+    )
+    for p in paths:
+        try:
+            with open(p, "rb") as f:
+                b64 = base64.b64encode(f.read()).decode("ascii")
+            resp = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[{
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {"type": "image_url", "image_url": {
+                            "url": f"data:image/jpeg;base64,{b64}",
+                            "detail": "low",
+                        }},
+                    ],
+                }],
+                max_tokens=120,
+                timeout=60,
+            )
+            descriptions.append(resp.choices[0].message.content.strip())
+            cost += _VISION_COST_PER_IMAGE_USD
+        except Exception:
+            logger.exception("tiktok: vision call failed for %s", p)
+            continue
+    return descriptions, cost
+
+
 __all__ = [
     "_extract_video_id",
     "_resolve_short_url",
     "_fetch_meta",
     "_download_audio",
     "_transcribe_audio",
+    "_extract_keyframes",
+    "_describe_keyframes",
 ]

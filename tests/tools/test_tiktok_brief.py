@@ -178,3 +178,86 @@ def test_transcribe_audio_returns_empty_on_silence(tmp_path, monkeypatch):
     text, lang, duration = tiktok_brief._transcribe_audio(fake_audio)
     assert text == ""
     assert duration == 5.0
+
+
+def test_extract_keyframes_invokes_ffmpeg_with_correct_timestamps(tmp_path, monkeypatch):
+    """For a 20-second video, frames should be sampled at ~2s, 8s, 12s, 18s."""
+    fake_video = tmp_path / "video.mp4"
+    fake_video.write_bytes(b"x")
+
+    captured_calls = []
+    def fake_run(cmd, **kw):
+        captured_calls.append(cmd)
+        # Simulate ffmpeg writing the requested output file. The output path
+        # is the LAST positional arg in the command (after all flags). We
+        # write to whatever absolute path ffmpeg was told to use.
+        from pathlib import Path
+        out_arg = cmd[-1]
+        Path(out_arg).write_bytes(b"jpgdata")
+        class _R:
+            returncode = 0
+            stderr = ""
+        return _R()
+    import subprocess
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    paths = tiktok_brief._extract_keyframes(fake_video, duration_s=20.0, n=4)
+    assert len(paths) == 4
+    # ffmpeg called once per frame (4 calls).
+    assert len(captured_calls) == 4
+    # Each call uses -ss <timestamp>; timestamps should be at ~10/40/60/90% of duration.
+    timestamps = []
+    for cmd in captured_calls:
+        ss_idx = cmd.index("-ss")
+        timestamps.append(float(cmd[ss_idx + 1]))
+    assert timestamps[0] == pytest.approx(2.0, abs=0.5)
+    assert timestamps[1] == pytest.approx(8.0, abs=0.5)
+    assert timestamps[2] == pytest.approx(12.0, abs=0.5)
+    assert timestamps[3] == pytest.approx(18.0, abs=0.5)
+
+
+def test_extract_keyframes_returns_empty_when_duration_zero(tmp_path):
+    """Slideshow / 0-duration content has no video to sample."""
+    fake = tmp_path / "v.mp4"
+    fake.write_bytes(b"x")
+    paths = tiktok_brief._extract_keyframes(fake, duration_s=0.0, n=4)
+    assert paths == []
+
+
+def test_describe_keyframes_returns_descriptions_from_mocked_llm(tmp_path, monkeypatch):
+    """Each keyframe gets a 1-2 sentence description from gpt-4o-mini vision."""
+    frame1 = tmp_path / "f1.jpg"
+    frame1.write_bytes(b"\xff\xd8\xff\xe0fake")
+    frame2 = tmp_path / "f2.jpg"
+    frame2.write_bytes(b"\xff\xd8\xff\xe0fake2")
+
+    fake_responses = iter([
+        "A person speaking to camera with text overlay 'How to brief'.",
+        "Code editor showing a Python function being typed.",
+    ])
+    class _FakeChoice:
+        def __init__(self, content):
+            self.message = type("M", (), {"content": content})
+    class _FakeResp:
+        def __init__(self, content): self.choices = [_FakeChoice(content)]
+    class _FakeCompletions:
+        def create(self, **kw):
+            return _FakeResp(next(fake_responses))
+    class _FakeChat:
+        def __init__(self): self.completions = _FakeCompletions()
+    class _FakeClient:
+        def __init__(self, *a, **kw): self.chat = _FakeChat()
+    monkeypatch.setattr("openai.OpenAI", _FakeClient)
+
+    descriptions, cost = tiktok_brief._describe_keyframes([frame1, frame2])
+    assert len(descriptions) == 2
+    assert "person speaking" in descriptions[0]
+    assert "Code editor" in descriptions[1]
+    assert cost > 0  # nominal cost tracked
+    assert cost < 0.10  # under the per-run cap
+
+
+def test_describe_keyframes_returns_empty_when_no_frames():
+    descriptions, cost = tiktok_brief._describe_keyframes([])
+    assert descriptions == []
+    assert cost == 0.0
