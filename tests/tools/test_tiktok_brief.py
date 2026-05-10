@@ -261,3 +261,94 @@ def test_describe_keyframes_returns_empty_when_no_frames():
     descriptions, cost = tiktok_brief._describe_keyframes([])
     assert descriptions == []
     assert cost == 0.0
+
+
+def test_slugify_handles_basic_titles():
+    assert tiktok_brief._slugify("How to use TikTok") == "how-to-use-tiktok"
+    assert tiktok_brief._slugify("Hello, World!") == "hello-world"
+
+
+def test_slugify_truncates_long_titles():
+    long = "a" * 200
+    assert len(tiktok_brief._slugify(long, max_len=60)) == 60
+
+
+def test_slugify_falls_back_when_empty():
+    assert tiktok_brief._slugify("") == "tiktok"
+    assert tiktok_brief._slugify("!@#$%") == "tiktok"
+
+
+def test_build_summary_prompt_includes_transcript_and_vision():
+    meta = {
+        "title": "How to use semantic HTML",
+        "uploader": "jonathon.mj",
+        "duration": 47,
+        "webpage_url": "https://www.tiktok.com/@jonathon.mj/video/123",
+    }
+    prompt = tiktok_brief._build_summary_prompt(
+        meta=meta,
+        transcript="The transcript text goes here.",
+        vision_notes=["Frame 1 shows person.", "Frame 2 shows code."],
+    )
+    assert "jonathon.mj" in prompt
+    assert "47" in prompt or "00:47" in prompt
+    assert "The transcript text goes here." in prompt
+    assert "Frame 1 shows person." in prompt
+    assert "TL;DR" in prompt or "tl;dr" in prompt.lower()
+
+
+def test_write_brief_to_vault_writes_file_with_frontmatter(tmp_path, monkeypatch):
+    """The writer mirrors youtube_brief: frontmatter + body, slugged filename
+    in Brain/Knowledge/. Patch _brain_knowledge_dir so tests don't touch the real vault."""
+    monkeypatch.setattr(tiktok_brief, "_brain_knowledge_dir", lambda: tmp_path / "Knowledge")
+    meta = {
+        "id": "7628009213884665119",
+        "title": "How to brief",
+        "uploader": "jonathon.mj",
+        "duration": 47,
+        "webpage_url": "https://www.tiktok.com/@jonathon.mj/video/7628009213884665119",
+    }
+    from datetime import datetime, timezone
+    now = datetime(2026, 5, 9, 12, 0, tzinfo=timezone.utc)
+    path = tiktok_brief._write_brief_to_vault(
+        meta=meta,
+        briefing="## TL;DR\n\nA short summary.\n",
+        transcript="The full transcript.",
+        vision_notes=["Frame note 1.", "Frame note 2."],
+        cost_usd=0.0008,
+        now=now,
+    )
+    assert path is not None
+    assert path.exists()
+    assert path.name.startswith("2026-05-09 - briefing - tiktok - ")
+    assert path.name.endswith(".md")
+    content = path.read_text(encoding="utf-8")
+    assert "type: briefing" in content
+    assert "source: tiktok" in content
+    assert "video_id: 7628009213884665119" in content
+    assert "creator: jonathon.mj" in content
+    assert "duration_s: 47" in content
+    assert "## TL;DR" in content
+    assert "## Transcript" in content
+    assert "## Visual cues" in content
+    assert "Frame note 1." in content
+
+
+def test_tiktok_brief_url_tool_registered():
+    """The ToolRegistry must expose `tiktok_brief_url` after import.
+
+    Note: tests/conftest.py has an autouse fixture that clears all registries
+    between tests, so we must reload the module to re-fire the @register
+    decorator. This mirrors how the production process registers tools at
+    import time.
+    """
+    import importlib
+    from openjarvis.core.registry import ToolRegistry
+    import openjarvis.tools.tiktok_brief as _tt
+    importlib.reload(_tt)
+    cls = ToolRegistry.get("tiktok_brief_url")
+    assert cls is not None
+    instance = cls()
+    spec = instance.spec
+    assert spec.name == "tiktok_brief_url"
+    assert "tiktok" in spec.description.lower()
