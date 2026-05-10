@@ -73,8 +73,15 @@ def test_recall_logs_retrievals_after_returning(tmp_vault, tmp_log_dir):
     assert log_file.exists()
     lines = [l for l in log_file.read_text(encoding="utf-8").splitlines() if l.strip()]
     assert len(lines) == 3
-    paths = sorted(json.loads(l)["path"] for l in lines)
-    assert paths == sorted(str(p[0]).replace("\\", "/") for p in hits)
+    # recall() normalises log entries to vault-relative paths so the read
+    # side (helpfulness_score) can match them. Compute the same relative
+    # form for hits to compare.
+    logged_paths = sorted(json.loads(l)["path"] for l in lines)
+    expected_paths = sorted(
+        str(p[0].relative_to(obsidian_brain.DEFAULT_VAULT.parent)).replace("\\", "/")
+        for p in hits
+    )
+    assert logged_paths == expected_paths
 
 
 def test_recall_reranking_does_not_demote_hits(tmp_vault, tmp_log_dir):
@@ -82,3 +89,30 @@ def test_recall_reranking_does_not_demote_hits(tmp_vault, tmp_log_dir):
     all matching notes (rerank multiplier is ≥1, never <1)."""
     hits = obsidian_brain.recall("tiktok video", limit=5)
     assert len(hits) == 3   # all three matches present
+
+
+def test_recall_round_trip_write_read_match(tmp_vault, tmp_log_dir):
+    """Production-shaped end-to-end: recall() writes log entries that a
+    SUBSEQUENT helpfulness_score lookup MUST find. This catches path-
+    normalisation asymmetry between write side and read side — a real bug
+    that test fixtures pre-seeding the log with a different shape than
+    production wouldn't catch."""
+    # Call recall() once — this writes log entries for the 3 matching notes.
+    first = obsidian_brain.recall("tiktok video", limit=3)
+    assert len(first) == 3
+
+    # Confirm the round-trip: helpfulness_score MUST find each note we
+    # just wrote. If the write path and read path normalise differently,
+    # this returns 0 for all of them and reranking silently fails in prod.
+    from openjarvis.tools import retrieval_log as _rlog
+    import time as _time
+    now = _time.time()
+    for path, _snippet in first:
+        try:
+            rel_path = path.relative_to(obsidian_brain.DEFAULT_VAULT.parent)
+        except ValueError:
+            rel_path = path
+        score = _rlog.helpfulness_score(
+            rel_path, log_dir=tmp_log_dir, window_days=30, now=now,
+        )
+        assert score >= 1.0, f"round-trip miss: {rel_path} not found in log"

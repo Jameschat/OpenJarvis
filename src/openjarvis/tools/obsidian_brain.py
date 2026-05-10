@@ -405,12 +405,20 @@ def recall(query: str, limit: int = 5) -> List[Tuple[Path, str]]:
     out = [(p, s) for _, p, s in results_for_output[:limit]]
 
     # Log every returned hit so the helpfulness signal builds over time.
+    # Normalise to vault-relative paths to match the rerank-lookup side
+    # (helpfulness_score also normalises md.relative_to(DEFAULT_VAULT.parent)).
+    # If we logged absolute paths here, lookups would never match.
     try:
         from openjarvis.tools import retrieval_log as _rlog2
         import time as _time2
         _now2 = _time2.time()
+        _vault_parent2 = DEFAULT_VAULT.parent
         for path, _snippet in out:
-            _rlog2.log_retrieval(note_path=path, query=query, now=_now2)
+            try:
+                _rel_path = path.relative_to(_vault_parent2)
+            except ValueError:
+                _rel_path = path
+            _rlog2.log_retrieval(note_path=_rel_path, query=query, now=_now2)
     except Exception:
         pass
 
