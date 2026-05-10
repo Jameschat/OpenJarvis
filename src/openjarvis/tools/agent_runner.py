@@ -1236,6 +1236,18 @@ class _Registry:
         except Exception:
             logger.debug("graphify_trigger: trigger call failed (non-fatal)", exc_info=True)
 
+        # Operator-task completion follow-up (2026-05-10) — when an
+        # operator-voice-spawned task (priority=20) finishes, push a
+        # one-line completion notice to the HUD chat panel so the
+        # operator knows where the result landed. Suppressed for
+        # scheduled tasks (priority>=30) and internal verifier loops.
+        # Best-effort, non-fatal.
+        try:
+            from openjarvis.tools import task_followup
+            task_followup.notify_if_operator_task(t)
+        except Exception:
+            logger.debug("task_followup: notify failed (non-fatal)", exc_info=True)
+
     def record_failure_mode(self, agent_id: str, kind: str) -> None:
         """Bump a failure-mode counter on the agent's lifetime stats.
         Autonomy-improvement #4 (2026-04-27). Thread-safe — takes the
