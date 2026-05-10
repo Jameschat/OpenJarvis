@@ -1,8 +1,8 @@
-"""Nightly study-agent — uses qwen3.6:35b-a3b (local, free) to build domain
+"""Nightly study-agent — uses qwen3.6:27b (local, free) to build domain
 knowledge in the vault.
 
 Picks one topic per night from `Brain/Curriculum/<discipline>.md`, runs a
-structured prompt against qwen3.6:35b-a3b via the LiteLLM proxy, writes a study
+structured prompt against qwen3.6:27b via the LiteLLM proxy, writes a study
 note to `Brain/Study/<discipline>/<date> - <slug>.md`.
 
 State lives in `Brain/Curriculum/_state.json`. **Do not hand-edit.**
@@ -362,14 +362,14 @@ def write_study_note(
         f"date: {date_str}\n"
         f"discipline: {topic.discipline}\n"
         f"topic: {topic.slug}\n"
-        "model: qwen3.6:35b-a3b\n"
+        "model: qwen3.6:27b\n"
         f"status: {topic.status}\n"
         f"self_grade: {grade}\n"
         "---\n\n"
         f"# Study — {topic.slug}\n\n"
         f"**Focus:** {topic.description}\n\n"
     )
-    footer = "\n\n_Compiled by `study-agent` (qwen3.6:35b-a3b via LiteLLM)._\n"
+    footer = "\n\n_Compiled by `study-agent` (qwen3.6:27b via LiteLLM)._\n"
     path.write_text(frontmatter + body.strip() + footer, encoding="utf-8")
     return path
 
@@ -401,7 +401,7 @@ def _vault_root() -> Path:
 
 
 def _call_qwen(prompt: str, *, max_tokens: int = 4000) -> Optional[str]:
-    """Call qwen3.6:35b-a3b via the LiteLLM proxy. Returns body or None on error.
+    """Call qwen3.6:27b via the LiteLLM proxy. Returns body or None on error.
 
     Timeout 600s. Empirical baseline (2026-05-09): qwen3:32b at Q4_K_M on RTX 4090
     with thinking-mode enabled runs ~24 tok/s end-to-end. A 4000-token
@@ -423,7 +423,7 @@ def _call_qwen(prompt: str, *, max_tokens: int = 4000) -> Optional[str]:
     client = OpenAI(base_url=base_url, api_key=api_key)
     try:
         resp = client.chat.completions.create(
-            model="qwen3.6-35b-a3b-local",
+            model="qwen3.6-27b-local",
             messages=[
                 {"role": "system", "content": prompt},
                 {"role": "user", "content": "Produce the study note now."},

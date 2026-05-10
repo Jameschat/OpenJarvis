@@ -14,7 +14,7 @@
 #   1. gpt-5.4-mini   (OpenAI direct — current production model)
 #   2. gpt-4o-mini    (OpenAI cheaper fallback — different cost tier, often
 #                      separate quota bucket)
-#   3. qwen3.6:35b-a3b (local Ollama — free, never rate-limited, slower)
+#   3. qwen3.6:27b (local Ollama — free, never rate-limited, slower)
 #
 # Anthropic skipped 2026-05-09 (no API key on box; CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST
 # uses the subscription, not API). Add when an Anthropic API key is provisioned.
@@ -33,11 +33,11 @@ model_list:
       api_key: os.environ/OPENAI_API_KEY
 
   # Fallback tier 2 — local Ollama. Never rate-limited.
-  # qwen3.6:35b-a3b has native function calling; OpenAI-compatible via LiteLLM's
+  # qwen3.6:27b has native function calling; OpenAI-compatible via LiteLLM's
   # ollama_chat provider.
-  - model_name: qwen3.6-35b-a3b-local
+  - model_name: qwen3.6-27b-local
     litellm_params:
-      model: ollama_chat/qwen3.6:35b-a3b
+      model: ollama_chat/qwen3.6:27b
       api_base: http://localhost:11434
 
   # Also expose gpt-4o (used by financial_researcher, chart_analyst) so
@@ -54,15 +54,15 @@ model_list:
 # from above; the values are ordered fallback lists.
 litellm_settings:
   fallbacks:
-    - gpt-5.4-mini: ["gpt-4o-mini", "qwen3.6-35b-a3b-local"]
-    - gpt-4o-mini: ["qwen3.6-35b-a3b-local"]
+    - gpt-5.4-mini: ["gpt-4o-mini", "qwen3.6-27b-local"]
+    - gpt-4o-mini: ["qwen3.6-27b-local"]
     # gpt-4o has no fallback — vision can't be replaced by qwen3 text-only.
 
   # Retry handling — LiteLLM will retry within the same tier before falling
   # through to the next. Keep tight to avoid stacking latency on a real outage.
   num_retries: 1
   # Upstream call budget. Cloud calls return in <30s; we need this only
-  # for the local qwen3.6:35b-a3b leg, which on RTX 4090 with thinking-mode
+  # for the local qwen3.6:27b leg, which on RTX 4090 with thinking-mode
   # enabled needs 150–400s for a 4000-token study note. Set to 600 so
   # the local fallback never aborts on a real generation.
   request_timeout: 600

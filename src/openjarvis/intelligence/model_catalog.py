@@ -343,6 +343,21 @@ BUILTIN_MODELS: List[ModelSpec] = [
         },
     ),
     ModelSpec(
+        model_id="qwen3.6:27b",
+        name="Qwen3.6 27B",
+        parameter_count_b=27.0,
+        active_parameter_count_b=27.0,
+        context_length=262144,
+        min_vram_gb=8.0,
+        supported_engines=("ollama", "vllm", "sglang"),
+        provider="alibaba",
+        metadata={
+            "architecture": "dense",
+            "hf_repo": "Qwen/Qwen3.6-27B",
+            "ollama_tag": "qwen3.6:27b",
+        },
+    ),
+    ModelSpec(
         model_id="qwen3.5:122b-a10b",
         name="Qwen3.5 122B A10B",
         parameter_count_b=122.0,

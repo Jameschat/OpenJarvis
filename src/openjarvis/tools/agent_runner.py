@@ -388,12 +388,12 @@ DEFAULT_AGENTS: List[Dict[str, Any]] = [
             "Nightly self-study agent. Picks one topic from "
             "Brain/Curriculum/<discipline>.md (rotating web-dev → game-dev → "
             "software-dev → intelligence), runs a structured prompt against "
-            "qwen3.6:35b-a3b via the LiteLLM proxy, writes a study note to "
+            "qwen3.6:27b via the LiteLLM proxy, writes a study note to "
             "Brain/Study/<discipline>/. No cloud tokens consumed. Skips when "
             "GPU is busy with ACE-Step generation. Operator promotes vetted "
             "notes to Brain/Knowledge/ manually — no auto-injection in v1."
         ),
-        "model": "qwen3.6:35b-a3b",
+        "model": "qwen3.6:27b",
         "skills": ["study", "self-improvement", "knowledge-curation"],
         "color": "#a8e0ff",
         "provider": "python",

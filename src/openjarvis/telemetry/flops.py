@@ -24,6 +24,7 @@ MODEL_PARAMS_B: dict[str, float] = {
     "qwen3:8b": 8.0,
     "qwen3:32b": 32.0,
     "qwen3.6:35b-a3b": 35.0,
+    "qwen3.6:27b": 27.0,
     "qwen3:0.6b": 0.6,
     "qwen3:4b": 4.0,
     "llama-3.1-70b": 70.0,
