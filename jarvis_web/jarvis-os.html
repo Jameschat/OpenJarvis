@@ -101,7 +101,7 @@
       position: absolute;
       top: 34px;
       right: 22px;
-      width: min(430px, calc(100vw - 330px));
+      width: min(360px, calc(100vw - 330px));
       display: grid;
       grid-template-columns: repeat(2, minmax(150px, 1fr));
       gap: 12px;
@@ -134,10 +134,10 @@
     }
     .app-window {
       position: absolute;
-      left: calc((100vw - 470px) / 2);
+      left: 50%;
       bottom: 98px;
       transform: translateX(-50%);
-      width: min(760px, 48vw);
+      width: min(840px, 44vw);
       min-height: 390px;
       border-radius: 18px;
       overflow: hidden;
@@ -149,13 +149,19 @@
     }
     @media (min-width: 821px) and (max-width: 1180px) {
       .widget-grid {
-        width: 320px;
+        width: 220px;
         grid-template-columns: 1fr;
       }
       .app-window {
-        left: 24px;
-        width: min(520px, calc(100vw - 390px));
-        min-width: 360px;
+        left: 50%;
+        width: min(500px, 48vw);
+        min-width: 0;
+      }
+    }
+    @media (min-width: 1181px) and (max-width: 1499px) {
+      .widget-grid {
+        width: 300px;
+        grid-template-columns: 1fr;
       }
     }
     .window-titlebar {
@@ -318,6 +324,50 @@
         margin-top: 16px;
         overflow-x: auto;
         justify-content: flex-start;
+      }
+    }
+    @media (min-width: 821px) and (max-width: 980px) {
+      html, body { height: auto; min-height: 100%; }
+      body { overflow-y: auto; overflow-x: hidden; }
+      .desktop-shell {
+        min-height: 100dvh;
+        display: block;
+        padding: 18px;
+        overflow: visible;
+      }
+      .desktop-canvas {
+        min-height: auto;
+        display: grid;
+        gap: 18px;
+        overflow: visible;
+      }
+      .desktop-shortcuts {
+        position: static;
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+      }
+      .ambient-clock {
+        position: static;
+        transform: none;
+        width: auto;
+        font-size: 58px;
+        line-height: 1;
+        padding: 8px 0 0;
+      }
+      .widget-grid {
+        position: static;
+        width: auto;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .app-window {
+        position: static;
+        transform: none;
+        width: auto;
+        min-height: auto;
+      }
+      .taskbar {
+        position: sticky;
+        bottom: 12px;
+        margin-top: 18px;
       }
     }
   </style>
