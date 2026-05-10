@@ -371,8 +371,49 @@ def recall(query: str, limit: int = 5) -> List[Tuple[Path, str]]:
             continue
         snippet = _best_snippet(text, tokens)
         results.append((score, md, snippet))
-    results.sort(key=lambda r: -r[0])
-    out = [(p, s) for _, p, s in results[:limit]]
+    # Rerank by retrieval frequency (2026-05-10). Soft boost — multiplier
+    # is always ≥1, so reranking never demotes a hit, only re-orders ties.
+    # See retrieval_log.helpfulness_score for the frequency model.
+    try:
+        import math
+        import time as _time
+        from openjarvis.tools import retrieval_log as _rlog
+        _now = _time.time()
+        # Normalise paths to be relative to the vault's parent so they match
+        # records that were written with relative paths (e.g. in tests and
+        # early log entries written before absolute-path logging was the norm).
+        _vault_parent = DEFAULT_VAULT.parent
+        boosted: List[Tuple[float, Path, str]] = []
+        for score, md, snippet in results:
+            try:
+                try:
+                    _rel_md = md.relative_to(_vault_parent)
+                except ValueError:
+                    _rel_md = md
+                hscore = _rlog.helpfulness_score(_rel_md, window_days=30, now=_now)
+            except Exception:
+                hscore = 0.0
+            multiplier = 1.0 + 0.3 * math.tanh(hscore / 5.0)
+            boosted.append((score * multiplier, md, snippet))
+        boosted.sort(key=lambda r: -r[0])
+        results_for_output = boosted
+    except Exception:
+        # Reranking is best-effort. Fall through to vanilla ordering.
+        results.sort(key=lambda r: -r[0])
+        results_for_output = results
+
+    out = [(p, s) for _, p, s in results_for_output[:limit]]
+
+    # Log every returned hit so the helpfulness signal builds over time.
+    try:
+        from openjarvis.tools import retrieval_log as _rlog2
+        import time as _time2
+        _now2 = _time2.time()
+        for path, _snippet in out:
+            _rlog2.log_retrieval(note_path=path, query=query, now=_now2)
+    except Exception:
+        pass
+
     _emit_event("read", f"recall: {query[:50]}", kind="recall", count=len(out))
     return out
 
