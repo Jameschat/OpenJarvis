@@ -1224,6 +1224,18 @@ class _Registry:
         except Exception:
             logger.debug("outcomes: record_agent_task failed (non-fatal)", exc_info=True)
 
+        # Graphify on-demand (2026-05-10) — rebuild the vault knowledge
+        # graph after every task so agent-written notes start participating
+        # in graphify-backed recall + the brain galaxy viz on the next
+        # query, rather than waiting for the nightly rebuild. Debounced
+        # at 60s in the trigger module to collapse department-dispatch
+        # bursts. Async via daemon thread; never blocks task completion.
+        try:
+            from openjarvis.tools import graphify_trigger
+            graphify_trigger.maybe_refresh_after_task()
+        except Exception:
+            logger.debug("graphify_trigger: trigger call failed (non-fatal)", exc_info=True)
+
     def record_failure_mode(self, agent_id: str, kind: str) -> None:
         """Bump a failure-mode counter on the agent's lifetime stats.
         Autonomy-improvement #4 (2026-04-27). Thread-safe — takes the
