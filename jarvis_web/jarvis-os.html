@@ -120,9 +120,9 @@
     }
     .app-window {
       position: absolute;
-      left: min(36vw, 420px);
+      left: min(30vw, 360px);
       bottom: 74px;
-      width: min(620px, 52vw);
+      width: min(560px, 46vw);
       min-height: 310px;
       border-radius: 18px;
       overflow: hidden;
@@ -131,6 +131,17 @@
       box-shadow: 0 28px 90px rgba(0,0,0,0.55);
       backdrop-filter: blur(22px);
       z-index: 6;
+    }
+    @media (min-width: 821px) and (max-width: 1180px) {
+      .widget-grid {
+        width: 320px;
+        grid-template-columns: 1fr;
+      }
+      .app-window {
+        left: 24px;
+        width: min(520px, calc(100vw - 390px));
+        min-width: 360px;
+      }
     }
     .window-titlebar {
       height: 46px;
@@ -219,25 +230,58 @@
       white-space: nowrap;
     }
     @media (max-width: 820px) {
-      body { overflow: auto; }
-      .desktop-shell { min-height: 100dvh; padding: 12px; overflow: visible; }
-      .desktop-canvas { min-height: 980px; }
-      .desktop-shortcuts { grid-template-columns: repeat(4, 72px); }
-      .ambient-clock { top: 128px; left: 18px; font-size: 48px; }
+      html, body { height: auto; min-height: 100%; }
+      body { overflow-y: auto; overflow-x: hidden; }
+      .desktop-shell {
+        min-height: 100dvh;
+        display: block;
+        padding: 12px;
+        overflow: visible;
+      }
+      .desktop-canvas {
+        min-height: auto;
+        display: grid;
+        gap: 16px;
+        overflow: visible;
+        padding-bottom: 4px;
+      }
+      .desktop-shortcuts {
+        position: static;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+      }
+      .ambient-clock {
+        position: static;
+        font-size: 48px;
+        line-height: 1;
+        padding: 10px 6px 0;
+      }
       .widget-grid {
-        top: 210px;
-        left: 0;
-        right: 0;
+        position: static;
         width: auto;
         grid-template-columns: 1fr;
       }
       .app-window {
-        left: 0;
-        right: 0;
-        bottom: 86px;
+        position: static;
+        width: auto;
+        min-height: auto;
+        margin-top: 2px;
+      }
+      .start-menu {
+        position: fixed;
+        left: 12px;
+        right: 12px;
+        bottom: 82px;
+        transform: none;
         width: auto;
       }
-      .taskbar { position: sticky; bottom: 10px; overflow-x: auto; justify-content: flex-start; }
+      .taskbar {
+        position: sticky;
+        bottom: 10px;
+        margin-top: 16px;
+        overflow-x: auto;
+        justify-content: flex-start;
+      }
     }
   </style>
 </head>

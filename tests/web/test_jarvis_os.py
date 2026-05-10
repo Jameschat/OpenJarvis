@@ -102,3 +102,14 @@ def test_jarvis_os_page_uses_safe_text_assignment_for_state():
     assert "function setText(id, value)" in html
     assert ".textContent = value == null ? '' : String(value)" in html
     assert "innerHTML = state" not in html
+
+
+def test_jarvis_os_mobile_layout_uses_scrollable_document_flow():
+    html = (ROOT / "jarvis_web" / "jarvis-os.html").read_text(encoding="utf-8")
+
+    mobile_block = html[html.index("@media (max-width: 820px)") :]
+
+    assert "body { overflow-y: auto; overflow-x: hidden; }" in mobile_block
+    assert ".desktop-shell {\n        min-height: 100dvh;\n        display: block;" in mobile_block
+    assert ".widget-grid {\n        position: static;" in mobile_block
+    assert ".app-window {\n        position: static;" in mobile_block
