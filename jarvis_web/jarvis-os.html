@@ -173,6 +173,7 @@
       background: rgba(17, 28, 45, 0.82);
       border-bottom: 1px solid rgba(255,255,255,0.1);
     }
+    .window-titlebar span { color: var(--muted); font-size: 12px; }
     .window-body { padding: 16px; }
     .tabs { display: flex; gap: 8px; flex-wrap: wrap; }
     .chip {
@@ -181,6 +182,15 @@
       color: var(--text);
       border-radius: 999px;
       padding: 7px 11px;
+      cursor: pointer;
+      transition: background 150ms ease, border-color 150ms ease, transform 150ms ease;
+    }
+    .chip:hover, .chip.active {
+      background: rgba(142,231,198,0.18);
+      border-color: rgba(142,231,198,0.45);
+    }
+    .chip:active {
+      transform: scale(0.98);
     }
     .transcript {
       margin-top: 14px;
@@ -192,6 +202,47 @@
       color: #cbd5e1;
       overflow: auto;
       line-height: 1.55;
+    }
+    .view-panel {
+      display: grid;
+      gap: 12px;
+    }
+    .view-heading {
+      margin: 0;
+      font-size: 18px;
+      color: var(--text);
+    }
+    .view-copy {
+      margin: 0;
+      color: #cbd5e1;
+    }
+    .view-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .view-tile {
+      min-height: 62px;
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 12px;
+      padding: 10px;
+      background: rgba(255,255,255,0.05);
+    }
+    .view-tile strong {
+      display: block;
+      color: var(--text);
+      font-size: 13px;
+    }
+    .view-tile span {
+      display: block;
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .activity-line {
+      border-left: 2px solid rgba(142,231,198,0.45);
+      padding-left: 10px;
+      color: #dbeafe;
     }
     .command-row { margin-top: 12px; display: flex; gap: 8px; }
     .command-row input {
@@ -304,6 +355,7 @@
         width: auto;
         grid-template-columns: 1fr;
       }
+      .view-grid { grid-template-columns: 1fr; }
       .app-window {
         position: static;
         width: auto;
@@ -358,6 +410,7 @@
         width: auto;
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }
+      .view-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .app-window {
         position: static;
         transform: none;
@@ -399,21 +452,27 @@
       </section>
 
       <section id="mission-window" class="app-window" aria-label="Mission Session">
-        <div class="window-titlebar"><strong>Mission Session</strong><span id="mission-model">local Qwen</span></div>
+        <div class="window-titlebar"><strong id="window-title">Mission Session</strong><span id="mission-model">local Qwen</span></div>
         <div class="window-body">
-          <div class="tabs"><button class="chip">Chat</button><button class="chip">Plan</button><button class="chip">Files</button><button class="chip">Tools</button><button class="chip">Logs</button></div>
-          <div class="transcript">Jarvis OS is ready. Start a mission, open a project, create a plugin, or inspect memory. Local Qwen 3.6 27B is the default engine.</div>
-          <div class="command-row"><input id="mission-input" aria-label="Create a mission for Jarvis OS"><button type="button">Start</button></div>
+          <div class="tabs">
+            <button class="chip active" data-tab="chat">Chat</button>
+            <button class="chip" data-tab="plan">Plan</button>
+            <button class="chip" data-tab="files">Files</button>
+            <button class="chip" data-tab="tools">Tools</button>
+            <button class="chip" data-tab="logs">Logs</button>
+          </div>
+          <div id="session-content" class="transcript" aria-live="polite"></div>
+          <div class="command-row"><input id="mission-input" aria-label="Create a mission for Jarvis OS" placeholder="Ask Jarvis to run a mission..."><button id="mission-start-button" type="button" aria-label="Start mission">Start</button></div>
         </div>
       </section>
 
       <nav id="start-menu" class="start-menu" aria-label="Jarvis OS Start menu">
-        <button type="button">New Mission</button>
-        <button type="button">New Project</button>
-        <button type="button">Plugin Studio</button>
-        <button type="button">Model Center</button>
-        <button type="button">Memory</button>
-        <button type="button">Settings</button>
+        <button type="button" data-open="mission">New Mission</button>
+        <button type="button" data-open="projects">New Project</button>
+        <button type="button" data-open="plugins">Plugin Studio</button>
+        <button type="button" data-open="models">Model Center</button>
+        <button type="button" data-open="memory">Memory</button>
+        <button type="button" data-open="settings">Settings</button>
       </nav>
     </section>
 
@@ -440,6 +499,155 @@
     }
     function updateClock(value) {
       setText('desktop-clock', value || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+    }
+    const views = {
+      mission: {
+        title: 'Mission Session',
+        activeTab: 'chat',
+        copy: 'Start a task, ask a question, or hand Jarvis a mission. Local Qwen 3.6 27B is the default engine.',
+        tiles: [['Default engine', 'qwen3.6:27b local-first'], ['Escalation', 'Claude/Codex standby'], ['Output', 'Chat response and vault notes'], ['Status', 'Ready for a mission']]
+      },
+      projects: {
+        title: 'Projects',
+        activeTab: 'files',
+        copy: 'Project sessions are where Jarvis will keep scoped workspaces, plans, files, and handoffs.',
+        tiles: [['OpenJarvis', 'Active evolution branch'], ['Jarvis OS', 'Desktop shell v1'], ['Brain vault', 'Project state and context'], ['Next', 'Create project sessions']]
+      },
+      plugins: {
+        title: 'Plugin Studio',
+        activeTab: 'tools',
+        copy: 'Plugin Studio is the place for adding tools, MCP servers, skills, and GitHub-sourced capability upgrades.',
+        tiles: [['Capability scout', 'Find candidates'], ['Install queue', 'Approval required'], ['Tool registry', 'Local-first'], ['Safety', 'No secrets or deletes']]
+      },
+      memory: {
+        title: 'Memory',
+        activeTab: 'files',
+        copy: 'Memory surfaces the Brain vault, recall signals, project state, and stable decisions Jarvis should reuse.',
+        tiles: [['Brain', 'Obsidian vault linked'], ['Recall', 'Retrieval reranking active'], ['Knowledge', 'Operator-reviewed notes'], ['Handoffs', 'Shared with Claude/Codex']]
+      },
+      models: {
+        title: 'Model Center',
+        activeTab: 'tools',
+        copy: 'Model Center shows the local model posture and where cloud assistants are allowed to help.',
+        tiles: [['Primary', 'qwen3.6:27b'], ['Mode', 'Local-first'], ['Cloud help', 'Only when required'], ['Fallback', 'LiteLLM router']]
+      },
+      operations: {
+        title: 'Operations',
+        activeTab: 'logs',
+        copy: 'Operations shows active missions, scheduled work, agent queue, markets, and health signals.',
+        tiles: [['Missions', 'Live queue widget'], ['Schedule', 'Daily jobs visible'], ['Markets', 'Pulse widget'], ['Agents', 'Queue status']]
+      },
+      settings: {
+        title: 'Settings',
+        activeTab: 'tools',
+        copy: 'Settings will hold Jarvis OS preferences, model routing, permissions, plugin approvals, and desktop layout.',
+        tiles: [['Layout', 'Desktop widgets'], ['Permissions', 'Approval required'], ['Model routing', 'Local-first'], ['Restart', 'jarvis.bat applies code changes']]
+      },
+      plan: {
+        title: 'Plan',
+        activeTab: 'plan',
+        copy: 'Plan view is for breaking a mission into steps before Jarvis executes it.',
+        tiles: [['Step 1', 'Understand the request'], ['Step 2', 'Pick tools/modules'], ['Step 3', 'Execute and verify'], ['Step 4', 'Report outcome']]
+      },
+      files: {
+        title: 'Files',
+        activeTab: 'files',
+        copy: 'Files view will expose project artifacts, vault notes, generated files, and session handoffs.',
+        tiles: [['Workspace', 'E:/Claude/OpenJarvis'], ['Vault', 'Brain project notes'], ['Inbox', 'Approvals and drops'], ['Output', 'Links appear here']]
+      },
+      tools: {
+        title: 'Tools',
+        activeTab: 'tools',
+        copy: 'Tools view is the launcher for available Jarvis skills, plugins, MCP tools, and local modules.',
+        tiles: [['Chat', '/chat command path'], ['Agents', 'Department workers'], ['Plugins', 'Capability upgrades'], ['Browser', 'Local browser automation']]
+      },
+      logs: {
+        title: 'Logs',
+        activeTab: 'logs',
+        copy: 'Logs view shows recent Jarvis OS actions from this page.',
+        tiles: []
+      }
+    };
+    const activity = ['Jarvis OS ready. Choose a desktop icon, Start menu item, taskbar app, or type a mission.'];
+    let currentView = 'mission';
+    function clearNode(node) {
+      while (node && node.firstChild) node.removeChild(node.firstChild);
+    }
+    function renderPanel(viewKey) {
+      const view = views[viewKey] || views.mission;
+      currentView = viewKey;
+      setText('window-title', view.title);
+      document.querySelectorAll('[data-tab]').forEach((button) => {
+        button.classList.toggle('active', button.dataset.tab === view.activeTab);
+      });
+      const root = document.getElementById('session-content');
+      clearNode(root);
+      const panel = document.createElement('div');
+      panel.className = 'view-panel';
+      const heading = document.createElement('h3');
+      heading.className = 'view-heading';
+      heading.textContent = view.title;
+      const copy = document.createElement('p');
+      copy.className = 'view-copy';
+      copy.textContent = view.copy;
+      panel.appendChild(heading);
+      panel.appendChild(copy);
+      if (viewKey === 'logs') {
+        activity.slice(-8).forEach((line) => {
+          const row = document.createElement('div');
+          row.className = 'activity-line';
+          row.textContent = line;
+          panel.appendChild(row);
+        });
+      } else {
+        const grid = document.createElement('div');
+        grid.className = 'view-grid';
+        view.tiles.forEach(([title, detail]) => {
+          const tile = document.createElement('div');
+          tile.className = 'view-tile';
+          const strong = document.createElement('strong');
+          strong.textContent = title;
+          const span = document.createElement('span');
+          span.textContent = detail;
+          tile.appendChild(strong);
+          tile.appendChild(span);
+          grid.appendChild(tile);
+        });
+        panel.appendChild(grid);
+      }
+      root.appendChild(panel);
+    }
+    function openView(viewKey) {
+      renderPanel(viewKey || 'mission');
+      activity.push('Opened ' + (views[viewKey] ? views[viewKey].title : 'Mission Session') + '.');
+      document.getElementById('start-menu').classList.remove('open');
+    }
+    async function startMission() {
+      const input = document.getElementById('mission-input');
+      const text = (input.value || '').trim();
+      if (!text) {
+        activity.push('Mission input was empty.');
+        renderPanel('logs');
+        input.focus();
+        return;
+      }
+      activity.push('Mission submitted: ' + text);
+      renderPanel('logs');
+      input.value = '';
+      try {
+        const response = await fetch('/chat', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          credentials: 'include',
+          body: JSON.stringify({text})
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Jarvis rejected the mission.');
+        activity.push('Jarvis: ' + (data.response || 'Mission accepted.'));
+      } catch (err) {
+        activity.push('Jarvis OS could not reach /chat: ' + (err && err.message ? err.message : 'unknown error'));
+      }
+      renderPanel('logs');
     }
     async function fetchState() {
       try {
@@ -468,12 +676,26 @@
     document.getElementById('start-button').addEventListener('click', () => {
       document.getElementById('start-menu').classList.toggle('open');
     });
+    document.querySelectorAll('[data-open]').forEach((button) => {
+      button.addEventListener('click', () => openView(button.dataset.open));
+    });
+    document.querySelectorAll('[data-tab]').forEach((button) => {
+      button.addEventListener('click', () => openView(button.dataset.tab));
+    });
+    document.getElementById('mission-start-button').addEventListener('click', startMission);
+    document.getElementById('mission-input').addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        startMission();
+      }
+    });
     document.addEventListener('click', (event) => {
       if (!event.target.closest('#start-menu') && !event.target.closest('#start-button')) {
         document.getElementById('start-menu').classList.remove('open');
       }
     });
     updateClock();
+    renderPanel('mission');
     fetchState();
     setInterval(fetchState, 10000);
   </script>

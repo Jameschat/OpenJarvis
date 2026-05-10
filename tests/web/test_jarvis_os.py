@@ -103,7 +103,8 @@ def test_jarvis_os_page_uses_safe_text_assignment_for_state():
     assert ".textContent = value == null ? '' : String(value)" in html
     assert "innerHTML = state" not in html
     assert "if (!res.ok) throw new Error('state unavailable')" in html
-    assert "updateClock();\n    fetchState();" in html
+    assert "updateClock();" in html
+    assert "fetchState();" in html
 
 
 def test_jarvis_os_mobile_layout_uses_scrollable_document_flow():
@@ -115,3 +116,21 @@ def test_jarvis_os_mobile_layout_uses_scrollable_document_flow():
     assert ".desktop-shell {\n        min-height: 100dvh;\n        display: block;" in mobile_block
     assert ".widget-grid {\n        position: static;" in mobile_block
     assert ".app-window {\n        position: static;" in mobile_block
+
+
+def test_jarvis_os_page_wires_interactive_shell_controls():
+    html = (ROOT / "jarvis_web" / "jarvis-os.html").read_text(encoding="utf-8")
+
+    for marker in (
+        'data-open="projects"',
+        'data-open="operations"',
+        'data-open="settings"',
+        'data-tab="plan"',
+        'id="session-content"',
+        'id="mission-start-button"',
+        "function openView(viewKey)",
+        "function startMission()",
+        "fetch('/chat'",
+        "credentials: 'include'",
+    ):
+        assert marker in html
