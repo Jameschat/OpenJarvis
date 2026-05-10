@@ -93,3 +93,88 @@ def test_fetch_meta_returns_none_when_ytdlp_raises(monkeypatch):
     monkeypatch.setattr("yt_dlp.YoutubeDL", _FakeYDL)
     meta = tiktok_brief._fetch_meta("https://www.tiktok.com/@x/video/123")
     assert meta is None
+
+
+def test_download_audio_returns_path_on_success(tmp_path, monkeypatch):
+    """yt-dlp writes audio to dest_dir and we return the resulting filename."""
+    target = tmp_path / "audio.m4a"
+    target.write_bytes(b"fake audio bytes")  # simulate yt-dlp finishing
+
+    captured = {}
+    class _FakeYDL:
+        def __init__(self, opts):
+            captured["opts"] = opts
+        def __enter__(self): return self
+        def __exit__(self, *a): pass
+        def extract_info(self, url, download=True):
+            return {"id": "abc", "ext": "m4a"}
+        def prepare_filename(self, info):
+            return str(target)
+    monkeypatch.setattr("yt_dlp.YoutubeDL", _FakeYDL)
+
+    out = tiktok_brief._download_audio(
+        "https://www.tiktok.com/@x/video/123", dest_dir=tmp_path,
+    )
+    assert out == target
+    # Confirm yt-dlp got asked for audio-only output.
+    assert captured["opts"].get("format", "").startswith("bestaudio")
+
+
+def test_download_audio_returns_none_when_ytdlp_fails(tmp_path, monkeypatch):
+    class _FakeYDL:
+        def __init__(self, opts): pass
+        def __enter__(self): return self
+        def __exit__(self, *a): pass
+        def extract_info(self, url, download=True):
+            from yt_dlp.utils import DownloadError
+            raise DownloadError("403 Forbidden")
+        def prepare_filename(self, info): return ""
+    monkeypatch.setattr("yt_dlp.YoutubeDL", _FakeYDL)
+    out = tiktok_brief._download_audio(
+        "https://www.tiktok.com/@x/video/123", dest_dir=tmp_path,
+    )
+    assert out is None
+
+
+def test_transcribe_audio_returns_text_from_mocked_whisper(tmp_path, monkeypatch):
+    fake_audio = tmp_path / "audio.m4a"
+    fake_audio.write_bytes(b"x")
+
+    class _FakeSegment:
+        def __init__(self, text): self.text = text
+    class _FakeModel:
+        def __init__(self, *a, **kw): pass
+        def transcribe(self, path, **kw):
+            segments = [
+                _FakeSegment("Hello and welcome."),
+                _FakeSegment(" Today we're talking about TikTok briefings."),
+            ]
+            info = type("Info", (), {"language": "en", "duration": 12.5})
+            return iter(segments), info
+    # Patch the cached model so the test doesn't try to load real whisper.
+    monkeypatch.setattr(tiktok_brief, "_WHISPER_MODEL", _FakeModel())
+    monkeypatch.setattr(tiktok_brief, "_get_whisper_model", lambda: _FakeModel())
+
+    text, lang, duration = tiktok_brief._transcribe_audio(fake_audio)
+    assert "Hello and welcome." in text
+    assert "TikTok briefings" in text
+    assert lang == "en"
+    assert duration == 12.5
+
+
+def test_transcribe_audio_returns_empty_on_silence(tmp_path, monkeypatch):
+    """A music-only / silent TikTok produces no transcribed segments. The
+    caller (vision step) is what carries that case."""
+    fake_audio = tmp_path / "silent.m4a"
+    fake_audio.write_bytes(b"x")
+    class _FakeModel:
+        def __init__(self, *a, **kw): pass
+        def transcribe(self, path, **kw):
+            info = type("Info", (), {"language": "en", "duration": 5.0})
+            return iter([]), info
+    monkeypatch.setattr(tiktok_brief, "_WHISPER_MODEL", _FakeModel())
+    monkeypatch.setattr(tiktok_brief, "_get_whisper_model", lambda: _FakeModel())
+
+    text, lang, duration = tiktok_brief._transcribe_audio(fake_audio)
+    assert text == ""
+    assert duration == 5.0

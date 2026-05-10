@@ -84,4 +84,72 @@ def _fetch_meta(url: str) -> Optional[Dict[str, Any]]:
     }
 
 
-__all__ = ["_extract_video_id", "_resolve_short_url", "_fetch_meta"]
+# ---------------------------------------------------------------------------
+# Audio download + transcription
+# ---------------------------------------------------------------------------
+
+
+def _download_audio(url: str, dest_dir):
+    """Download audio-only to dest_dir using yt-dlp. Returns the resulting
+    file path or None on failure."""
+    from pathlib import Path
+    import yt_dlp
+    opts = {
+        "quiet": True,
+        "no_warnings": True,
+        "format": "bestaudio/best",
+        "outtmpl": str(Path(dest_dir) / "%(id)s.%(ext)s"),
+        "noplaylist": True,
+    }
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            filename = ydl.prepare_filename(info)
+    except Exception:
+        logger.exception("tiktok: yt-dlp audio download failed for %s", url)
+        return None
+    p = Path(filename)
+    return p if p.exists() else None
+
+
+# Cache the whisper model so repeated calls in one session don't reload it.
+_WHISPER_MODEL = None
+
+
+def _get_whisper_model():
+    """Lazy-init faster-whisper. Prefers GPU; falls back to CPU."""
+    global _WHISPER_MODEL
+    if _WHISPER_MODEL is not None:
+        return _WHISPER_MODEL
+    from faster_whisper import WhisperModel
+    import os
+    model_size = os.environ.get("OPENJARVIS_WHISPER_MODEL", "large-v3")
+    device = os.environ.get("OPENJARVIS_WHISPER_DEVICE", "cuda")
+    compute_type = os.environ.get("OPENJARVIS_WHISPER_COMPUTE", "float16")
+    try:
+        _WHISPER_MODEL = WhisperModel(model_size, device=device, compute_type=compute_type)
+    except Exception:
+        logger.warning("tiktok: whisper GPU init failed, falling back to CPU")
+        _WHISPER_MODEL = WhisperModel(model_size, device="cpu", compute_type="int8")
+    return _WHISPER_MODEL
+
+
+def _transcribe_audio(audio_path):
+    """Transcribe via faster-whisper. Returns (text, language, duration_s).
+    Empty text on silence / music-only is a valid success path."""
+    model = _get_whisper_model()
+    segments, info = model.transcribe(str(audio_path), beam_size=5)
+    pieces = []
+    for seg in segments:
+        pieces.append(seg.text)
+    text = "".join(pieces).strip()
+    return text, getattr(info, "language", None), float(getattr(info, "duration", 0.0))
+
+
+__all__ = [
+    "_extract_video_id",
+    "_resolve_short_url",
+    "_fetch_meta",
+    "_download_audio",
+    "_transcribe_audio",
+]
