@@ -489,6 +489,19 @@ DEFAULT_AGENTS: List[Dict[str, Any]] = [
         "color": "#99f6e4",
         "provider": "qwen",
     },
+    {
+        "id": "qwen-builder",
+        "name": "qwen-builder",
+        "role": (
+            "Local Qwen builder agent. Creates small apps, web pages, scripts, "
+            "and code prototypes inside its isolated task workspace only."
+        ),
+        "model": "qwen3.6-27b-local",
+        "skills": ["code", "web", "prototype", "local"],
+        "color": "#5eead4",
+        "provider": "qwen",
+        "workspace_write": True,
+    },
 
     # ---- Department heads (agency-agents integration, 2026-04-28) -------
     # Each head is a Claude-provider coordinator that orchestrates the
@@ -1923,6 +1936,51 @@ def _build_brain_context() -> str:
     return "\n".join(lines)
 
 
+_QWEN_WORKSPACE_FILES_RE = re.compile(
+    r"```qwen_workspace_files\s*(?P<payload>\{.*?\})\s*```",
+    re.DOTALL,
+)
+
+
+def _write_qwen_workspace_files(content: str, workspace: Path) -> List[str]:
+    """Write Qwen-declared files inside `workspace`, rejecting path escapes."""
+    match = _QWEN_WORKSPACE_FILES_RE.search(content or "")
+    if not match:
+        return []
+    try:
+        payload = json.loads(match.group("payload"))
+    except json.JSONDecodeError:
+        logger.warning("qwen workspace file payload was invalid JSON")
+        return []
+    files = payload.get("files")
+    if not isinstance(files, list):
+        return []
+
+    root = workspace.resolve()
+    written: List[str] = []
+    for item in files[:20]:
+        if not isinstance(item, dict):
+            continue
+        rel = str(item.get("path") or "").replace("\\", "/").strip()
+        body = item.get("content")
+        if not rel or rel.startswith("/") or ":" in rel or ".." in Path(rel).parts:
+            logger.warning("qwen workspace file rejected unsafe path: %s", rel)
+            continue
+        if not isinstance(body, str) or len(body.encode("utf-8")) > 200_000:
+            logger.warning("qwen workspace file rejected invalid/large content: %s", rel)
+            continue
+        target = (workspace / rel).resolve()
+        try:
+            target.relative_to(root)
+        except ValueError:
+            logger.warning("qwen workspace file rejected path escape: %s", rel)
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(body, encoding="utf-8")
+        written.append(rel)
+    return written
+
+
 def _run_qwen_task(task: Task, agent_spec: Dict[str, Any]) -> None:
     """Run a local Qwen-backed single-shot agent through LiteLLM.
 
@@ -1946,7 +2004,18 @@ def _run_qwen_task(task: Task, agent_spec: Dict[str, Any]) -> None:
 
     model = (agent_spec.get("model") or "qwen3.6-27b-local").strip()
     role = (agent_spec.get("role") or "Local Qwen agent.").strip()
+    workspace_write = bool(agent_spec.get("workspace_write"))
     brain_block = _build_brain_context()
+    workspace_block = ""
+    if workspace_write:
+        workspace_block = (
+            "You may create files, but ONLY inside your isolated task workspace. "
+            "To do this, include exactly one fenced block named "
+            "`qwen_workspace_files` containing JSON like "
+            '{"files":[{"path":"index.html","content":"..."}]}. '
+            "Use relative paths only. Do not use absolute paths, parent "
+            "directories, secrets, installs, shell commands, or external side effects."
+        )
     prompt = "\n\n".join(
         part for part in (
             role,
@@ -1954,6 +2023,7 @@ def _run_qwen_task(task: Task, agent_spec: Dict[str, Any]) -> None:
             "Write a concrete, useful result for the operator. Do not claim "
             "you changed external systems or installed tools. If action is "
             "needed, provide a clear next-step plan and verification checks.",
+            workspace_block,
             f"TASK:\n{task.prompt or ''}",
             brain_block,
         )
@@ -1994,6 +2064,13 @@ def _run_qwen_task(task: Task, agent_spec: Dict[str, Any]) -> None:
             f"{content.strip()}\n"
         )
         (ws / "RESULT.md").write_text(result_md, encoding="utf-8")
+        if workspace_write:
+            written_files = _write_qwen_workspace_files(content, ws)
+            if written_files:
+                (ws / "FILES_WRITTEN.json").write_text(
+                    json.dumps({"files": written_files}, indent=2) + "\n",
+                    encoding="utf-8",
+                )
         stdout_log.write_text(content, encoding="utf-8")
         stderr_log.write_text("", encoding="utf-8")
         _reg.mark_finished(task.id, exit_code=0)

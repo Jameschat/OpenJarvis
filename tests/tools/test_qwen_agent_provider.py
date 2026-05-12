@@ -14,6 +14,7 @@ def test_qwen_agents_are_registered_as_local_provider():
         "qwen-docs",
         "qwen-study",
         "qwen-capability-scout",
+        "qwen-builder",
     }
     assert all(a.get("model") == "qwen3.6-27b-local" for a in qwen_agents)
 
@@ -23,7 +24,7 @@ def test_agent_roster_includes_qwen_without_replacing_claude_or_codex():
 
     providers = Counter(a.get("provider") for a in DEFAULT_AGENTS)
 
-    assert providers["qwen"] == 5
+    assert providers["qwen"] == 6
     assert providers["claude"] >= 24
     assert providers["codex"] >= 6
     assert providers["python"] >= 12
@@ -100,3 +101,79 @@ def test_qwen_provider_writes_result_markdown(monkeypatch, tmp_path):
     assert "Local Qwen result body." in result_path.read_text(encoding="utf-8")
     assert dummy_reg.running == [("task-qwen", str(tmp_path / "task-qwen"))]
     assert dummy_reg.finished == [("task-qwen", 0, None)]
+
+
+def test_qwen_builder_writes_safe_workspace_files(monkeypatch, tmp_path):
+    from openjarvis.tools import agent_runner
+    from openjarvis.tools.agent_runner import Task
+
+    content = """Built a tiny page.
+
+```qwen_workspace_files
+{"files":[{"path":"index.html","content":"<h1>Hello Jarvis</h1>"}]}
+```
+"""
+
+    class DummyMessage:
+        pass
+
+    DummyMessage.content = content
+
+    class DummyChoice:
+        message = DummyMessage()
+
+    class DummyCompletions:
+        def create(self, **kwargs):
+            assert "qwen_workspace_files" in kwargs["messages"][0]["content"]
+            return types.SimpleNamespace(choices=[DummyChoice()])
+
+    class DummyClient:
+        def __init__(self, **kwargs):
+            self.chat = types.SimpleNamespace(completions=DummyCompletions())
+
+    class DummyRegistry:
+        def mark_running(self, task_id, workspace):
+            pass
+
+        def mark_finished(self, task_id, exit_code, error=None):
+            assert exit_code == 0
+            assert error is None
+
+    monkeypatch.setitem(sys.modules, "openai", types.SimpleNamespace(OpenAI=DummyClient))
+    monkeypatch.setattr(agent_runner, "RUNS_DIR", tmp_path)
+    monkeypatch.setattr(agent_runner, "_reg", DummyRegistry())
+    monkeypatch.setattr(agent_runner, "_build_brain_context", lambda: "")
+    monkeypatch.setattr(agent_runner, "_write_agent_task_note", lambda *args, **kwargs: None)
+
+    task = Task(
+        id="task-build",
+        title="Build page",
+        agent_id="qwen-builder",
+        prompt="Create a small web page.",
+    )
+    agent_runner._run_qwen_task(
+        task,
+        {
+            "id": "qwen-builder",
+            "role": "Build sandbox files.",
+            "model": "qwen3.6-27b-local",
+            "workspace_write": True,
+        },
+    )
+
+    assert (tmp_path / "task-build" / "index.html").read_text(encoding="utf-8") == (
+        "<h1>Hello Jarvis</h1>"
+    )
+
+
+def test_qwen_workspace_files_reject_path_escape(tmp_path):
+    from openjarvis.tools import agent_runner
+
+    content = """```qwen_workspace_files
+{"files":[{"path":"../outside.txt","content":"bad"}]}
+```"""
+
+    written = agent_runner._write_qwen_workspace_files(content, tmp_path)
+
+    assert written == []
+    assert not (tmp_path.parent / "outside.txt").exists()
