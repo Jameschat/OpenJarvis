@@ -2983,6 +2983,8 @@ def _parse_scheduled_note(path: Path) -> Optional[Dict[str, Any]]:
         meta[k.strip()] = v.strip()
     if not meta.get("agent") or not meta.get("run_at"):
         return None
+    catch_up = str(meta.get("catch_up", "true")).strip().lower()
+    meta["catch_up"] = catch_up not in {"0", "false", "no", "off"}
     # Strip the markdown title from the body if present, so the prompt is clean
     body_lines = body.split("\n", 1)
     if body_lines and body_lines[0].startswith("# "):
@@ -3090,6 +3092,7 @@ def list_scheduled() -> List[Dict[str, Any]]:
             "run_at":     meta.get("run_at"),
             "status":     status,
             "recurrence": meta.get("recurrence", "once"),
+            "catch_up":    bool(meta.get("catch_up", True)),
             "path":       str(p),
         })
     return out
@@ -3137,6 +3140,27 @@ def _next_run_at(prev_iso: str, recurrence: str) -> Optional[str]:
     return None
 
 
+def _next_future_run_at(prev_iso: str, recurrence: str, now: datetime) -> Optional[str]:
+    """Roll a recurring schedule forward until it is in the future."""
+    next_at = _next_run_at(prev_iso, recurrence)
+    guard = 0
+    while next_at is not None and guard < 370:
+        try:
+            parsed = datetime.fromisoformat(next_at)
+        except ValueError:
+            return None
+        if parsed > now:
+            return parsed.isoformat(timespec="seconds")
+        next_at = _next_run_at(next_at, recurrence)
+        guard += 1
+    return next_at
+
+
+def _should_skip_missed_recurring(entry: Dict[str, Any]) -> bool:
+    recurrence = str(entry.get("recurrence", "once")).lower()
+    return recurrence != "once" and not bool(entry.get("catch_up", True))
+
+
 _scheduler_thread: Optional[threading.Thread] = None
 _scheduler_stop = threading.Event()
 
@@ -3154,6 +3178,20 @@ def _scheduler_loop() -> None:
                 except ValueError:
                     continue
                 if when > now:
+                    continue
+                if _should_skip_missed_recurring(entry):
+                    next_at = _next_future_run_at(
+                        entry["run_at"],
+                        entry["recurrence"],
+                        now,
+                    )
+                    path = Path(entry["path"])
+                    _mark_scheduled_fired(path, entry["recurrence"], next_at)
+                    logger.info(
+                        "skipped missed recurring task %s; next run %s",
+                        entry.get("id"),
+                        next_at,
+                    )
                     continue
                 # Fire it
                 path = Path(entry["path"])
