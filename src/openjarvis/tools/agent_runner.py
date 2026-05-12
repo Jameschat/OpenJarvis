@@ -426,9 +426,29 @@ DEFAULT_AGENTS: List[Dict[str, Any]] = [
         "python_entry": "openjarvis.tools.capability_queue:run_as_agent_task",
     },
     # ---- Local Qwen team (provider=qwen, LiteLLM -> Ollama) --------------
-    # Safe first wave: research, planning, docs, self-study, and capability
-    # scouting. These agents write RESULT.md from local qwen3.6:27b output
-    # and do not get shell/file-edit tool authority beyond their workspace.
+    # Local-first Qwen department. Safe authority boundary: Qwen agents can
+    # write RESULT.md and, where explicitly enabled, files inside their own
+    # isolated task workspace. They do not get shell, install, external
+    # mutation, or Jarvis-core edit authority.
+    {
+        "id": "qwen-chief",
+        "name": "qwen-chief",
+        "role": (
+            "Head of the local Qwen department. Route tasks across Qwen "
+            "specialists for local-first workflows: researcher gathers "
+            "context, planner structures the work, builder creates sandbox "
+            "prototypes, tester defines checks, reviewer critiques output, "
+            "docs packages the result, and capability-scout recommends "
+            "missing modules. Produce an integrated workflow deliverable and "
+            "escalate to Claude/Codex only when production edits, shell "
+            "execution, tests, installs, or high-risk actions are required."
+        ),
+        "model": "qwen3.6-27b-local",
+        "skills": ["coordinate", "workflow", "local", "qwen"],
+        "color": "#22d3ee",
+        "provider": "qwen",
+        "department": "qwen",
+    },
     {
         "id": "qwen-researcher",
         "name": "qwen-researcher",
@@ -440,6 +460,7 @@ DEFAULT_AGENTS: List[Dict[str, Any]] = [
         "skills": ["research", "local", "synthesis"],
         "color": "#7dd3fc",
         "provider": "qwen",
+        "department": "qwen",
     },
     {
         "id": "qwen-planner",
@@ -452,6 +473,7 @@ DEFAULT_AGENTS: List[Dict[str, Any]] = [
         "skills": ["planning", "local", "handoff"],
         "color": "#67e8f9",
         "provider": "qwen",
+        "department": "qwen",
     },
     {
         "id": "qwen-docs",
@@ -464,6 +486,7 @@ DEFAULT_AGENTS: List[Dict[str, Any]] = [
         "skills": ["docs", "local", "writing"],
         "color": "#a7f3d0",
         "provider": "qwen",
+        "department": "qwen",
     },
     {
         "id": "qwen-study",
@@ -476,6 +499,7 @@ DEFAULT_AGENTS: List[Dict[str, Any]] = [
         "skills": ["study", "local", "self-improvement"],
         "color": "#bae6fd",
         "provider": "qwen",
+        "department": "qwen",
     },
     {
         "id": "qwen-capability-scout",
@@ -488,6 +512,7 @@ DEFAULT_AGENTS: List[Dict[str, Any]] = [
         "skills": ["tools", "github", "local", "autonomy"],
         "color": "#99f6e4",
         "provider": "qwen",
+        "department": "qwen",
     },
     {
         "id": "qwen-builder",
@@ -500,7 +525,38 @@ DEFAULT_AGENTS: List[Dict[str, Any]] = [
         "skills": ["code", "web", "prototype", "local"],
         "color": "#5eead4",
         "provider": "qwen",
+        "department": "qwen",
         "workspace_write": True,
+    },
+    {
+        "id": "qwen-reviewer",
+        "name": "qwen-reviewer",
+        "role": (
+            "Local Qwen review agent. Reviews Qwen-produced plans, code "
+            "prototypes, docs, and research for missing assumptions, unsafe "
+            "claims, incomplete files, and escalation needs. Write a concise "
+            "review with blockers, risks, and exact recommended next steps."
+        ),
+        "model": "qwen3.6-27b-local",
+        "skills": ["review", "risk", "quality", "local"],
+        "color": "#38bdf8",
+        "provider": "qwen",
+        "department": "qwen",
+    },
+    {
+        "id": "qwen-tester",
+        "name": "qwen-tester",
+        "role": (
+            "Local Qwen test designer. Creates test plans, acceptance checks, "
+            "edge-case lists, and manual verification scripts for Qwen-built "
+            "work. Do not claim tests were executed; hand off execution to "
+            "Codex/Claude or a Python tool when real test runs are required."
+        ),
+        "model": "qwen3.6-27b-local",
+        "skills": ["testing", "acceptance", "verification", "local"],
+        "color": "#0ea5e9",
+        "provider": "qwen",
+        "department": "qwen",
     },
 
     # ---- Department heads (agency-agents integration, 2026-04-28) -------
@@ -903,6 +959,7 @@ DEPT_TO_HEAD: Dict[str, str] = {
     "finance":     "finance-head",
     "gamedev":     "gamedev-head",
     "ops":         "ops-head",
+    "qwen":        "qwen-chief",
 }
 
 
@@ -2063,7 +2120,8 @@ def _run_qwen_task(task: Task, agent_spec: Dict[str, Any]) -> None:
             "## Result\n\n"
             f"{content.strip()}\n"
         )
-        (ws / "RESULT.md").write_text(result_md, encoding="utf-8")
+        result_path = ws / (f"{task.id}.RESULT.md" if task.project_id else "RESULT.md")
+        result_path.write_text(result_md, encoding="utf-8")
         if workspace_write:
             written_files = _write_qwen_workspace_files(content, ws)
             if written_files:
@@ -3375,6 +3433,48 @@ def wake_all_idle_agents() -> List[str]:
     return queued
 
 
+def kick_off_qwen_department_workflow(goal: str, title: Optional[str] = None) -> List[str]:
+    """Queue a project-scoped local Qwen workflow across specialist agents."""
+    clean_goal = (goal or "").strip()
+    if len(clean_goal) < 6:
+        raise ValueError("goal too short")
+    base_title = (title or clean_goal).strip()[:80] or "Qwen workflow"
+    project_slug = re.sub(r"[^a-z0-9-]+", "-", base_title.lower()).strip("-")[:48]
+    project_id = f"qwen-{project_slug or uuid.uuid4().hex[:8]}"
+    workflow = [
+        ("qwen-researcher", 20, "Research context, assumptions, constraints, prior art, and missing information."),
+        ("qwen-planner", 20, "Create a concrete workflow plan with phases, owners, handoffs, and acceptance criteria."),
+        ("qwen-builder", 20, "Create safe sandbox prototype files if useful. Keep all files inside the task workspace."),
+        ("qwen-tester", 20, "Design verification checks, test cases, edge cases, and evidence required for confidence."),
+        ("qwen-docs", 20, "Package the workflow into operator-readable docs and implementation notes."),
+        ("qwen-reviewer", 30, "Review the expected workflow outputs for gaps, unsafe assumptions, and escalation needs."),
+        ("qwen-chief", 40, "Synthesize the Qwen department workflow into a final decision-ready brief."),
+    ]
+    ids: List[str] = []
+    for agent_id, priority, role_task in workflow:
+        prompt = (
+            "QWEN DEPARTMENT WORKFLOW\n"
+            "========================\n"
+            f"Operator goal: {clean_goal}\n\n"
+            f"Your specialist responsibility: {role_task}\n\n"
+            f"Shared project workspace: {project_id}\n"
+            "Write a concrete artifact for your role. If you need production "
+            "code edits, shell execution, internet-only verification, package "
+            "installation, account access, secrets, or external mutation, do "
+            "not perform it; state the exact handoff needed for Codex/Claude."
+        )
+        ids.append(
+            add_task(
+                title=f"Qwen workflow: {base_title} ({agent_id})",
+                agent_id=agent_id,
+                prompt=prompt,
+                project_id=project_id,
+                priority=priority,
+            )
+        )
+    return ids
+
+
 # ---------------------------------------------------------------------------
 # Voice fast-path — "spin up a team", "have the agents build X", etc.
 # ---------------------------------------------------------------------------
@@ -3624,6 +3724,8 @@ _DEPARTMENT_TRIGGERS: List[Tuple[Tuple[str, ...], str, str]] = [
       "unreal engine"),                           "gamedev-head",     "game dev"),
     (("chief of staff", "ops head",
       "cross-functional", "cross departmental"),  "ops-head",         "ops"),
+    (("qwen", "qwen department", "local qwen",
+      "local ai department"),                     "qwen-chief",       "Qwen local"),
 ]
 
 # Phrases that must precede a department keyword to count as a routing intent.
@@ -3768,6 +3870,7 @@ __all__ = [
     "cancel_running_task",
     "cancel_all_running",
     "wake_all_idle_agents",
+    "kick_off_qwen_department_workflow",
     "kick_off_content_pipeline",
     "get_snapshot",
     "list_agents",

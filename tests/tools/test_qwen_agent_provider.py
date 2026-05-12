@@ -9,14 +9,18 @@ def test_qwen_agents_are_registered_as_local_provider():
     qwen_agents = [a for a in DEFAULT_AGENTS if a.get("provider") == "qwen"]
 
     assert {a["id"] for a in qwen_agents} == {
+        "qwen-chief",
         "qwen-researcher",
         "qwen-planner",
         "qwen-docs",
         "qwen-study",
         "qwen-capability-scout",
         "qwen-builder",
+        "qwen-reviewer",
+        "qwen-tester",
     }
     assert all(a.get("model") == "qwen3.6-27b-local" for a in qwen_agents)
+    assert all(a.get("department") == "qwen" for a in qwen_agents)
 
 
 def test_agent_roster_includes_qwen_without_replacing_claude_or_codex():
@@ -24,10 +28,48 @@ def test_agent_roster_includes_qwen_without_replacing_claude_or_codex():
 
     providers = Counter(a.get("provider") for a in DEFAULT_AGENTS)
 
-    assert providers["qwen"] == 6
+    assert providers["qwen"] == 9
     assert providers["claude"] >= 24
     assert providers["codex"] >= 6
     assert providers["python"] >= 12
+
+
+def test_qwen_department_routes_to_local_chief():
+    from openjarvis.cli import tool_use
+    from openjarvis.tools import agent_runner
+
+    assert agent_runner.DEPT_TO_HEAD["qwen"] == "qwen-chief"
+    assert tool_use._resolve_department("qwen") == ("qwen-chief", "Qwen local")
+
+
+def test_qwen_department_workflow_queues_specialists(monkeypatch):
+    from openjarvis.tools import agent_runner
+
+    queued = []
+
+    def fake_add_task(**kwargs):
+        queued.append(kwargs)
+        return f"task-{len(queued)}"
+
+    monkeypatch.setattr(agent_runner, "add_task", fake_add_task)
+
+    ids = agent_runner.kick_off_qwen_department_workflow(
+        goal="Build a tiny customer portal prototype",
+        title="Customer portal",
+    )
+
+    assert ids == [f"task-{i}" for i in range(1, 8)]
+    assert [q["agent_id"] for q in queued] == [
+        "qwen-researcher",
+        "qwen-planner",
+        "qwen-builder",
+        "qwen-tester",
+        "qwen-docs",
+        "qwen-reviewer",
+        "qwen-chief",
+    ]
+    assert {q["project_id"] for q in queued} == {queued[0]["project_id"]}
+    assert queued[-1]["priority"] > queued[0]["priority"]
 
 
 def test_qwen_provider_runtime_path_exists():
@@ -101,6 +143,55 @@ def test_qwen_provider_writes_result_markdown(monkeypatch, tmp_path):
     assert "Local Qwen result body." in result_path.read_text(encoding="utf-8")
     assert dummy_reg.running == [("task-qwen", str(tmp_path / "task-qwen"))]
     assert dummy_reg.finished == [("task-qwen", 0, None)]
+
+
+def test_qwen_project_tasks_write_task_scoped_result(monkeypatch, tmp_path):
+    from openjarvis.tools import agent_runner
+    from openjarvis.tools.agent_runner import Task
+
+    class DummyMessage:
+        content = "Project-scoped result."
+
+    class DummyChoice:
+        message = DummyMessage()
+
+    class DummyCompletions:
+        def create(self, **kwargs):
+            return types.SimpleNamespace(choices=[DummyChoice()])
+
+    class DummyClient:
+        def __init__(self, **kwargs):
+            self.chat = types.SimpleNamespace(completions=DummyCompletions())
+
+    class DummyRegistry:
+        def mark_running(self, task_id, workspace):
+            pass
+
+        def mark_finished(self, task_id, exit_code, error=None):
+            assert exit_code == 0
+
+    monkeypatch.setitem(sys.modules, "openai", types.SimpleNamespace(OpenAI=DummyClient))
+    monkeypatch.setattr(agent_runner, "PROJECTS_DIR", tmp_path)
+    monkeypatch.setattr(agent_runner, "_reg", DummyRegistry())
+    monkeypatch.setattr(agent_runner, "_build_brain_context", lambda: "")
+    monkeypatch.setattr(agent_runner, "_write_agent_task_note", lambda *args, **kwargs: None)
+
+    task = Task(
+        id="task-project",
+        title="Project result",
+        agent_id="qwen-planner",
+        prompt="Plan it.",
+        project_id="qwen-workflow-test",
+    )
+
+    agent_runner._run_qwen_task(
+        task,
+        {"id": "qwen-planner", "role": "Plan.", "model": "qwen3.6-27b-local"},
+    )
+
+    ws = tmp_path / "qwen-workflow-test"
+    assert (ws / "task-project.RESULT.md").exists()
+    assert not (ws / "RESULT.md").exists()
 
 
 def test_qwen_builder_writes_safe_workspace_files(monkeypatch, tmp_path):

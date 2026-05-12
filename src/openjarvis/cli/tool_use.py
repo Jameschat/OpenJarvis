@@ -354,7 +354,10 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
                 "Engine for the operator's CursedTides project.\n"
                 "  - ops: cross-departmental coordination — when the goal "
                 "spans 2+ departments and needs a single coordinator. ops "
-                "can also dispatch other heads.\n\n"
+                "can also dispatch other heads.\n"
+                "  - qwen: local-first workflows, drafts, research synthesis, "
+                "sandbox prototypes, acceptance plans, and low-cost task "
+                "decomposition before escalating to Claude/Codex.\n\n"
                 "DON'T use this for: simple chat replies, one-off code "
                 "edits (use dispatch_agent), web research / video briefs "
                 "(use dispatch_browser_pilot). DON'T use it for vague "
@@ -368,7 +371,7 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
                         "enum": [
                             "engineering", "design", "marketing", "product",
                             "pm", "testing", "support", "finance",
-                            "gamedev", "ops",
+                            "gamedev", "ops", "qwen",
                         ],
                         "description": "Which department to dispatch to.",
                     },
@@ -509,7 +512,7 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
                                     "enum": [
                                         "engineering", "design", "marketing", "product",
                                         "pm", "testing", "support", "finance",
-                                        "gamedev", "ops",
+                                        "gamedev", "ops", "qwen",
                                     ],
                                     "description": (
                                         "Route this step to a department head, who will "
@@ -974,6 +977,7 @@ _DEPARTMENT_FRIENDLY = {
     "finance":     "finance",
     "gamedev":     "game dev",
     "ops":         "ops",
+    "qwen":        "Qwen local",
 }
 
 
@@ -1020,6 +1024,27 @@ def _tool_dispatch_department(department: str, goal: str, title: str) -> str:
         return json.dumps({"ok": False, "error": "goal too short — be specific"})
     head_id, friendly = resolved
     t = (title or g)[:80]
+    if dep == "qwen":
+        try:
+            task_ids = agent_runner.kick_off_qwen_department_workflow(
+                goal=g,
+                title=t,
+            )
+        except Exception as exc:
+            logger.exception("dispatch_department qwen failed")
+            return json.dumps({"ok": False, "error": f"dispatch failed: {exc}"})
+        return json.dumps({
+            "ok": True,
+            "task_ids": task_ids,
+            "department": dep,
+            "head": head_id,
+            "note": (
+                "Qwen local department workflow queued across researcher, "
+                "planner, builder, tester, docs, reviewer, and chief. "
+                "Artifacts land in the shared Qwen project workspace; "
+                "production execution still escalates to Codex/Claude."
+            ),
+        })
     prompt = (
         f"DEPARTMENT BRIEF — {friendly.upper()}\n"
         f"========================================\n"
