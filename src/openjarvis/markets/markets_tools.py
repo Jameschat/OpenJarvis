@@ -284,6 +284,34 @@ def backtest_grid_bot(
         return json.dumps({"ok": False, "error": str(exc), "ticker": (ticker or "").upper()})
 
 
+def backtest_signal_bot(
+    ticker: str,
+    signals: list[dict[str, Any]],
+    initial_cash_gbp: float = 1000.0,
+    default_order_gbp: float = 100.0,
+    fee_rate: float = 0.001,
+    slippage_pct: float = 0.05,
+    since_ts: int | None = None,
+    limit: int | None = 500,
+) -> str:
+    """Run a PAPER-ONLY webhook/signal replay backtest."""
+    try:
+        result = _bot_lab.backtest_signal_from_history(
+            ticker=ticker,
+            since_ts=since_ts,
+            limit=limit,
+            signals=signals,
+            initial_cash_gbp=initial_cash_gbp,
+            default_order_gbp=default_order_gbp,
+            fee_rate=fee_rate,
+            slippage_pct=slippage_pct,
+        )
+        return json.dumps(result)
+    except Exception as exc:
+        logger.debug("backtest_signal_bot failed", exc_info=True)
+        return json.dumps({"ok": False, "error": str(exc), "ticker": (ticker or "").upper()})
+
+
 def sweep_dca_bot(
     ticker: str,
     take_profit_pct_values: list[float] | None = None,
@@ -644,6 +672,43 @@ TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "backtest_signal_bot",
+            "description": (
+                "Run a PAPER-ONLY webhook/signal bot replay against cached OHLCV history. "
+                "Signals are objects like {ts, action: buy|sell, amount_gbp?, sell_pct?}. "
+                "Use for TradingView/custom-signal strategy tests. This never places live orders."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "ticker": {"type": "string"},
+                    "signals": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "ts": {"type": "number"},
+                                "action": {"type": "string", "enum": ["buy", "sell"]},
+                                "amount_gbp": {"type": "number"},
+                                "sell_pct": {"type": "number"},
+                            },
+                            "required": ["ts", "action"],
+                        },
+                    },
+                    "initial_cash_gbp": {"type": "number", "default": 1000.0},
+                    "default_order_gbp": {"type": "number", "default": 100.0},
+                    "fee_rate": {"type": "number", "default": 0.001},
+                    "slippage_pct": {"type": "number", "default": 0.05},
+                    "since_ts": {"type": "integer"},
+                    "limit": {"type": "integer", "default": 500},
+                },
+                "required": ["ticker", "signals"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "sweep_dca_bot",
             "description": (
                 "Run a bounded PAPER-ONLY DCA parameter sweep and rank settings by ROI minus drawdown penalty. "
@@ -766,6 +831,7 @@ TOOL_DISPATCH = {
     "paper_portfolio":  paper_portfolio,
     "backtest_dca_bot": backtest_dca_bot,
     "backtest_grid_bot": backtest_grid_bot,
+    "backtest_signal_bot": backtest_signal_bot,
     "sweep_dca_bot": sweep_dca_bot,
     "sweep_grid_bot": sweep_grid_bot,
     "watchlist_get":    watchlist_get,
@@ -780,5 +846,5 @@ __all__ = [
     "stock_price", "crypto_price", "crypto_prices_page", "crypto_top_100", "crypto_top_1000",
     "watchlist_get", "watchlist_add", "watchlist_remove",
     "paper_buy", "paper_sell", "paper_portfolio",
-    "backtest_dca_bot", "backtest_grid_bot", "sweep_dca_bot", "sweep_grid_bot", "analyze_chart",
+    "backtest_dca_bot", "backtest_grid_bot", "backtest_signal_bot", "sweep_dca_bot", "sweep_grid_bot", "analyze_chart",
 ]

@@ -42,3 +42,6 @@ def test_bot_lab_ui_is_wired():
     assert "Grid Parameter Sweep" in html
     assert re.search(r"function\s+runGridSweep\s*\(", html)
     assert re.search(r"function\s+renderGridSweep\s*\(", html)
+    assert "Signal Webhook Simulation" in html
+    assert re.search(r"function\s+runSignalBacktest\s*\(", html)
+    assert re.search(r"function\s+renderSignalBacktest\s*\(", html)

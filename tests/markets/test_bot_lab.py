@@ -3,10 +3,13 @@ import pytest
 from openjarvis.markets.bot_lab import (
     DCAConfig,
     GridConfig,
+    SignalConfig,
     backtest_dca,
     backtest_dca_from_history,
     backtest_grid,
     backtest_grid_from_history,
+    backtest_signal,
+    backtest_signal_from_history,
     sweep_dca,
     sweep_dca_from_history,
     sweep_grid,
@@ -17,6 +20,7 @@ from openjarvis.markets.markets_tools import (
     TOOL_SCHEMAS,
     backtest_dca_bot,
     backtest_grid_bot,
+    backtest_signal_bot,
     sweep_dca_bot,
     sweep_grid_bot,
 )
@@ -464,3 +468,93 @@ def test_markets_pro_bot_backtest_endpoint_helper_routes_grid_sweep(monkeypatch)
     assert result["ok"] is True
     assert result["strategy"] == "grid_sweep"
     assert result["runs"] == 1
+
+
+def test_signal_backtest_replays_buy_and_sell_alerts():
+    bars = [
+        _bar(1, 100.0, 101.0, 99.0, 100.0),
+        _bar(2, 104.0, 106.0, 103.0, 105.0),
+        _bar(3, 109.0, 111.0, 108.0, 110.0),
+    ]
+    config = SignalConfig(
+        ticker="QWEN",
+        initial_cash_gbp=1000.0,
+        default_order_gbp=200.0,
+        signals=[
+            {"ts": 1, "action": "buy"},
+            {"ts": 3, "action": "sell"},
+        ],
+        slippage_pct=0.0,
+    )
+
+    result = backtest_signal(bars, config)
+
+    assert result["ok"] is True
+    assert result["strategy"] == "signal"
+    assert result["signals_processed"] == 2
+    assert result["closed_signal_trades"] == 1
+    assert result["open_position"] is False
+    assert result["realized_pnl_gbp"] > 0
+    assert [trade["kind"] for trade in result["trades"]] == ["signal_buy", "signal_sell"]
+
+
+def test_signal_backtest_from_history_uses_market_store(monkeypatch):
+    bars = [
+        _bar(1, 100.0, 101.0, 99.0, 100.0),
+        _bar(2, 100.0, 106.0, 99.0, 105.0),
+    ]
+    monkeypatch.setattr("openjarvis.markets.store.get_history", lambda *args, **kwargs: bars)
+
+    result = backtest_signal_from_history(
+        "QWEN",
+        signals=[{"ts": 1, "action": "buy"}, {"ts": 2, "action": "sell"}],
+        default_order_gbp=100.0,
+        slippage_pct=0.0,
+    )
+
+    assert result["ok"] is True
+    assert result["ticker"] == "QWEN"
+    assert result["signals_processed"] == 2
+
+
+def test_backtest_signal_bot_is_registered_as_llm_tool(monkeypatch):
+    bars = [
+        _bar(1, 100.0, 101.0, 99.0, 100.0),
+        _bar(2, 100.0, 106.0, 99.0, 105.0),
+    ]
+    monkeypatch.setattr("openjarvis.markets.store.get_history", lambda *args, **kwargs: bars)
+
+    payload = backtest_signal_bot(
+        "QWEN",
+        signals=[{"ts": 1, "action": "buy"}, {"ts": 2, "action": "sell"}],
+        default_order_gbp=100.0,
+        slippage_pct=0.0,
+    )
+
+    assert '"ok": true' in payload
+    assert TOOL_DISPATCH["backtest_signal_bot"] is backtest_signal_bot
+    assert any(schema["function"]["name"] == "backtest_signal_bot" for schema in TOOL_SCHEMAS)
+
+
+def test_markets_pro_bot_backtest_endpoint_helper_routes_signal(monkeypatch):
+    from openjarvis.cli.brain_server import _markets_pro_bot_backtest
+
+    bars = [
+        _bar(1, 100.0, 101.0, 99.0, 100.0),
+        _bar(2, 100.0, 106.0, 99.0, 105.0),
+    ]
+    monkeypatch.setattr("openjarvis.markets.store.get_history", lambda *args, **kwargs: bars)
+
+    result = _markets_pro_bot_backtest(
+        {
+            "strategy": "signal",
+            "ticker": "qwen",
+            "signals": [{"ts": 1, "action": "buy"}, {"ts": 2, "action": "sell"}],
+            "default_order_gbp": 100.0,
+            "slippage_pct": 0.0,
+        }
+    )
+
+    assert result["ok"] is True
+    assert result["strategy"] == "signal"
+    assert result["signals_processed"] == 2

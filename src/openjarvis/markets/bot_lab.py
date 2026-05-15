@@ -33,6 +33,16 @@ class GridConfig:
     slippage_pct: float = 0.05
 
 
+@dataclass(frozen=True)
+class SignalConfig:
+    ticker: str
+    signals: list[dict[str, Any]]
+    initial_cash_gbp: float = 1000.0
+    default_order_gbp: float = 100.0
+    fee_rate: float = 0.001
+    slippage_pct: float = 0.05
+
+
 def _as_float(value: Any, name: str) -> float:
     try:
         return float(value)
@@ -97,6 +107,25 @@ def _validate_grid(config: GridConfig, bars: list[dict[str, float]]) -> None:
         raise ValueError("grid_count must be at least 2")
     if config.order_gbp <= 0:
         raise ValueError("order_gbp must be greater than zero")
+    if not 0 <= config.fee_rate < 1:
+        raise ValueError("fee_rate must be between 0 and 1")
+    if config.slippage_pct < 0:
+        raise ValueError("slippage_pct must be zero or greater")
+
+
+def _validate_signal(config: SignalConfig, bars: list[dict[str, float]]) -> None:
+    if len(bars) < 2:
+        raise ValueError("Signal backtest requires at least two bars")
+    if not config.ticker:
+        raise ValueError("ticker is required")
+    if not isinstance(config.signals, list) or not config.signals:
+        raise ValueError("signals must contain at least one alert")
+    if len(config.signals) > 128:
+        raise ValueError("signals supports at most 128 alerts")
+    if config.initial_cash_gbp <= 0:
+        raise ValueError("initial_cash_gbp must be greater than zero")
+    if config.default_order_gbp <= 0:
+        raise ValueError("default_order_gbp must be greater than zero")
     if not 0 <= config.fee_rate < 1:
         raise ValueError("fee_rate must be between 0 and 1")
     if config.slippage_pct < 0:
@@ -432,6 +461,129 @@ def backtest_grid_from_history(ticker: str, since_ts: int | None = None, limit: 
     return backtest_grid(bars, config)
 
 
+def _normalise_signals(signals: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    normalised = []
+    for idx, signal in enumerate(signals, start=1):
+        if not isinstance(signal, dict):
+            raise ValueError("each signal must be an object")
+        action = str(signal.get("action") or signal.get("side") or "").strip().lower()
+        if action not in {"buy", "sell"}:
+            raise ValueError("signal action must be buy or sell")
+        ts = signal.get("ts", signal.get("timestamp", idx))
+        item = {
+            "ts": _as_float(ts, "signal.ts"),
+            "action": action,
+        }
+        if "amount_gbp" in signal:
+            item["amount_gbp"] = _as_float(signal.get("amount_gbp"), "signal.amount_gbp")
+        if "sell_pct" in signal:
+            item["sell_pct"] = _as_float(signal.get("sell_pct"), "signal.sell_pct")
+        normalised.append(item)
+    normalised.sort(key=lambda item: item["ts"])
+    return normalised
+
+
+def _bar_for_signal(series: list[dict[str, float]], ts: float) -> dict[str, float]:
+    for bar in series:
+        if bar["ts"] >= ts:
+            return bar
+    return series[-1]
+
+
+def backtest_signal(bars: Iterable[dict[str, Any]], config: SignalConfig) -> dict[str, Any]:
+    """Replay buy/sell webhook-style signals against cached OHLCV history."""
+
+    series = _normalise_bars(bars)
+    _validate_signal(config, series)
+    signals = _normalise_signals(config.signals)
+    slip = config.slippage_pct / 100.0
+    cash = config.initial_cash_gbp
+    quantity = 0.0
+    cost_basis = 0.0
+    realized_pnl = 0.0
+    closed_trades = 0
+    trades: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
+    peak_equity = config.initial_cash_gbp
+    max_drawdown_pct = 0.0
+
+    for idx, signal in enumerate(signals, start=1):
+        bar = _bar_for_signal(series, signal["ts"])
+        if signal["action"] == "buy":
+            amount = min(cash, signal.get("amount_gbp", config.default_order_gbp))
+            if amount <= 0:
+                skipped.append({"ts": int(signal["ts"]), "action": "buy", "reason": "no_cash"})
+                continue
+            fill_price = bar["close"] * (1.0 + slip)
+            cash, bought_qty, fee = _buy(cash, amount, fill_price, config)
+            quantity += bought_qty
+            cost_basis += amount
+            trades.append(_trade(bar["ts"], "buy", "signal_buy", fill_price, bought_qty, amount, fee, idx))
+        else:
+            if quantity <= 0:
+                skipped.append({"ts": int(signal["ts"]), "action": "sell", "reason": "no_position"})
+                continue
+            sell_pct = max(0.0, min(100.0, signal.get("sell_pct", 100.0))) / 100.0
+            sell_qty = quantity * sell_pct
+            if sell_qty <= 0:
+                skipped.append({"ts": int(signal["ts"]), "action": "sell", "reason": "zero_size"})
+                continue
+            fill_price = bar["close"] * (1.0 - slip)
+            net, gross, fee = _sell(sell_qty, fill_price, config)
+            proportional_cost = cost_basis * (sell_qty / quantity)
+            cash += net
+            quantity -= sell_qty
+            cost_basis -= proportional_cost
+            pnl = net - proportional_cost
+            realized_pnl += pnl
+            closed_trades += 1
+            trades.append(_trade(bar["ts"], "sell", "signal_sell", fill_price, sell_qty, gross, fee, idx))
+
+        mark_value = quantity * bar["close"] * (1.0 - config.fee_rate)
+        equity = cash + mark_value
+        peak_equity = max(peak_equity, equity)
+        if peak_equity > 0:
+            max_drawdown_pct = max(max_drawdown_pct, (peak_equity - equity) / peak_equity * 100.0)
+
+    last_close = series[-1]["close"]
+    mark_value = quantity * last_close * (1.0 - config.fee_rate)
+    unrealized_pnl = mark_value - cost_basis
+    ending_equity = cash + mark_value
+    roi_pct = (ending_equity - config.initial_cash_gbp) / config.initial_cash_gbp * 100.0
+    return {
+        "ok": True,
+        "strategy": "signal",
+        "ticker": config.ticker,
+        "bars": len(series),
+        "first_ts": int(series[0]["ts"]),
+        "last_ts": int(series[-1]["ts"]),
+        "signals_processed": len(signals),
+        "signals_skipped": len(skipped),
+        "initial_cash_gbp": _round_money(config.initial_cash_gbp),
+        "ending_equity_gbp": _round_money(ending_equity),
+        "cash_gbp": _round_money(cash),
+        "realized_pnl_gbp": _round_money(realized_pnl),
+        "unrealized_pnl_gbp": _round_money(unrealized_pnl),
+        "roi_pct": round(roi_pct, 2),
+        "closed_signal_trades": closed_trades,
+        "open_position": quantity > 0,
+        "open_quantity": _round_qty(quantity),
+        "capital_locked_gbp": _round_money(cost_basis),
+        "max_drawdown_pct": round(max_drawdown_pct, 2),
+        "trades": trades,
+        "skipped_signals": skipped,
+        "warning": "Signal simulation is paper-only. It replays webhook-style alerts against cached candle closes and never places live orders.",
+    }
+
+
+def backtest_signal_from_history(ticker: str, since_ts: int | None = None, limit: int | None = None, **kwargs: Any) -> dict[str, Any]:
+    from openjarvis.markets import store
+
+    bars = store.get_history(ticker, since_ts=since_ts, limit=limit)
+    config = SignalConfig(ticker=ticker, **kwargs)
+    return backtest_signal(bars, config)
+
+
 def _coerce_values(values: Iterable[Any] | None, default: list[Any], name: str, *, max_items: int = 8) -> list[Any]:
     if values is None:
         return list(default)
@@ -585,10 +737,13 @@ def sweep_grid_from_history(ticker: str, since_ts: int | None = None, limit: int
 __all__ = [
     "DCAConfig",
     "GridConfig",
+    "SignalConfig",
     "backtest_dca",
     "backtest_dca_from_history",
     "backtest_grid",
     "backtest_grid_from_history",
+    "backtest_signal",
+    "backtest_signal_from_history",
     "sweep_dca",
     "sweep_dca_from_history",
     "sweep_grid",

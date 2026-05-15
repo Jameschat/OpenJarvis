@@ -766,6 +766,21 @@ def _markets_pro_bot_backtest(body: Dict[str, Any]) -> Dict[str, Any]:
             limit=body.get("limit", 500),
             **kwargs,
         )
+    if strategy == "signal":
+        allowed = {
+            "signals",
+            "initial_cash_gbp",
+            "default_order_gbp",
+            "fee_rate",
+            "slippage_pct",
+        }
+        kwargs = {key: body[key] for key in allowed if key in body}
+        return bot_lab.backtest_signal_from_history(
+            ticker,
+            since_ts=body.get("since_ts"),
+            limit=body.get("limit", 500),
+            **kwargs,
+        )
     allowed = {
         "initial_cash_gbp",
         "base_order_gbp",

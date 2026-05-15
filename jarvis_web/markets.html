@@ -1173,6 +1173,40 @@ h1.page-title {
       <div class="empty-sub">Tests grid ranges, grid counts, and order sizes against cached history.</div>
     </div>
   </div>
+
+  <div class="card" style="margin-top:18px;">
+    <div class="section-title"><span class="accent"></span> Signal Webhook Simulation</div>
+    <div class="bot-form">
+      <label>Coin
+        <input id="signal-symbol" class="field" placeholder="BTC">
+      </label>
+      <label>Initial cash
+        <input id="signal-cash" class="field" type="number" min="1" step="1" value="1000">
+      </label>
+      <label>Default order
+        <input id="signal-order" class="field" type="number" min="1" step="1" value="100">
+      </label>
+      <label>History bars
+        <input id="signal-limit" class="field" type="number" min="2" step="1" value="500">
+      </label>
+      <label>Slippage %
+        <input id="signal-slippage" class="field" type="number" min="0" step="0.01" value="0.05">
+      </label>
+      <label>Fee rate
+        <input id="signal-fee" class="field" type="number" min="0" step="0.0001" value="0.001">
+      </label>
+      <button class="btn primary-solid" style="align-self:end;" onclick="runSignalBacktest()">Run Signals</button>
+    </div>
+    <label style="display:grid; gap:6px; margin-top:12px; color:var(--txt-2); font-size:12px; font-weight:600;">Webhook alerts JSON
+      <textarea id="signal-json" class="field" rows="5">[
+  {"ts": 1, "action": "buy"},
+  {"ts": 2, "action": "sell"}
+]</textarea>
+    </label>
+    <div id="signal-result" style="margin-top:14px;">
+      <div class="empty-sub">Paste buy/sell alert JSON to replay a custom signal strategy against cached candles.</div>
+    </div>
+  </div>
 </section>
 
 
@@ -1882,6 +1916,81 @@ function renderGridSweep(data) {
       (rows || '<tr><td colspan="5" style="text-align:center; color:var(--txt-3); padding:18px;">No grid sweep results</td></tr>') +
     '</tbody></table>' +
     '<div class="bot-warning">' + escapeHtml(data.warning || 'Grid sweep estimate only.') + '</div>';
+}
+
+async function runSignalBacktest() {
+  const result = document.getElementById('signal-result');
+  if (result) result.innerHTML = '<div class="empty-sub">Running signal simulation...</div>';
+  let signals = [];
+  try {
+    signals = JSON.parse(document.getElementById('signal-json').value || '[]');
+  } catch (e) {
+    result.innerHTML = '<div class="empty-sub" style="color:var(--neg);">Signal JSON is not valid.</div>';
+    return;
+  }
+  const body = {
+    strategy: 'signal',
+    ticker: document.getElementById('signal-symbol').value.trim(),
+    signals,
+    initial_cash_gbp: numOrNull(document.getElementById('signal-cash').value),
+    default_order_gbp: numOrNull(document.getElementById('signal-order').value),
+    limit: Number(document.getElementById('signal-limit').value || 500),
+    slippage_pct: numOrNull(document.getElementById('signal-slippage').value),
+    fee_rate: numOrNull(document.getElementById('signal-fee').value),
+  };
+  if (!body.ticker) {
+    result.innerHTML = '<div class="empty-sub" style="color:var(--neg);">Coin is required.</div>';
+    return;
+  }
+  if (!Array.isArray(body.signals) || !body.signals.length) {
+    result.innerHTML = '<div class="empty-sub" style="color:var(--neg);">At least one signal is required.</div>';
+    return;
+  }
+  try {
+    const r = await fetch('/markets-pro/bot/backtest', {
+      method: 'POST',
+      credentials: 'include',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const data = await r.json();
+    renderSignalBacktest(data);
+  } catch (e) {
+    console.error('[markets-pro] signal simulation failed', e);
+    result.innerHTML = '<div class="empty-sub" style="color:var(--neg);">' + escapeHtml(String(e.message || e)) + '</div>';
+  }
+}
+
+function renderSignalBacktest(data) {
+  const result = document.getElementById('signal-result');
+  if (!data || data.ok === false) {
+    result.innerHTML = '<div class="empty-sub" style="color:var(--neg);">' + escapeHtml((data && data.error) || 'Signal simulation failed') + '</div>';
+    return;
+  }
+  const roiCls = (data.roi_pct || 0) >= 0 ? 'pos' : 'neg';
+  const pnlCls = (data.realized_pnl_gbp || 0) >= 0 ? 'pos' : 'neg';
+  let trades = '';
+  for (const t of (data.trades || []).slice(-10)) {
+    trades += '<tr><td>' + escapeHtml(t.side) + '</td><td>' + escapeHtml(t.kind) + '</td><td class="num">' +
+      fmtMoney(t.gross_gbp) + '</td><td class="num">' + escapeHtml(String(t.price)) + '</td></tr>';
+  }
+  result.innerHTML =
+    '<div class="bot-result-grid">' +
+      botMetric('ROI', (data.roi_pct ?? 0).toFixed(2) + '%', roiCls) +
+      botMetric('Realised P&L', fmtMoney(data.realized_pnl_gbp), pnlCls) +
+      botMetric('Unrealised P&L', fmtMoney(data.unrealized_pnl_gbp), (data.unrealized_pnl_gbp || 0) >= 0 ? 'pos' : 'neg') +
+      botMetric('Signals', data.signals_processed ?? 0, '') +
+      botMetric('Skipped', data.signals_skipped ?? 0, '') +
+      botMetric('Closed trades', data.closed_signal_trades ?? 0, '') +
+      botMetric('Open position', data.open_position ? 'Yes' : 'No', data.open_position ? 'pos' : '') +
+      botMetric('Capital locked', fmtMoney(data.capital_locked_gbp), '') +
+    '</div>' +
+    '<div class="section-title" style="margin-top:18px;"><span class="accent"></span> Simulated Signal Trades</div>' +
+    '<table class="tbl"><thead><tr><th>Side</th><th>Action</th><th class="num">GBP</th><th class="num">Price</th></tr></thead><tbody>' +
+      (trades || '<tr><td colspan="4" style="text-align:center; color:var(--txt-3); padding:18px;">No trades</td></tr>') +
+    '</tbody></table>' +
+    '<div class="bot-warning">' + escapeHtml(data.warning || 'Signal simulation estimate only.') + '</div>';
 }
 
 // ============================================================
