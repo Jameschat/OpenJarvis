@@ -45,3 +45,8 @@ def test_bot_lab_ui_is_wired():
     assert "Signal Webhook Simulation" in html
     assert re.search(r"function\s+runSignalBacktest\s*\(", html)
     assert re.search(r"function\s+renderSignalBacktest\s*\(", html)
+    assert "Paper Bot Scheduler" in html
+    assert "/markets-pro/bot/schedule" in html
+    assert "/markets-pro/bot/schedules" in html
+    assert re.search(r"function\s+schedulePaperBot\s*\(", html)
+    assert re.search(r"function\s+loadPaperBotSchedules\s*\(", html)

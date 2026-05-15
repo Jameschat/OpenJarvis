@@ -801,6 +801,32 @@ def _markets_pro_bot_backtest(body: Dict[str, Any]) -> Dict[str, Any]:
     )
 
 
+def _markets_pro_paper_bot_schedule(body: Dict[str, Any]) -> Dict[str, Any]:
+    from openjarvis.markets import paper_scheduler
+
+    return paper_scheduler.schedule_paper_bot(
+        ticker=(body.get("ticker") or "").strip().upper(),
+        strategy=(body.get("strategy") or "dca").strip().lower(),
+        interval_minutes=body.get("interval_minutes", 60),
+        config=body.get("config") if isinstance(body.get("config"), dict) else {},
+        name=body.get("name"),
+        execute_paper=bool(body.get("execute_paper", False)),
+        confirm_paper_execution=bool(body.get("confirm_paper_execution", False)),
+    )
+
+
+def _markets_pro_paper_bot_list() -> Dict[str, Any]:
+    from openjarvis.markets import paper_scheduler
+
+    return paper_scheduler.list_paper_bots()
+
+
+def _markets_pro_paper_bot_cancel(body: Dict[str, Any]) -> Dict[str, Any]:
+    from openjarvis.markets import paper_scheduler
+
+    return paper_scheduler.cancel_paper_bot(str(body.get("id") or ""))
+
+
 def _markets_pro_analyze(body: Dict[str, Any]) -> Dict[str, Any]:
     """Decode posted image + run chart_analyst + return inline result."""
     from openjarvis.markets import chart_analyst
@@ -2825,6 +2851,8 @@ class _Handler(SimpleHTTPRequestHandler):
                 return self._json_response(200, _markets_pro_coin_categories())
             if sub == "paper/portfolio":
                 return self._json_response(200, _markets_pro_paper_portfolio())
+            if sub == "bot/schedules":
+                return self._json_response(200, _markets_pro_paper_bot_list())
         except Exception:
             logger.exception("GET /markets-pro/%s failed", sub)
             return self._json_response(500, {
@@ -2841,7 +2869,7 @@ class _Handler(SimpleHTTPRequestHandler):
         path_only = urlparse(self.path).path
         sub = path_only[len("/markets-pro/"):]
         try:
-            if sub not in ("analyze", "paper/buy", "paper/sell", "bot/backtest"):
+            if sub not in ("analyze", "paper/buy", "paper/sell", "bot/backtest", "bot/schedule", "bot/cancel"):
                 return self._json_response(404, {
                     "error": "unknown markets-pro endpoint"})
             n = int(self.headers.get("Content-Length", 0))
@@ -2859,6 +2887,10 @@ class _Handler(SimpleHTTPRequestHandler):
                 return self._json_response(200, _markets_pro_paper_sell(body))
             if sub == "bot/backtest":
                 return self._json_response(200, _markets_pro_bot_backtest(body))
+            if sub == "bot/schedule":
+                return self._json_response(200, _markets_pro_paper_bot_schedule(body))
+            if sub == "bot/cancel":
+                return self._json_response(200, _markets_pro_paper_bot_cancel(body))
             return self._json_response(200, _markets_pro_analyze(body))
         except Exception:
             logger.exception("POST /markets-pro/%s failed", sub)

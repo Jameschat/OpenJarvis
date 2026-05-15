@@ -30,6 +30,7 @@ from openjarvis.markets.sources import yf, kraken, coingecko
 from openjarvis.markets import bot_lab as _bot_lab
 from openjarvis.markets import chart_analyst as _chart_analyst
 from openjarvis.markets import paper_broker as _paper_broker
+from openjarvis.markets import paper_scheduler as _paper_scheduler
 
 logger = logging.getLogger(__name__)
 
@@ -214,6 +215,29 @@ def paper_portfolio() -> str:
     """Return simulated paper portfolio cash, equity, positions, and P&L."""
     _paper_broker.check_open_positions()
     return json.dumps(_paper_broker.paper_portfolio())
+
+
+def schedule_paper_bot(
+    ticker: str,
+    strategy: str = "dca",
+    interval_minutes: int = 60,
+    config: dict[str, Any] | None = None,
+    name: str | None = None,
+) -> str:
+    """Create a dry-run paper-bot monitor schedule. No orders are placed."""
+    return json.dumps(_paper_scheduler.schedule_paper_bot(
+        ticker=ticker,
+        strategy=strategy,
+        interval_minutes=interval_minutes,
+        config=config or {},
+        name=name,
+        execute_paper=False,
+    ))
+
+
+def list_paper_bot_schedules() -> str:
+    """List dry-run paper-bot monitor schedules."""
+    return json.dumps(_paper_scheduler.list_paper_bots())
 
 
 def backtest_dca_bot(
@@ -644,6 +668,39 @@ TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "schedule_paper_bot",
+            "description": (
+                "Create a dry-run paper-bot monitor schedule for a Markets Bot Lab strategy. "
+                "This never places live orders and does not execute paper trades."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "ticker": {"type": "string"},
+                    "strategy": {
+                        "type": "string",
+                        "enum": ["dca", "grid", "signal", "dca_sweep", "grid_sweep"],
+                        "default": "dca",
+                    },
+                    "interval_minutes": {"type": "integer", "default": 60},
+                    "config": {"type": "object"},
+                    "name": {"type": "string"},
+                },
+                "required": ["ticker"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_paper_bot_schedules",
+            "description": "List saved dry-run paper-bot monitor schedules. No orders are placed.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "backtest_grid_bot",
             "description": (
                 "Run a PAPER-ONLY fixed-range grid trading bot backtest on cached OHLCV history. "
@@ -829,6 +886,8 @@ TOOL_DISPATCH = {
     "paper_buy":        paper_buy,
     "paper_sell":       paper_sell,
     "paper_portfolio":  paper_portfolio,
+    "schedule_paper_bot": schedule_paper_bot,
+    "list_paper_bot_schedules": list_paper_bot_schedules,
     "backtest_dca_bot": backtest_dca_bot,
     "backtest_grid_bot": backtest_grid_bot,
     "backtest_signal_bot": backtest_signal_bot,
@@ -846,5 +905,6 @@ __all__ = [
     "stock_price", "crypto_price", "crypto_prices_page", "crypto_top_100", "crypto_top_1000",
     "watchlist_get", "watchlist_add", "watchlist_remove",
     "paper_buy", "paper_sell", "paper_portfolio",
+    "schedule_paper_bot", "list_paper_bot_schedules",
     "backtest_dca_bot", "backtest_grid_bot", "backtest_signal_bot", "sweep_dca_bot", "sweep_grid_bot", "analyze_chart",
 ]
