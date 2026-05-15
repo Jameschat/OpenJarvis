@@ -90,6 +90,52 @@ _TOP_100_TTL_S = 600.0   # refresh every 10 min
 _top_n_cache: Dict[int, List[Dict[str, Any]]] = {}
 _top_n_cached_at: Dict[int, float] = {}
 _TOP_N_TTL_S = 600.0
+_categories_cache: List[Dict[str, str]] = []
+_categories_cached_at: float = 0.0
+_CATEGORIES_TTL_S = 24 * 3600.0
+
+
+def _normalise_market_coin(c: Dict[str, Any], *, now: float, vs_currency: str) -> Optional[Dict[str, Any]]:
+    try:
+        return {
+            "id": c.get("id"),
+            "symbol": (c.get("symbol") or "").upper(),
+            "name": c.get("name"),
+            "last": float(c.get("current_price") or 0.0),
+            "change_pct": (
+                float(c["price_change_percentage_24h"])
+                if c.get("price_change_percentage_24h") is not None else None
+            ),
+            "change_24h_pct": (
+                float(c["price_change_percentage_24h"])
+                if c.get("price_change_percentage_24h") is not None else None
+            ),
+            "change_7d_pct": (
+                float(c["price_change_percentage_7d_in_currency"])
+                if c.get("price_change_percentage_7d_in_currency") is not None else None
+            ),
+            "change_30d_pct": (
+                float(c["price_change_percentage_30d_in_currency"])
+                if c.get("price_change_percentage_30d_in_currency") is not None else None
+            ),
+            "market_cap": (
+                float(c["market_cap"]) if c.get("market_cap") is not None else None
+            ),
+            "market_cap_rank": c.get("market_cap_rank"),
+            "volume_24h": (
+                float(c["total_volume"]) if c.get("total_volume") is not None else None
+            ),
+            "sparkline_7d": (
+                list(c.get("sparkline_in_7d", {}).get("price", []))
+                if c.get("sparkline_in_7d") else []
+            ),
+            "image": c.get("image"),
+            "ts": now,
+            "currency": vs_currency.upper(),
+            "source": "coingecko",
+        }
+    except (TypeError, ValueError, KeyError):
+        return None
 
 
 def _slugify_coin_id(text: str) -> str:
@@ -210,41 +256,9 @@ def fetch_top_100(*, vs_currency: str = "gbp",
     out = []
     for c in data:
         try:
-            out.append({
-                "id": c.get("id"),
-                "symbol": (c.get("symbol") or "").upper(),
-                "name": c.get("name"),
-                "last": float(c.get("current_price") or 0.0),
-                "change_pct": (
-                    float(c["price_change_percentage_24h"])
-                    if c.get("price_change_percentage_24h") is not None else None
-                ),
-                "change_24h_pct": (
-                    float(c["price_change_percentage_24h"])
-                    if c.get("price_change_percentage_24h") is not None else None
-                ),
-                "change_7d_pct": (
-                    float(c["price_change_percentage_7d_in_currency"])
-                    if c.get("price_change_percentage_7d_in_currency") is not None else None
-                ),
-                "change_30d_pct": (
-                    float(c["price_change_percentage_30d_in_currency"])
-                    if c.get("price_change_percentage_30d_in_currency") is not None else None
-                ),
-                "market_cap": (
-                    float(c["market_cap"]) if c.get("market_cap") is not None else None
-                ),
-                "volume_24h": (
-                    float(c["total_volume"]) if c.get("total_volume") is not None else None
-                ),
-                "sparkline_7d": (
-                    list(c.get("sparkline_in_7d", {}).get("price", []))
-                    if c.get("sparkline_in_7d") else []
-                ),
-                "ts": now,
-                "currency": vs_currency.upper(),
-                "source": "coingecko",
-            })
+            row = _normalise_market_coin(c, now=now, vs_currency=vs_currency)
+            if row:
+                out.append(row)
         except (TypeError, ValueError, KeyError):
             continue
     with _lock:
@@ -306,41 +320,9 @@ def fetch_top_n(n: int = 1000, *, vs_currency: str = "gbp",
                     break
                 for c in data:
                     try:
-                        out.append({
-                            "id": c.get("id"),
-                            "symbol": (c.get("symbol") or "").upper(),
-                            "name": c.get("name"),
-                            "last": float(c.get("current_price") or 0.0),
-                            "change_pct": (
-                                float(c["price_change_percentage_24h"])
-                                if c.get("price_change_percentage_24h") is not None else None
-                            ),
-                            "change_24h_pct": (
-                                float(c["price_change_percentage_24h"])
-                                if c.get("price_change_percentage_24h") is not None else None
-                            ),
-                            "change_7d_pct": (
-                                float(c["price_change_percentage_7d_in_currency"])
-                                if c.get("price_change_percentage_7d_in_currency") is not None else None
-                            ),
-                            "change_30d_pct": (
-                                float(c["price_change_percentage_30d_in_currency"])
-                                if c.get("price_change_percentage_30d_in_currency") is not None else None
-                            ),
-                            "market_cap": (
-                                float(c["market_cap"]) if c.get("market_cap") is not None else None
-                            ),
-                            "volume_24h": (
-                                float(c["total_volume"]) if c.get("total_volume") is not None else None
-                            ),
-                            "sparkline_7d": (
-                                list(c.get("sparkline_in_7d", {}).get("price", []))
-                                if c.get("sparkline_in_7d") else []
-                            ),
-                            "ts": now,
-                            "currency": vs_currency.upper(),
-                            "source": "coingecko",
-                        })
+                        row = _normalise_market_coin(c, now=now, vs_currency=vs_currency)
+                        if row:
+                            out.append(row)
                     except (TypeError, ValueError, KeyError):
                         continue
     except Exception as exc:
@@ -353,6 +335,101 @@ def fetch_top_n(n: int = 1000, *, vs_currency: str = "gbp",
     with _lock:
         _top_n_cache[n] = list(out)
         _top_n_cached_at[n] = now
+    return list(out)
+
+
+def fetch_markets_page(
+    *,
+    page: int = 1,
+    per_page: int = 100,
+    vs_currency: str = "gbp",
+    category: str | None = None,
+    sparkline: bool = False,
+    timeout: float = 15.0,
+) -> Dict[str, Any]:
+    """Fetch one paginated page of CoinGecko market prices.
+
+    This is the 3Commas-style broad price-table path: callers can page
+    through the whole CoinGecko markets universe instead of being capped
+    at Jarvis's top-1000 pulse scan.
+    """
+    page = max(1, int(page or 1))
+    per_page = min(250, max(1, int(per_page or 100)))
+    ccy = (vs_currency or "gbp").strip().lower()
+    if not re.fullmatch(r"[a-z]{3,5}", ccy):
+        ccy = "gbp"
+    try:
+        import httpx  # type: ignore
+    except Exception:
+        return {"ok": False, "error": "httpx unavailable", "coins": []}
+    params = {
+        "vs_currency": ccy,
+        "order": "market_cap_desc",
+        "per_page": str(per_page),
+        "page": str(page),
+        "sparkline": "true" if sparkline else "false",
+        "price_change_percentage": "24h,7d,30d",
+    }
+    if category:
+        params["category"] = category
+    now = time.time()
+    try:
+        with httpx.Client(timeout=timeout, headers=_HEADERS) as client:
+            r = client.get(_BASE + "/coins/markets", params=params)
+            if r.status_code != 200:
+                logger.debug("coingecko markets page %d: HTTP %d", page, r.status_code)
+                return {"ok": False, "error": f"coingecko HTTP {r.status_code}", "coins": []}
+            data = r.json() or []
+    except Exception as exc:
+        logger.debug("coingecko markets page %d: %s", page, exc)
+        return {"ok": False, "error": str(exc), "coins": []}
+    coins = []
+    for c in data:
+        row = _normalise_market_coin(c, now=now, vs_currency=ccy)
+        if row:
+            coins.append(row)
+    return {
+        "ok": True,
+        "coins": coins,
+        "page": page,
+        "per_page": per_page,
+        "has_next": len(coins) == per_page,
+        "currency": ccy.upper(),
+        "category": category,
+        "source": "coingecko",
+        "ts": now,
+    }
+
+
+def fetch_categories_list(*, timeout: float = 10.0) -> List[Dict[str, str]]:
+    """CoinGecko category ids for price-page filters."""
+    global _categories_cached_at
+    now = time.time()
+    with _lock:
+        if _categories_cache and (now - _categories_cached_at) < _CATEGORIES_TTL_S:
+            return list(_categories_cache)
+    try:
+        import httpx  # type: ignore
+    except Exception:
+        return list(_categories_cache)
+    try:
+        with httpx.Client(timeout=timeout, headers=_HEADERS) as client:
+            r = client.get(_BASE + "/coins/categories/list")
+            if r.status_code != 200:
+                return list(_categories_cache)
+            data = r.json() or []
+    except Exception as exc:
+        logger.debug("coingecko categories: %s", exc)
+        return list(_categories_cache)
+    out = [
+        {"id": str(row.get("category_id") or ""), "name": str(row.get("name") or "")}
+        for row in data
+        if row.get("category_id") and row.get("name")
+    ]
+    with _lock:
+        _categories_cache.clear()
+        _categories_cache.extend(out)
+        _categories_cached_at = now
     return list(out)
 
 
@@ -599,7 +676,7 @@ def is_available() -> bool:
 
 
 __all__ = [
-    "fetch_top_100", "fetch_top_n", "fetch_coin_detail",
+    "fetch_top_100", "fetch_top_n", "fetch_markets_page", "fetch_categories_list", "fetch_coin_detail",
     "fetch_quote", "fetch_history", "fetch_global",
     "is_available",
 ]

@@ -11,3 +11,12 @@ def test_forecast_strip_renderer_is_defined_when_called():
 
     assert "renderForecastStrip(" in html
     assert re.search(r"function\s+renderForecastStrip\s*\(", html)
+
+
+def test_coin_price_page_ui_is_wired():
+    html = MARKETS_HTML.read_text(encoding="utf-8-sig")
+
+    assert 'data-tab="coins"' in html
+    assert 'data-tab-page="coins"' in html
+    assert "/markets-pro/coins?" in html
+    assert re.search(r"function\s+loadCoins\s*\(", html)

@@ -558,6 +558,31 @@ def _markets_pro_pulse(*, hide_high_risk: bool = False) -> Dict[str, Any]:
     }
 
 
+def _markets_pro_coins_page(qs: Dict[str, List[str]]) -> Dict[str, Any]:
+    from openjarvis.markets.sources import coingecko
+
+    def _first(name: str, default: str) -> str:
+        values = qs.get(name) or []
+        return (values[0] if values else default) or default
+
+    try:
+        page = int(_first("page", "1"))
+    except ValueError:
+        page = 1
+    try:
+        per_page = int(_first("per_page", "100"))
+    except ValueError:
+        per_page = 100
+    category = (_first("category", "") or "").strip() or None
+    currency = (_first("currency", "gbp") or "gbp").strip().lower()
+    return coingecko.fetch_markets_page(
+        page=page,
+        per_page=per_page,
+        vs_currency=currency,
+        category=category,
+    )
+
+
 def _markets_pro_count_analyses(*, within_days: Optional[int] = None) -> int:
     """Count chart-analysis markdown files in
     Brain/Trading/Research/Charts/."""
@@ -2717,6 +2742,8 @@ class _Handler(SimpleHTTPRequestHandler):
             if sub == "global":
                 from openjarvis.markets.sources import coingecko
                 return self._json_response(200, coingecko.fetch_global())
+            if sub == "coins":
+                return self._json_response(200, _markets_pro_coins_page(qs))
             if sub == "paper/portfolio":
                 return self._json_response(200, _markets_pro_paper_portfolio())
         except Exception:

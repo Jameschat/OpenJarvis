@@ -112,6 +112,22 @@ def crypto_top_1000() -> str:
                        "currency": "GBP", "source": "coingecko"})
 
 
+def crypto_prices_page(
+    page: int = 1,
+    per_page: int = 100,
+    currency: str = "GBP",
+    category: str = "",
+) -> str:
+    """Return one paginated page of the broad crypto price universe."""
+    result = coingecko.fetch_markets_page(
+        page=page,
+        per_page=per_page,
+        vs_currency=(currency or "GBP").lower(),
+        category=(category or "").strip() or None,
+    )
+    return json.dumps(result)
+
+
 def crypto_top_100() -> str:
     """Return the top 100 cryptos by market cap (CoinGecko, GBP).
     Refreshed every 10 minutes server-side. Useful for the LLM to
@@ -437,6 +453,34 @@ TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "crypto_prices_page",
+            "description": (
+                "Return a paginated CoinGecko-powered crypto price page, like a broad "
+                "coin-price table. Use this when the operator asks for all crypto prices, "
+                "page-by-page market coverage, category filters, or coins beyond the top 1000."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "page": {"type": "integer", "default": 1},
+                    "per_page": {"type": "integer", "default": 100, "maximum": 250},
+                    "currency": {
+                        "type": "string",
+                        "enum": ["USD", "EUR", "GBP", "JPY", "BRL", "INR", "BTC", "ETH"],
+                        "default": "GBP",
+                    },
+                    "category": {
+                        "type": "string",
+                        "description": "Optional CoinGecko category id such as artificial-intelligence or meme-token.",
+                        "default": "",
+                    },
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "backtest_dca_bot",
             "description": (
                 "Run a PAPER-ONLY DCA trading bot backtest on cached OHLCV history. "
@@ -527,6 +571,7 @@ TOOL_SCHEMAS = [
 TOOL_DISPATCH = {
     "stock_price":      stock_price,
     "crypto_price":     crypto_price,
+    "crypto_prices_page": crypto_prices_page,
     "crypto_top_100":   crypto_top_100,
     "crypto_top_1000":  crypto_top_1000,
     "paper_buy":        paper_buy,
@@ -542,7 +587,7 @@ TOOL_DISPATCH = {
 
 __all__ = [
     "TOOL_SCHEMAS", "TOOL_DISPATCH",
-    "stock_price", "crypto_price", "crypto_top_100", "crypto_top_1000",
+    "stock_price", "crypto_price", "crypto_prices_page", "crypto_top_100", "crypto_top_1000",
     "watchlist_get", "watchlist_add", "watchlist_remove",
     "paper_buy", "paper_sell", "paper_portfolio",
     "backtest_dca_bot", "analyze_chart",

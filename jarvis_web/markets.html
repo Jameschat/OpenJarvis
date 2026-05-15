@@ -687,6 +687,33 @@ h1.page-title {
 .paper-form { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
 .paper-form input { min-width: 0; }
 @media (max-width: 720px) { .paper-form { grid-template-columns: 1fr 1fr; } }
+.coins-controls {
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) minmax(120px, 160px) minmax(120px, 160px) auto auto;
+  gap: 10px;
+  align-items: end;
+  margin-bottom: 14px;
+}
+.coins-controls label {
+  display: grid;
+  gap: 5px;
+  color: var(--txt-3);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.coins-pager {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+  color: var(--txt-3);
+  font-size: 12px;
+  margin-top: 12px;
+}
+@media (max-width: 820px) {
+  .coins-controls { grid-template-columns: 1fr 1fr; }
+}
 
 </style>
 </head>
@@ -698,6 +725,7 @@ h1.page-title {
   <div class="nav-tabs">
     <button class="nav-tab active" data-tab="dashboard">Dashboard</button>
     <button class="nav-tab" data-tab="pulse">Pulse</button>
+    <button class="nav-tab" data-tab="coins">Coins</button>
     <button class="nav-tab" data-tab="analyze">Analyze</button>
     <button class="nav-tab" data-tab="paper">Paper</button>
   </div>
@@ -908,6 +936,56 @@ h1.page-title {
 
 
 <!-- =================================================================== -->
+<!-- Coins tab                                                            -->
+<!-- =================================================================== -->
+<section class="page tab-page" data-tab-page="coins" hidden>
+  <div class="page-head">
+    <div class="page-eyebrow"><span class="pulse-dot"></span> Coin Prices</div>
+    <h1 class="page-title">All Crypto Prices</h1>
+    <div class="page-sub">Paginated CoinGecko market pages, matching the broad 3Commas-style coin table without loading the whole universe at once.</div>
+  </div>
+
+  <div class="card">
+    <div class="coins-controls">
+      <label>Category
+        <input id="coins-category" class="field" placeholder="optional: artificial-intelligence">
+      </label>
+      <label>Currency
+        <select id="coins-currency" class="field">
+          <option>GBP</option>
+          <option>USD</option>
+          <option>EUR</option>
+          <option>JPY</option>
+          <option>BRL</option>
+          <option>INR</option>
+          <option>BTC</option>
+          <option>ETH</option>
+        </select>
+      </label>
+      <label>Rows
+        <select id="coins-per-page" class="field">
+          <option>50</option>
+          <option selected>100</option>
+          <option>250</option>
+        </select>
+      </label>
+      <button class="btn primary-solid" onclick="loadCoins(1)">Load</button>
+      <button class="btn" onclick="clearCoinFilters()">Clear</button>
+    </div>
+    <table class="tbl" id="coins-table">
+      <thead><tr><th>Coin</th><th class="num">Price</th><th class="num">24h</th><th class="num">Market Cap</th><th class="num">24h Vol</th><th></th></tr></thead>
+      <tbody><tr><td colspan="6" style="text-align:center; color: var(--txt-3); padding: 24px;">Load coin prices</td></tr></tbody>
+    </table>
+    <div class="coins-pager">
+      <button class="btn" id="coins-prev" onclick="loadCoins(coinsPage - 1)">Prev</button>
+      <span id="coins-page-label">Page 1</span>
+      <button class="btn" id="coins-next" onclick="loadCoins(coinsPage + 1)">Next</button>
+    </div>
+  </div>
+</section>
+
+
+<!-- =================================================================== -->
 <!-- Paper tab                                                            -->
 <!-- =================================================================== -->
 <section class="page tab-page" data-tab-page="paper" hidden>
@@ -1012,7 +1090,7 @@ h1.page-title {
 // ============================================================
 // Tab switching
 // ============================================================
-const TABS = ['dashboard', 'pulse', 'analyze', 'paper'];
+const TABS = ['dashboard', 'pulse', 'coins', 'analyze', 'paper'];
 function switchTab(name) {
   if (!TABS.includes(name)) return;
   document.querySelectorAll('.nav-tab').forEach(t => {
@@ -1024,6 +1102,7 @@ function switchTab(name) {
   // Refresh data on tab switch
   if (name === 'dashboard') loadDashboard();
   if (name === 'pulse')     loadPulse();
+  if (name === 'coins')     loadCoins(coinsPage || 1);
   if (name === 'paper')     loadPaper();
   // Update URL hash for deep-link
   if (history.replaceState) history.replaceState(null, '', '#' + name);
@@ -1044,6 +1123,14 @@ function fmtMoney(v, sym) {
   if (Math.abs(v) >= 1e3)  return sym + (v/1e3).toFixed(1) + 'k';
   if (Math.abs(v) >= 1)    return sym + v.toFixed(2);
   return sym + v.toFixed(6);
+}
+function currencySymbol(ccy) {
+  const c = String(ccy || 'GBP').toUpperCase();
+  if (c === 'USD') return '$';
+  if (c === 'EUR') return '€';
+  if (c === 'JPY') return '¥';
+  if (c === 'GBP') return '£';
+  return c + ' ';
 }
 function fmtPct(v) {
   if (v == null) return '—';
@@ -1256,6 +1343,73 @@ function quickAnalyze(symbol) {
     inp.focus();
     updateStartButton();
   }, 80);
+}
+
+// ============================================================
+// Coins tab
+// ============================================================
+let coinsPage = 1;
+let coinsHasNext = false;
+
+async function loadCoins(page) {
+  page = Math.max(1, Number(page || 1));
+  coinsPage = page;
+  const tbody = document.querySelector('#coins-table tbody');
+  if (tbody) tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color: var(--txt-3); padding: 24px;">Loading...</td></tr>';
+  const perPage = document.getElementById('coins-per-page')?.value || '100';
+  const currency = document.getElementById('coins-currency')?.value || 'GBP';
+  const category = (document.getElementById('coins-category')?.value || '').trim();
+  const q = new URLSearchParams({page: String(page), per_page: perPage, currency});
+  if (category) q.set('category', category);
+  try {
+    const data = await api('/markets-pro/coins?' + q.toString());
+    coinsHasNext = !!data.has_next;
+    renderCoinsPage(data);
+  } catch (e) {
+    console.error('[markets-pro] coins load failed', e);
+    if (tbody) tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color: var(--neg); padding: 24px;">Could not load coin prices</td></tr>';
+  }
+}
+
+function clearCoinFilters() {
+  const cat = document.getElementById('coins-category');
+  if (cat) cat.value = '';
+  loadCoins(1);
+}
+
+function renderCoinsPage(data) {
+  const tbody = document.querySelector('#coins-table tbody');
+  if (!tbody) return;
+  const coins = data.coins || [];
+  const sym = currencySymbol(data.currency || 'GBP');
+  if (!coins.length) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color: var(--txt-3); padding: 24px;">No coins on this page</td></tr>';
+  } else {
+    let html = '';
+    for (const c of coins) {
+      const change = c.change_24h_pct;
+      const cls = change != null && change >= 0 ? 'pos' : 'neg';
+      const rank = c.market_cap_rank ? ('#' + c.market_cap_rank) : '';
+      html += '<tr>' +
+        '<td><div class="coin-row"><span class="coin-rank">' + escapeHtml(rank) + '</span>' +
+          '<span class="coin-name">' + escapeHtml(c.name || c.symbol) + '</span>' +
+          '<span class="coin-symbol">' + escapeHtml(c.symbol) + '</span></div></td>' +
+        '<td class="num">' + fmtMoney(c.last, sym) + '</td>' +
+        '<td class="num ' + cls + '">' + fmtPct(change) + '</td>' +
+        '<td class="num">' + fmtMoney(c.market_cap, sym) + '</td>' +
+        '<td class="num">' + fmtMoney(c.volume_24h, sym) + '</td>' +
+        '<td class="action-buttons"><button class="btn ghost" onclick="quickAnalyze(\'' + escapeHtml(c.symbol) + '\')">Analyze</button>' +
+          tradeButtonHtml(c.symbol) + '</td>' +
+      '</tr>';
+    }
+    tbody.innerHTML = html;
+  }
+  document.getElementById('coins-page-label').textContent =
+    'Page ' + (data.page || coinsPage) + ' - ' + (data.per_page || coins.length) + ' rows - ' + (data.currency || 'GBP');
+  const prev = document.getElementById('coins-prev');
+  const next = document.getElementById('coins-next');
+  if (prev) prev.disabled = coinsPage <= 1;
+  if (next) next.disabled = !coinsHasNext;
 }
 
 // ============================================================
