@@ -27,6 +27,7 @@ from typing import Any, Dict
 
 from openjarvis.markets import store
 from openjarvis.markets.sources import yf, kraken, coingecko
+from openjarvis.markets import bot_lab as _bot_lab
 from openjarvis.markets import chart_analyst as _chart_analyst
 from openjarvis.markets import paper_broker as _paper_broker
 
@@ -195,6 +196,42 @@ def paper_portfolio() -> str:
     """Return simulated paper portfolio cash, equity, positions, and P&L."""
     _paper_broker.check_open_positions()
     return json.dumps(_paper_broker.paper_portfolio())
+
+
+def backtest_dca_bot(
+    ticker: str,
+    initial_cash_gbp: float = 1000.0,
+    base_order_gbp: float = 100.0,
+    safety_order_gbp: float = 100.0,
+    max_safety_orders: int = 3,
+    safety_order_deviation_pct: float = 3.0,
+    take_profit_pct: float = 2.0,
+    stop_loss_pct: float | None = None,
+    fee_rate: float = 0.001,
+    slippage_pct: float = 0.05,
+    since_ts: int | None = None,
+    limit: int | None = 500,
+) -> str:
+    """Run a PAPER-ONLY DCA bot backtest against cached OHLCV history."""
+    try:
+        result = _bot_lab.backtest_dca_from_history(
+            ticker=ticker,
+            since_ts=since_ts,
+            limit=limit,
+            initial_cash_gbp=initial_cash_gbp,
+            base_order_gbp=base_order_gbp,
+            safety_order_gbp=safety_order_gbp,
+            max_safety_orders=max_safety_orders,
+            safety_order_deviation_pct=safety_order_deviation_pct,
+            take_profit_pct=take_profit_pct,
+            stop_loss_pct=stop_loss_pct,
+            fee_rate=fee_rate,
+            slippage_pct=slippage_pct,
+        )
+        return json.dumps(result)
+    except Exception as exc:
+        logger.debug("backtest_dca_bot failed", exc_info=True)
+        return json.dumps({"ok": False, "error": str(exc), "ticker": (ticker or "").upper()})
 
 
 def analyze_chart(image_path: str, ticker_hint: str = "",
@@ -400,6 +437,36 @@ TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "backtest_dca_bot",
+            "description": (
+                "Run a PAPER-ONLY DCA trading bot backtest on cached OHLCV history. "
+                "Use this before any bot idea, profit estimate, or strategy comparison. "
+                "Returns realised/unrealised P&L, ROI, drawdown, win rate, deals, and trades. "
+                "This never places live orders."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "ticker": {"type": "string"},
+                    "initial_cash_gbp": {"type": "number", "default": 1000.0},
+                    "base_order_gbp": {"type": "number", "default": 100.0},
+                    "safety_order_gbp": {"type": "number", "default": 100.0},
+                    "max_safety_orders": {"type": "integer", "default": 3},
+                    "safety_order_deviation_pct": {"type": "number", "default": 3.0},
+                    "take_profit_pct": {"type": "number", "default": 2.0},
+                    "stop_loss_pct": {"type": "number"},
+                    "fee_rate": {"type": "number", "default": 0.001},
+                    "slippage_pct": {"type": "number", "default": 0.05},
+                    "since_ts": {"type": "integer"},
+                    "limit": {"type": "integer", "default": 500},
+                },
+                "required": ["ticker"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "analyze_chart",
             "description": (
                 "MANDATORY when the operator attaches a crypto chart "
@@ -465,6 +532,7 @@ TOOL_DISPATCH = {
     "paper_buy":        paper_buy,
     "paper_sell":       paper_sell,
     "paper_portfolio":  paper_portfolio,
+    "backtest_dca_bot": backtest_dca_bot,
     "watchlist_get":    watchlist_get,
     "watchlist_add":    watchlist_add,
     "watchlist_remove": watchlist_remove,
@@ -477,5 +545,5 @@ __all__ = [
     "stock_price", "crypto_price", "crypto_top_100", "crypto_top_1000",
     "watchlist_get", "watchlist_add", "watchlist_remove",
     "paper_buy", "paper_sell", "paper_portfolio",
-    "analyze_chart",
+    "backtest_dca_bot", "analyze_chart",
 ]

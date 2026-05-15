@@ -673,6 +673,32 @@ def _markets_pro_paper_sell(body: Dict[str, Any]) -> Dict[str, Any]:
     return paper_broker.paper_sell(ticker, reason=reason)
 
 
+def _markets_pro_bot_backtest(body: Dict[str, Any]) -> Dict[str, Any]:
+    from openjarvis.markets import bot_lab
+
+    ticker = (body.get("ticker") or "").strip().upper()
+    if not ticker:
+        return {"ok": False, "error": "ticker required"}
+    allowed = {
+        "initial_cash_gbp",
+        "base_order_gbp",
+        "safety_order_gbp",
+        "max_safety_orders",
+        "safety_order_deviation_pct",
+        "take_profit_pct",
+        "stop_loss_pct",
+        "fee_rate",
+        "slippage_pct",
+    }
+    kwargs = {key: body[key] for key in allowed if key in body}
+    return bot_lab.backtest_dca_from_history(
+        ticker,
+        since_ts=body.get("since_ts"),
+        limit=body.get("limit", 500),
+        **kwargs,
+    )
+
+
 def _markets_pro_analyze(body: Dict[str, Any]) -> Dict[str, Any]:
     """Decode posted image + run chart_analyst + return inline result."""
     from openjarvis.markets import chart_analyst
@@ -2709,7 +2735,7 @@ class _Handler(SimpleHTTPRequestHandler):
         path_only = urlparse(self.path).path
         sub = path_only[len("/markets-pro/"):]
         try:
-            if sub not in ("analyze", "paper/buy", "paper/sell"):
+            if sub not in ("analyze", "paper/buy", "paper/sell", "bot/backtest"):
                 return self._json_response(404, {
                     "error": "unknown markets-pro endpoint"})
             n = int(self.headers.get("Content-Length", 0))
@@ -2725,6 +2751,8 @@ class _Handler(SimpleHTTPRequestHandler):
                 return self._json_response(200, _markets_pro_paper_buy(body))
             if sub == "paper/sell":
                 return self._json_response(200, _markets_pro_paper_sell(body))
+            if sub == "bot/backtest":
+                return self._json_response(200, _markets_pro_bot_backtest(body))
             return self._json_response(200, _markets_pro_analyze(body))
         except Exception:
             logger.exception("POST /markets-pro/%s failed", sub)
