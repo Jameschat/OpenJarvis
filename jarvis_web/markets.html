@@ -1076,6 +1076,37 @@ h1.page-title {
   </div>
 
   <div class="card" style="margin-top:18px;">
+    <div class="section-title"><span class="accent"></span> DCA Parameter Sweep</div>
+    <div class="bot-form">
+      <label>Coin
+        <input id="sweep-symbol" class="field" placeholder="BTC">
+      </label>
+      <label>Take profits %
+        <input id="sweep-tp" class="field" value="1,2,3">
+      </label>
+      <label>Deviations %
+        <input id="sweep-dev" class="field" value="2,3,5">
+      </label>
+      <label>Safety orders
+        <input id="sweep-safety-counts" class="field" value="1,2,3">
+      </label>
+      <label>Base GBP
+        <input id="sweep-base" class="field" type="number" min="1" step="1" value="100">
+      </label>
+      <label>Safety GBP
+        <input id="sweep-safety" class="field" type="number" min="0" step="1" value="100">
+      </label>
+      <label>History bars
+        <input id="sweep-limit" class="field" type="number" min="2" step="1" value="500">
+      </label>
+      <button class="btn primary-solid" style="align-self:end;" onclick="runDcaSweep()">Run Sweep</button>
+    </div>
+    <div id="sweep-result" style="margin-top:14px;">
+      <div class="empty-sub">Runs a bounded historical sweep and ranks settings by ROI minus drawdown penalty.</div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:18px;">
     <div class="section-title"><span class="accent"></span> Grid Bot Backtest</div>
     <div class="bot-form">
       <label>Coin
@@ -1637,6 +1668,66 @@ function renderDcaBacktest(data) {
       (trades || '<tr><td colspan="4" style="text-align:center; color:var(--txt-3); padding:18px;">No trades</td></tr>') +
     '</tbody></table>' +
     '<div class="bot-warning">' + escapeHtml(data.warning || 'Backtest estimate only.') + '</div>';
+}
+
+function parseNumberList(value, integerOnly) {
+  return String(value || '').split(',').map(v => {
+    const n = Number(v.trim());
+    return Number.isFinite(n) ? (integerOnly ? Math.trunc(n) : n) : null;
+  }).filter(v => v != null);
+}
+
+async function runDcaSweep() {
+  const result = document.getElementById('sweep-result');
+  if (result) result.innerHTML = '<div class="empty-sub">Running sweep...</div>';
+  const body = {
+    strategy: 'dca_sweep',
+    ticker: document.getElementById('sweep-symbol').value.trim(),
+    take_profit_pct_values: parseNumberList(document.getElementById('sweep-tp').value, false),
+    safety_order_deviation_pct_values: parseNumberList(document.getElementById('sweep-dev').value, false),
+    max_safety_orders_values: parseNumberList(document.getElementById('sweep-safety-counts').value, true),
+    base_order_gbp: numOrNull(document.getElementById('sweep-base').value),
+    safety_order_gbp: numOrNull(document.getElementById('sweep-safety').value),
+    limit: Number(document.getElementById('sweep-limit').value || 500),
+  };
+  if (!body.ticker) {
+    result.innerHTML = '<div class="empty-sub" style="color:var(--neg);">Coin is required.</div>';
+    return;
+  }
+  try {
+    const r = await fetch('/markets-pro/bot/backtest', {
+      method: 'POST',
+      credentials: 'include',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const data = await r.json();
+    renderDcaSweep(data);
+  } catch (e) {
+    console.error('[markets-pro] DCA sweep failed', e);
+    result.innerHTML = '<div class="empty-sub" style="color:var(--neg);">' + escapeHtml(String(e.message || e)) + '</div>';
+  }
+}
+
+function renderDcaSweep(data) {
+  const result = document.getElementById('sweep-result');
+  if (!data || data.ok === false) {
+    result.innerHTML = '<div class="empty-sub" style="color:var(--neg);">' + escapeHtml((data && data.error) || 'Sweep failed') + '</div>';
+    return;
+  }
+  const rows = (data.top_results || []).map((r, i) => {
+    const cfg = r.config || {};
+    return '<tr><td>#' + (i + 1) + '</td><td class="num">' + escapeHtml(String(r.score)) + '</td>' +
+      '<td class="num ' + ((r.roi_pct || 0) >= 0 ? 'pos' : 'neg') + '">' + fmtPct(r.roi_pct) + '</td>' +
+      '<td class="num">' + fmtPct(r.max_drawdown_pct) + '</td>' +
+      '<td>TP ' + escapeHtml(String(cfg.take_profit_pct)) + '% / Dev ' + escapeHtml(String(cfg.safety_order_deviation_pct)) + '% / SO ' + escapeHtml(String(cfg.max_safety_orders)) + '</td></tr>';
+  }).join('');
+  result.innerHTML =
+    '<table class="tbl"><thead><tr><th>Rank</th><th class="num">Score</th><th class="num">ROI</th><th class="num">Drawdown</th><th>Settings</th></tr></thead><tbody>' +
+      (rows || '<tr><td colspan="5" style="text-align:center; color:var(--txt-3); padding:18px;">No sweep results</td></tr>') +
+    '</tbody></table>' +
+    '<div class="bot-warning">' + escapeHtml(data.warning || 'Sweep estimate only.') + '</div>';
 }
 
 async function runGridBacktest() {

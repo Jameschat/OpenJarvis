@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from itertools import product
 from typing import Any, Iterable
 
 
@@ -431,6 +432,156 @@ def backtest_grid_from_history(ticker: str, since_ts: int | None = None, limit: 
     return backtest_grid(bars, config)
 
 
+def _coerce_values(values: Iterable[Any] | None, default: list[Any], name: str, *, max_items: int = 8) -> list[Any]:
+    if values is None:
+        return list(default)
+    out = list(values)
+    if not out:
+        return list(default)
+    if len(out) > max_items:
+        raise ValueError(f"{name} supports at most {max_items} values")
+    return out
+
+
+def _score_result(result: dict[str, Any]) -> float:
+    return round(float(result.get("roi_pct") or 0.0) - float(result.get("max_drawdown_pct") or 0.0) * 0.5, 4)
+
+
+def _sweep_item(config: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "score": _score_result(result),
+        "config": config,
+        "roi_pct": result.get("roi_pct"),
+        "realized_pnl_gbp": result.get("realized_pnl_gbp"),
+        "unrealized_pnl_gbp": result.get("unrealized_pnl_gbp"),
+        "max_drawdown_pct": result.get("max_drawdown_pct"),
+        "closed_trades": result.get("closed_deals", result.get("closed_grid_trades", 0)),
+        "open_trades": result.get("open_deals", result.get("open_grid_orders", 0)),
+        "capital_locked_gbp": result.get("capital_locked_gbp"),
+    }
+
+
+def sweep_dca(
+    bars: Iterable[dict[str, Any]],
+    *,
+    ticker: str,
+    take_profit_pct_values: Iterable[float] | None = None,
+    safety_order_deviation_pct_values: Iterable[float] | None = None,
+    max_safety_orders_values: Iterable[int] | None = None,
+    base_order_gbp: float = 100.0,
+    safety_order_gbp: float = 100.0,
+    initial_cash_gbp: float = 1000.0,
+    fee_rate: float = 0.001,
+    slippage_pct: float = 0.05,
+    top_n: int = 5,
+) -> dict[str, Any]:
+    series = _normalise_bars(bars)
+    take_profits = _coerce_values(take_profit_pct_values, [1.0, 2.0, 3.0], "take_profit_pct_values")
+    deviations = _coerce_values(safety_order_deviation_pct_values, [2.0, 3.0, 5.0], "safety_order_deviation_pct_values")
+    safety_counts = _coerce_values(max_safety_orders_values, [1, 2, 3], "max_safety_orders_values")
+    combos = list(product(take_profits, deviations, safety_counts))
+    if len(combos) > 128:
+        raise ValueError("DCA sweep supports at most 128 runs")
+    results = []
+    for take_profit, deviation, max_safety in combos:
+        config = {
+            "take_profit_pct": float(take_profit),
+            "safety_order_deviation_pct": float(deviation),
+            "max_safety_orders": int(max_safety),
+            "base_order_gbp": float(base_order_gbp),
+            "safety_order_gbp": float(safety_order_gbp),
+        }
+        backtest = backtest_dca(
+            series,
+            DCAConfig(
+                ticker=ticker,
+                initial_cash_gbp=initial_cash_gbp,
+                fee_rate=fee_rate,
+                slippage_pct=slippage_pct,
+                **config,
+            ),
+        )
+        results.append(_sweep_item(config, backtest))
+    results.sort(key=lambda item: item["score"], reverse=True)
+    return {
+        "ok": True,
+        "strategy": "dca_sweep",
+        "ticker": ticker,
+        "runs": len(results),
+        "top_results": results[: max(1, int(top_n))],
+        "warning": "Sweep results are historical estimates only. A high score can be overfit to the selected cached history.",
+    }
+
+
+def sweep_grid(
+    bars: Iterable[dict[str, Any]],
+    *,
+    ticker: str,
+    lower_price_values: Iterable[float] | None = None,
+    upper_price_values: Iterable[float] | None = None,
+    grid_count_values: Iterable[int] | None = None,
+    order_gbp_values: Iterable[float] | None = None,
+    initial_cash_gbp: float = 1000.0,
+    fee_rate: float = 0.001,
+    slippage_pct: float = 0.05,
+    top_n: int = 5,
+) -> dict[str, Any]:
+    series = _normalise_bars(bars)
+    last_close = series[-1]["close"] if series else 100.0
+    lower_prices = _coerce_values(lower_price_values, [last_close * 0.9], "lower_price_values")
+    upper_prices = _coerce_values(upper_price_values, [last_close * 1.1], "upper_price_values")
+    grid_counts = _coerce_values(grid_count_values, [6, 10, 14], "grid_count_values")
+    order_values = _coerce_values(order_gbp_values, [50.0, 100.0], "order_gbp_values")
+    combos = list(product(lower_prices, upper_prices, grid_counts, order_values))
+    if len(combos) > 128:
+        raise ValueError("Grid sweep supports at most 128 runs")
+    results = []
+    for lower, upper, grid_count, order_gbp in combos:
+        config = {
+            "lower_price": float(lower),
+            "upper_price": float(upper),
+            "grid_count": int(grid_count),
+            "order_gbp": float(order_gbp),
+        }
+        try:
+            backtest = backtest_grid(
+                series,
+                GridConfig(
+                    ticker=ticker,
+                    initial_cash_gbp=initial_cash_gbp,
+                    fee_rate=fee_rate,
+                    slippage_pct=slippage_pct,
+                    **config,
+                ),
+            )
+        except ValueError:
+            continue
+        results.append(_sweep_item(config, backtest))
+    results.sort(key=lambda item: item["score"], reverse=True)
+    return {
+        "ok": True,
+        "strategy": "grid_sweep",
+        "ticker": ticker,
+        "runs": len(results),
+        "top_results": results[: max(1, int(top_n))],
+        "warning": "Sweep results are historical estimates only. A high score can be overfit to the selected cached history.",
+    }
+
+
+def sweep_dca_from_history(ticker: str, since_ts: int | None = None, limit: int | None = None, **kwargs: Any) -> dict[str, Any]:
+    from openjarvis.markets import store
+
+    bars = store.get_history(ticker, since_ts=since_ts, limit=limit)
+    return sweep_dca(bars, ticker=ticker, **kwargs)
+
+
+def sweep_grid_from_history(ticker: str, since_ts: int | None = None, limit: int | None = None, **kwargs: Any) -> dict[str, Any]:
+    from openjarvis.markets import store
+
+    bars = store.get_history(ticker, since_ts=since_ts, limit=limit)
+    return sweep_grid(bars, ticker=ticker, **kwargs)
+
+
 __all__ = [
     "DCAConfig",
     "GridConfig",
@@ -438,4 +589,8 @@ __all__ = [
     "backtest_dca_from_history",
     "backtest_grid",
     "backtest_grid_from_history",
+    "sweep_dca",
+    "sweep_dca_from_history",
+    "sweep_grid",
+    "sweep_grid_from_history",
 ]

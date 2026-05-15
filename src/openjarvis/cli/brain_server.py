@@ -714,6 +714,24 @@ def _markets_pro_bot_backtest(body: Dict[str, Any]) -> Dict[str, Any]:
     if not ticker:
         return {"ok": False, "error": "ticker required"}
     strategy = (body.get("strategy") or "dca").strip().lower()
+    if strategy == "dca_sweep":
+        allowed = {
+            "take_profit_pct_values",
+            "safety_order_deviation_pct_values",
+            "max_safety_orders_values",
+            "initial_cash_gbp",
+            "base_order_gbp",
+            "safety_order_gbp",
+            "fee_rate",
+            "slippage_pct",
+        }
+        kwargs = {key: body[key] for key in allowed if key in body}
+        return bot_lab.sweep_dca_from_history(
+            ticker,
+            since_ts=body.get("since_ts"),
+            limit=body.get("limit", 500),
+            **kwargs,
+        )
     if strategy == "grid":
         allowed = {
             "initial_cash_gbp",

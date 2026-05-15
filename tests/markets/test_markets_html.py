@@ -36,3 +36,6 @@ def test_bot_lab_ui_is_wired():
     assert "Grid Bot Backtest" in html
     assert re.search(r"function\s+runGridBacktest\s*\(", html)
     assert re.search(r"function\s+renderGridBacktest\s*\(", html)
+    assert "DCA Parameter Sweep" in html
+    assert re.search(r"function\s+runDcaSweep\s*\(", html)
+    assert re.search(r"function\s+renderDcaSweep\s*\(", html)
