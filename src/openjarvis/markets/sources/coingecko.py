@@ -219,6 +219,36 @@ def _search_coin_id(query: str, *, timeout: float = 8.0) -> Optional[str]:
     return coins[0].get("id")
 
 
+def _search_coin_ids(query: str, *, limit: int = 100, timeout: float = 8.0) -> List[str]:
+    q = (query or "").strip()
+    if not q:
+        return []
+    try:
+        import httpx  # type: ignore
+    except Exception:
+        return []
+    try:
+        with httpx.Client(timeout=timeout, headers=_HEADERS) as client:
+            r = client.get(_BASE + "/search", params={"query": q})
+            if r.status_code != 200:
+                return []
+            coins = (r.json() or {}).get("coins") or []
+    except Exception as exc:
+        logger.debug("coingecko search ids %s: %s", q, exc)
+        return []
+    ids: List[str] = []
+    seen = set()
+    for c in coins:
+        coin_id = c.get("id")
+        if not coin_id or coin_id in seen:
+            continue
+        seen.add(coin_id)
+        ids.append(str(coin_id))
+        if len(ids) >= limit:
+            break
+    return ids
+
+
 def fetch_top_100(*, vs_currency: str = "gbp",
                   timeout: float = 12.0) -> List[Dict[str, Any]]:
     """Fetch the top-100 coins by market cap. Cached for 10 minutes.
@@ -344,6 +374,7 @@ def fetch_markets_page(
     per_page: int = 100,
     vs_currency: str = "gbp",
     category: str | None = None,
+    query: str | None = None,
     sparkline: bool = False,
     timeout: float = 15.0,
 ) -> Dict[str, Any]:
@@ -358,6 +389,7 @@ def fetch_markets_page(
     ccy = (vs_currency or "gbp").strip().lower()
     if not re.fullmatch(r"[a-z]{3,5}", ccy):
         ccy = "gbp"
+    now = time.time()
     try:
         import httpx  # type: ignore
     except Exception:
@@ -372,7 +404,25 @@ def fetch_markets_page(
     }
     if category:
         params["category"] = category
-    now = time.time()
+    if query:
+        ids = _search_coin_ids(query, limit=max(per_page * page, per_page), timeout=timeout)
+        start = (page - 1) * per_page
+        ids_page = ids[start:start + per_page]
+        if not ids_page:
+            return {
+                "ok": True,
+                "coins": [],
+                "page": page,
+                "per_page": per_page,
+                "has_next": False,
+                "currency": ccy.upper(),
+                "category": category,
+                "query": query,
+                "source": "coingecko",
+                "ts": now,
+            }
+        params["ids"] = ",".join(ids_page)
+        params.pop("category", None)
     try:
         with httpx.Client(timeout=timeout, headers=_HEADERS) as client:
             r = client.get(_BASE + "/coins/markets", params=params)
@@ -396,6 +446,7 @@ def fetch_markets_page(
         "has_next": len(coins) == per_page,
         "currency": ccy.upper(),
         "category": category,
+        "query": query,
         "source": "coingecko",
         "ts": now,
     }

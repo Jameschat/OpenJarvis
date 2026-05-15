@@ -73,3 +73,38 @@ def test_markets_pro_coins_page_endpoint_helper(monkeypatch):
     assert result["per_page"] == 25
     assert result["currency"] == "USD"
     assert result["coins"][0]["symbol"] == "SOL"
+
+
+def test_markets_pro_coins_categories_endpoint_helper(monkeypatch):
+    from openjarvis.cli.brain_server import _markets_pro_coin_categories
+
+    monkeypatch.setattr(
+        "openjarvis.markets.sources.coingecko.fetch_categories_list",
+        lambda: [{"id": "artificial-intelligence", "name": "Artificial Intelligence"}],
+    )
+
+    result = _markets_pro_coin_categories()
+
+    assert result["ok"] is True
+    assert result["categories"][0]["id"] == "artificial-intelligence"
+
+
+def test_crypto_prices_page_can_search_market_prices(monkeypatch):
+    def fake_fetch_markets_page(**kwargs):
+        assert kwargs["query"] == "qwen"
+        return {
+            "ok": True,
+            "coins": [_coin("QWEN", "Qwen", 1.23)],
+            "page": 1,
+            "per_page": 100,
+            "has_next": False,
+            "currency": "GBP",
+            "source": "coingecko",
+        }
+
+    monkeypatch.setattr("openjarvis.markets.sources.coingecko.fetch_markets_page", fake_fetch_markets_page)
+
+    data = json.loads(crypto_prices_page(query="qwen"))
+
+    assert data["ok"] is True
+    assert data["coins"][0]["symbol"] == "QWEN"

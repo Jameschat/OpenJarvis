@@ -689,7 +689,7 @@ h1.page-title {
 @media (max-width: 720px) { .paper-form { grid-template-columns: 1fr 1fr; } }
 .coins-controls {
   display: grid;
-  grid-template-columns: minmax(140px, 1fr) minmax(120px, 160px) minmax(120px, 160px) auto auto;
+  grid-template-columns: minmax(150px, 1fr) minmax(180px, 1fr) minmax(120px, 150px) minmax(120px, 150px) auto auto;
   gap: 10px;
   align-items: end;
   margin-bottom: 14px;
@@ -948,7 +948,12 @@ h1.page-title {
   <div class="card">
     <div class="coins-controls">
       <label>Category
-        <input id="coins-category" class="field" placeholder="optional: artificial-intelligence">
+        <select id="coins-category" class="field">
+          <option value="">All categories</option>
+        </select>
+      </label>
+      <label>Search
+        <input id="coins-query" class="field" placeholder="coin name or symbol">
       </label>
       <label>Currency
         <select id="coins-currency" class="field">
@@ -1102,7 +1107,7 @@ function switchTab(name) {
   // Refresh data on tab switch
   if (name === 'dashboard') loadDashboard();
   if (name === 'pulse')     loadPulse();
-  if (name === 'coins')     loadCoins(coinsPage || 1);
+  if (name === 'coins')     { loadCoinCategories(); loadCoins(coinsPage || 1); }
   if (name === 'paper')     loadPaper();
   // Update URL hash for deep-link
   if (history.replaceState) history.replaceState(null, '', '#' + name);
@@ -1350,6 +1355,23 @@ function quickAnalyze(symbol) {
 // ============================================================
 let coinsPage = 1;
 let coinsHasNext = false;
+let coinCategoriesLoaded = false;
+
+async function loadCoinCategories() {
+  if (coinCategoriesLoaded) return;
+  try {
+    const data = await api('/markets-pro/coins/categories');
+    const sel = document.getElementById('coins-category');
+    if (!sel) return;
+    const categories = data.categories || [];
+    sel.innerHTML = '<option value="">All categories</option>' + categories.map(c =>
+      '<option value="' + escapeHtml(c.id) + '">' + escapeHtml(c.name) + '</option>'
+    ).join('');
+    coinCategoriesLoaded = true;
+  } catch (e) {
+    console.error('[markets-pro] coin categories load failed', e);
+  }
+}
 
 async function loadCoins(page) {
   page = Math.max(1, Number(page || 1));
@@ -1359,8 +1381,10 @@ async function loadCoins(page) {
   const perPage = document.getElementById('coins-per-page')?.value || '100';
   const currency = document.getElementById('coins-currency')?.value || 'GBP';
   const category = (document.getElementById('coins-category')?.value || '').trim();
+  const query = (document.getElementById('coins-query')?.value || '').trim();
   const q = new URLSearchParams({page: String(page), per_page: perPage, currency});
   if (category) q.set('category', category);
+  if (query) q.set('q', query);
   try {
     const data = await api('/markets-pro/coins?' + q.toString());
     coinsHasNext = !!data.has_next;
@@ -1373,7 +1397,9 @@ async function loadCoins(page) {
 
 function clearCoinFilters() {
   const cat = document.getElementById('coins-category');
+  const query = document.getElementById('coins-query');
   if (cat) cat.value = '';
+  if (query) query.value = '';
   loadCoins(1);
 }
 

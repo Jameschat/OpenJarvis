@@ -19,4 +19,7 @@ def test_coin_price_page_ui_is_wired():
     assert 'data-tab="coins"' in html
     assert 'data-tab-page="coins"' in html
     assert "/markets-pro/coins?" in html
+    assert "/markets-pro/coins/categories" in html
+    assert 'id="coins-query"' in html
     assert re.search(r"function\s+loadCoins\s*\(", html)
+    assert re.search(r"function\s+loadCoinCategories\s*\(", html)

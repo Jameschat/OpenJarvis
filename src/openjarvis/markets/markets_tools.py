@@ -117,6 +117,7 @@ def crypto_prices_page(
     per_page: int = 100,
     currency: str = "GBP",
     category: str = "",
+    query: str = "",
 ) -> str:
     """Return one paginated page of the broad crypto price universe."""
     result = coingecko.fetch_markets_page(
@@ -124,6 +125,7 @@ def crypto_prices_page(
         per_page=per_page,
         vs_currency=(currency or "GBP").lower(),
         category=(category or "").strip() or None,
+        query=(query or "").strip() or None,
     )
     return json.dumps(result)
 
@@ -472,6 +474,11 @@ TOOL_SCHEMAS = [
                     "category": {
                         "type": "string",
                         "description": "Optional CoinGecko category id such as artificial-intelligence or meme-token.",
+                        "default": "",
+                    },
+                    "query": {
+                        "type": "string",
+                        "description": "Optional coin name or symbol search, such as qwen, bitcoin, or TAO.",
                         "default": "",
                     },
                 },

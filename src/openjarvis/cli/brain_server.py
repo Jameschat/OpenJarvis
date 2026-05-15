@@ -574,13 +574,22 @@ def _markets_pro_coins_page(qs: Dict[str, List[str]]) -> Dict[str, Any]:
     except ValueError:
         per_page = 100
     category = (_first("category", "") or "").strip() or None
+    query = (_first("q", "") or _first("query", "") or "").strip() or None
     currency = (_first("currency", "gbp") or "gbp").strip().lower()
     return coingecko.fetch_markets_page(
         page=page,
         per_page=per_page,
         vs_currency=currency,
         category=category,
+        query=query,
     )
+
+
+def _markets_pro_coin_categories() -> Dict[str, Any]:
+    from openjarvis.markets.sources import coingecko
+
+    categories = coingecko.fetch_categories_list()
+    return {"ok": True, "categories": categories, "count": len(categories)}
 
 
 def _markets_pro_count_analyses(*, within_days: Optional[int] = None) -> int:
@@ -2744,6 +2753,8 @@ class _Handler(SimpleHTTPRequestHandler):
                 return self._json_response(200, coingecko.fetch_global())
             if sub == "coins":
                 return self._json_response(200, _markets_pro_coins_page(qs))
+            if sub == "coins/categories":
+                return self._json_response(200, _markets_pro_coin_categories())
             if sub == "paper/portfolio":
                 return self._json_response(200, _markets_pro_paper_portfolio())
         except Exception:
