@@ -10,6 +10,7 @@ from openjarvis.markets.bot_lab import (
     sweep_dca,
     sweep_dca_from_history,
     sweep_grid,
+    sweep_grid_from_history,
 )
 from openjarvis.markets.markets_tools import (
     TOOL_DISPATCH,
@@ -17,6 +18,7 @@ from openjarvis.markets.markets_tools import (
     backtest_dca_bot,
     backtest_grid_bot,
     sweep_dca_bot,
+    sweep_grid_bot,
 )
 
 
@@ -395,3 +397,70 @@ def test_sweep_dca_bot_is_registered_as_llm_tool(monkeypatch):
     assert '"ok": true' in payload
     assert TOOL_DISPATCH["sweep_dca_bot"] is sweep_dca_bot
     assert any(schema["function"]["name"] == "sweep_dca_bot" for schema in TOOL_SCHEMAS)
+
+
+def test_sweep_grid_from_history_uses_market_store(monkeypatch):
+    bars = [
+        _bar(1, 100.0, 101.0, 99.0, 100.0),
+        _bar(2, 100.0, 106.0, 94.0, 104.0),
+    ]
+    monkeypatch.setattr("openjarvis.markets.store.get_history", lambda *args, **kwargs: bars)
+
+    result = sweep_grid_from_history(
+        "QWEN",
+        lower_price_values=[90.0],
+        upper_price_values=[110.0],
+        grid_count_values=[4],
+        order_gbp_values=[100.0],
+    )
+
+    assert result["ok"] is True
+    assert result["ticker"] == "QWEN"
+    assert result["runs"] == 1
+
+
+def test_sweep_grid_bot_is_registered_as_llm_tool(monkeypatch):
+    bars = [
+        _bar(1, 100.0, 101.0, 99.0, 100.0),
+        _bar(2, 100.0, 106.0, 94.0, 104.0),
+    ]
+    monkeypatch.setattr("openjarvis.markets.store.get_history", lambda *args, **kwargs: bars)
+
+    payload = sweep_grid_bot(
+        "QWEN",
+        lower_price_values=[90.0],
+        upper_price_values=[110.0],
+        grid_count_values=[4],
+        order_gbp_values=[100.0],
+        slippage_pct=0.0,
+    )
+
+    assert '"ok": true' in payload
+    assert TOOL_DISPATCH["sweep_grid_bot"] is sweep_grid_bot
+    assert any(schema["function"]["name"] == "sweep_grid_bot" for schema in TOOL_SCHEMAS)
+
+
+def test_markets_pro_bot_backtest_endpoint_helper_routes_grid_sweep(monkeypatch):
+    from openjarvis.cli.brain_server import _markets_pro_bot_backtest
+
+    bars = [
+        _bar(1, 100.0, 101.0, 99.0, 100.0),
+        _bar(2, 100.0, 106.0, 94.0, 104.0),
+    ]
+    monkeypatch.setattr("openjarvis.markets.store.get_history", lambda *args, **kwargs: bars)
+
+    result = _markets_pro_bot_backtest(
+        {
+            "strategy": "grid_sweep",
+            "ticker": "qwen",
+            "lower_price_values": [90.0],
+            "upper_price_values": [110.0],
+            "grid_count_values": [4],
+            "order_gbp_values": [100.0],
+            "slippage_pct": 0.0,
+        }
+    )
+
+    assert result["ok"] is True
+    assert result["strategy"] == "grid_sweep"
+    assert result["runs"] == 1

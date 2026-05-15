@@ -318,6 +318,38 @@ def sweep_dca_bot(
         return json.dumps({"ok": False, "error": str(exc), "ticker": (ticker or "").upper()})
 
 
+def sweep_grid_bot(
+    ticker: str,
+    lower_price_values: list[float] | None = None,
+    upper_price_values: list[float] | None = None,
+    grid_count_values: list[int] | None = None,
+    order_gbp_values: list[float] | None = None,
+    initial_cash_gbp: float = 1000.0,
+    fee_rate: float = 0.001,
+    slippage_pct: float = 0.05,
+    since_ts: int | None = None,
+    limit: int | None = 500,
+) -> str:
+    """Run a bounded PAPER-ONLY fixed-range grid parameter sweep."""
+    try:
+        result = _bot_lab.sweep_grid_from_history(
+            ticker=ticker,
+            since_ts=since_ts,
+            limit=limit,
+            lower_price_values=lower_price_values,
+            upper_price_values=upper_price_values,
+            grid_count_values=grid_count_values,
+            order_gbp_values=order_gbp_values,
+            initial_cash_gbp=initial_cash_gbp,
+            fee_rate=fee_rate,
+            slippage_pct=slippage_pct,
+        )
+        return json.dumps(result)
+    except Exception as exc:
+        logger.debug("sweep_grid_bot failed", exc_info=True)
+        return json.dumps({"ok": False, "error": str(exc), "ticker": (ticker or "").upper()})
+
+
 def analyze_chart(image_path: str, ticker_hint: str = "",
                   timeframe: str = "2h") -> str:
     """Analyse a crypto chart screenshot. See chart_analyst.analyze_chart
@@ -639,6 +671,33 @@ TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "sweep_grid_bot",
+            "description": (
+                "Run a bounded PAPER-ONLY grid bot parameter sweep and rank settings by ROI minus drawdown penalty. "
+                "Use when the operator asks what grid range, grid count, and order size looked best historically. "
+                "Never places live orders."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "ticker": {"type": "string"},
+                    "lower_price_values": {"type": "array", "items": {"type": "number"}},
+                    "upper_price_values": {"type": "array", "items": {"type": "number"}},
+                    "grid_count_values": {"type": "array", "items": {"type": "integer"}},
+                    "order_gbp_values": {"type": "array", "items": {"type": "number"}},
+                    "initial_cash_gbp": {"type": "number", "default": 1000.0},
+                    "fee_rate": {"type": "number", "default": 0.001},
+                    "slippage_pct": {"type": "number", "default": 0.05},
+                    "since_ts": {"type": "integer"},
+                    "limit": {"type": "integer", "default": 500},
+                },
+                "required": ["ticker"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "analyze_chart",
             "description": (
                 "MANDATORY when the operator attaches a crypto chart "
@@ -708,6 +767,7 @@ TOOL_DISPATCH = {
     "backtest_dca_bot": backtest_dca_bot,
     "backtest_grid_bot": backtest_grid_bot,
     "sweep_dca_bot": sweep_dca_bot,
+    "sweep_grid_bot": sweep_grid_bot,
     "watchlist_get":    watchlist_get,
     "watchlist_add":    watchlist_add,
     "watchlist_remove": watchlist_remove,
@@ -720,5 +780,5 @@ __all__ = [
     "stock_price", "crypto_price", "crypto_prices_page", "crypto_top_100", "crypto_top_1000",
     "watchlist_get", "watchlist_add", "watchlist_remove",
     "paper_buy", "paper_sell", "paper_portfolio",
-    "backtest_dca_bot", "backtest_grid_bot", "sweep_dca_bot", "analyze_chart",
+    "backtest_dca_bot", "backtest_grid_bot", "sweep_dca_bot", "sweep_grid_bot", "analyze_chart",
 ]

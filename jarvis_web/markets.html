@@ -1142,6 +1142,37 @@ h1.page-title {
       <div class="empty-sub">Set a lower/upper range, then run a paper-only grid simulation.</div>
     </div>
   </div>
+
+  <div class="card" style="margin-top:18px;">
+    <div class="section-title"><span class="accent"></span> Grid Parameter Sweep</div>
+    <div class="bot-form">
+      <label>Coin
+        <input id="grid-sweep-symbol" class="field" placeholder="BTC">
+      </label>
+      <label>Lower prices
+        <input id="grid-sweep-lower" class="field" value="90,95">
+      </label>
+      <label>Upper prices
+        <input id="grid-sweep-upper" class="field" value="105,110">
+      </label>
+      <label>Grid counts
+        <input id="grid-sweep-counts" class="field" value="6,10,14">
+      </label>
+      <label>Order GBP
+        <input id="grid-sweep-orders" class="field" value="50,100">
+      </label>
+      <label>Initial cash
+        <input id="grid-sweep-cash" class="field" type="number" min="1" step="1" value="1000">
+      </label>
+      <label>History bars
+        <input id="grid-sweep-limit" class="field" type="number" min="2" step="1" value="500">
+      </label>
+      <button class="btn primary-solid" style="align-self:end;" onclick="runGridSweep()">Run Sweep</button>
+    </div>
+    <div id="grid-sweep-result" style="margin-top:14px;">
+      <div class="empty-sub">Tests grid ranges, grid counts, and order sizes against cached history.</div>
+    </div>
+  </div>
 </section>
 
 
@@ -1797,6 +1828,60 @@ function renderGridBacktest(data) {
       (trades || '<tr><td colspan="4" style="text-align:center; color:var(--txt-3); padding:18px;">No trades</td></tr>') +
     '</tbody></table>' +
     '<div class="bot-warning">' + escapeHtml(data.warning || 'Grid backtest estimate only.') + '</div>';
+}
+
+async function runGridSweep() {
+  const result = document.getElementById('grid-sweep-result');
+  if (result) result.innerHTML = '<div class="empty-sub">Running grid sweep...</div>';
+  const body = {
+    strategy: 'grid_sweep',
+    ticker: document.getElementById('grid-sweep-symbol').value.trim(),
+    lower_price_values: parseNumberList(document.getElementById('grid-sweep-lower').value, false),
+    upper_price_values: parseNumberList(document.getElementById('grid-sweep-upper').value, false),
+    grid_count_values: parseNumberList(document.getElementById('grid-sweep-counts').value, true),
+    order_gbp_values: parseNumberList(document.getElementById('grid-sweep-orders').value, false),
+    initial_cash_gbp: numOrNull(document.getElementById('grid-sweep-cash').value),
+    limit: Number(document.getElementById('grid-sweep-limit').value || 500),
+  };
+  if (!body.ticker) {
+    result.innerHTML = '<div class="empty-sub" style="color:var(--neg);">Coin is required.</div>';
+    return;
+  }
+  try {
+    const r = await fetch('/markets-pro/bot/backtest', {
+      method: 'POST',
+      credentials: 'include',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const data = await r.json();
+    renderGridSweep(data);
+  } catch (e) {
+    console.error('[markets-pro] grid sweep failed', e);
+    result.innerHTML = '<div class="empty-sub" style="color:var(--neg);">' + escapeHtml(String(e.message || e)) + '</div>';
+  }
+}
+
+function renderGridSweep(data) {
+  const result = document.getElementById('grid-sweep-result');
+  if (!data || data.ok === false) {
+    result.innerHTML = '<div class="empty-sub" style="color:var(--neg);">' + escapeHtml((data && data.error) || 'Grid sweep failed') + '</div>';
+    return;
+  }
+  const rows = (data.top_results || []).map((r, i) => {
+    const cfg = r.config || {};
+    return '<tr><td>#' + (i + 1) + '</td><td class="num">' + escapeHtml(String(r.score)) + '</td>' +
+      '<td class="num ' + ((r.roi_pct || 0) >= 0 ? 'pos' : 'neg') + '">' + fmtPct(r.roi_pct) + '</td>' +
+      '<td class="num">' + fmtPct(r.max_drawdown_pct) + '</td>' +
+      '<td>Low ' + escapeHtml(String(cfg.lower_price)) + ' / High ' + escapeHtml(String(cfg.upper_price)) +
+      ' / Grids ' + escapeHtml(String(cfg.grid_count)) + ' / Order ' + fmtMoney(cfg.order_gbp) + '</td></tr>';
+  }).join('');
+  result.innerHTML =
+    '<table class="tbl"><thead><tr><th>Rank</th><th class="num">Score</th><th class="num">ROI</th><th class="num">Drawdown</th><th>Settings</th></tr></thead><tbody>' +
+      (rows || '<tr><td colspan="5" style="text-align:center; color:var(--txt-3); padding:18px;">No grid sweep results</td></tr>') +
+    '</tbody></table>' +
+    '<div class="bot-warning">' + escapeHtml(data.warning || 'Grid sweep estimate only.') + '</div>';
 }
 
 // ============================================================

@@ -39,3 +39,6 @@ def test_bot_lab_ui_is_wired():
     assert "DCA Parameter Sweep" in html
     assert re.search(r"function\s+runDcaSweep\s*\(", html)
     assert re.search(r"function\s+renderDcaSweep\s*\(", html)
+    assert "Grid Parameter Sweep" in html
+    assert re.search(r"function\s+runGridSweep\s*\(", html)
+    assert re.search(r"function\s+renderGridSweep\s*\(", html)
