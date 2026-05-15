@@ -23,3 +23,13 @@ def test_coin_price_page_ui_is_wired():
     assert 'id="coins-query"' in html
     assert re.search(r"function\s+loadCoins\s*\(", html)
     assert re.search(r"function\s+loadCoinCategories\s*\(", html)
+
+
+def test_bot_lab_ui_is_wired():
+    html = MARKETS_HTML.read_text(encoding="utf-8-sig")
+
+    assert 'data-tab="botlab"' in html
+    assert 'data-tab-page="botlab"' in html
+    assert "/markets-pro/bot/backtest" in html
+    assert re.search(r"function\s+runDcaBacktest\s*\(", html)
+    assert re.search(r"function\s+renderDcaBacktest\s*\(", html)

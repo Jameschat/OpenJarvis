@@ -687,6 +687,37 @@ h1.page-title {
 .paper-form { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
 .paper-form input { min-width: 0; }
 @media (max-width: 720px) { .paper-form { grid-template-columns: 1fr 1fr; } }
+.bot-form {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+.bot-form label {
+  display: grid;
+  gap: 5px;
+  color: var(--txt-3);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.bot-result-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+.bot-metric {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  background: rgba(6,18,32,0.52);
+}
+.bot-metric .k { font-size: 10px; color: var(--txt-3); text-transform: uppercase; letter-spacing: 0.08em; }
+.bot-metric .v { margin-top: 4px; font-size: 20px; font-weight: 700; color: var(--txt-1); }
+.bot-warning { margin-top: 12px; color: var(--warn); font-size: 12px; line-height: 1.45; }
+@media (max-width: 920px) {
+  .bot-form, .bot-result-grid { grid-template-columns: 1fr 1fr; }
+}
 .coins-controls {
   display: grid;
   grid-template-columns: minmax(150px, 1fr) minmax(180px, 1fr) minmax(120px, 150px) minmax(120px, 150px) auto auto;
@@ -726,6 +757,7 @@ h1.page-title {
     <button class="nav-tab active" data-tab="dashboard">Dashboard</button>
     <button class="nav-tab" data-tab="pulse">Pulse</button>
     <button class="nav-tab" data-tab="coins">Coins</button>
+    <button class="nav-tab" data-tab="botlab">Bot Lab</button>
     <button class="nav-tab" data-tab="analyze">Analyze</button>
     <button class="nav-tab" data-tab="paper">Paper</button>
   </div>
@@ -991,6 +1023,61 @@ h1.page-title {
 
 
 <!-- =================================================================== -->
+<!-- Bot Lab tab                                                          -->
+<!-- =================================================================== -->
+<section class="page tab-page" data-tab-page="botlab" hidden>
+  <div class="page-head">
+    <div class="page-eyebrow"><span class="pulse-dot"></span> Strategy Backtests</div>
+    <h1 class="page-title">Bot Lab</h1>
+    <div class="page-sub">Paper-only DCA strategy tests against cached OHLCV history. No exchange account or live order is used.</div>
+  </div>
+
+  <div class="card">
+    <div class="section-title"><span class="accent"></span> DCA Bot Backtest</div>
+    <div class="bot-form">
+      <label>Coin
+        <input id="bot-symbol" class="field" placeholder="BTC">
+      </label>
+      <label>Initial cash
+        <input id="bot-cash" class="field" type="number" min="1" step="1" value="1000">
+      </label>
+      <label>Base order
+        <input id="bot-base" class="field" type="number" min="1" step="1" value="100">
+      </label>
+      <label>Safety order
+        <input id="bot-safety" class="field" type="number" min="0" step="1" value="100">
+      </label>
+      <label>Safety orders
+        <input id="bot-max-safety" class="field" type="number" min="0" step="1" value="3">
+      </label>
+      <label>Deviation %
+        <input id="bot-deviation" class="field" type="number" min="0.1" step="0.1" value="3">
+      </label>
+      <label>Take profit %
+        <input id="bot-tp" class="field" type="number" min="0.1" step="0.1" value="2">
+      </label>
+      <label>Stop loss %
+        <input id="bot-stop" class="field" type="number" min="0" step="0.1" placeholder="optional">
+      </label>
+      <label>History bars
+        <input id="bot-limit" class="field" type="number" min="2" step="1" value="500">
+      </label>
+      <label>Slippage %
+        <input id="bot-slippage" class="field" type="number" min="0" step="0.01" value="0.05">
+      </label>
+      <label>Fee rate
+        <input id="bot-fee" class="field" type="number" min="0" step="0.0001" value="0.001">
+      </label>
+      <button class="btn primary-solid" style="align-self:end;" onclick="runDcaBacktest()">Run Backtest</button>
+    </div>
+    <div id="bot-result" style="margin-top:14px;">
+      <div class="empty-sub">Enter a coin with cached history, then run a DCA backtest.</div>
+    </div>
+  </div>
+</section>
+
+
+<!-- =================================================================== -->
 <!-- Paper tab                                                            -->
 <!-- =================================================================== -->
 <section class="page tab-page" data-tab-page="paper" hidden>
@@ -1095,7 +1182,7 @@ h1.page-title {
 // ============================================================
 // Tab switching
 // ============================================================
-const TABS = ['dashboard', 'pulse', 'coins', 'analyze', 'paper'];
+const TABS = ['dashboard', 'pulse', 'coins', 'botlab', 'analyze', 'paper'];
 function switchTab(name) {
   if (!TABS.includes(name)) return;
   document.querySelectorAll('.nav-tab').forEach(t => {
@@ -1436,6 +1523,83 @@ function renderCoinsPage(data) {
   const next = document.getElementById('coins-next');
   if (prev) prev.disabled = coinsPage <= 1;
   if (next) next.disabled = !coinsHasNext;
+}
+
+// ============================================================
+// Bot Lab tab
+// ============================================================
+async function runDcaBacktest() {
+  const result = document.getElementById('bot-result');
+  if (result) result.innerHTML = '<div class="empty-sub">Running backtest...</div>';
+  const body = {
+    ticker: document.getElementById('bot-symbol').value.trim(),
+    initial_cash_gbp: numOrNull(document.getElementById('bot-cash').value),
+    base_order_gbp: numOrNull(document.getElementById('bot-base').value),
+    safety_order_gbp: numOrNull(document.getElementById('bot-safety').value),
+    max_safety_orders: Number(document.getElementById('bot-max-safety').value || 0),
+    safety_order_deviation_pct: numOrNull(document.getElementById('bot-deviation').value),
+    take_profit_pct: numOrNull(document.getElementById('bot-tp').value),
+    stop_loss_pct: numOrNull(document.getElementById('bot-stop').value),
+    limit: Number(document.getElementById('bot-limit').value || 500),
+    slippage_pct: numOrNull(document.getElementById('bot-slippage').value),
+    fee_rate: numOrNull(document.getElementById('bot-fee').value),
+  };
+  if (!body.ticker) {
+    result.innerHTML = '<div class="empty-sub" style="color:var(--neg);">Coin is required.</div>';
+    return;
+  }
+  Object.keys(body).forEach(k => {
+    if (body[k] == null || Number.isNaN(body[k])) delete body[k];
+  });
+  try {
+    const r = await fetch('/markets-pro/bot/backtest', {
+      method: 'POST',
+      credentials: 'include',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const data = await r.json();
+    renderDcaBacktest(data);
+  } catch (e) {
+    console.error('[markets-pro] bot backtest failed', e);
+    result.innerHTML = '<div class="empty-sub" style="color:var(--neg);">' + escapeHtml(String(e.message || e)) + '</div>';
+  }
+}
+
+function botMetric(label, value, cls) {
+  return '<div class="bot-metric"><div class="k">' + escapeHtml(label) + '</div><div class="v ' + (cls || '') + '">' + escapeHtml(String(value)) + '</div></div>';
+}
+
+function renderDcaBacktest(data) {
+  const result = document.getElementById('bot-result');
+  if (!data || data.ok === false) {
+    result.innerHTML = '<div class="empty-sub" style="color:var(--neg);">' + escapeHtml((data && data.error) || 'Backtest failed') + '</div>';
+    return;
+  }
+  const roiCls = (data.roi_pct || 0) >= 0 ? 'pos' : 'neg';
+  const pnlCls = (data.realized_pnl_gbp || 0) >= 0 ? 'pos' : 'neg';
+  let trades = '';
+  for (const t of (data.trades || []).slice(-8)) {
+    trades += '<tr><td>' + escapeHtml(t.side) + '</td><td>' + escapeHtml(t.kind) + '</td><td class="num">' +
+      fmtMoney(t.gross_gbp) + '</td><td class="num">' + escapeHtml(String(t.price)) + '</td></tr>';
+  }
+  result.innerHTML =
+    '<div class="bot-result-grid">' +
+      botMetric('ROI', (data.roi_pct ?? 0).toFixed(2) + '%', roiCls) +
+      botMetric('Realised P&L', fmtMoney(data.realized_pnl_gbp), pnlCls) +
+      botMetric('Unrealised P&L', fmtMoney(data.unrealized_pnl_gbp), (data.unrealized_pnl_gbp || 0) >= 0 ? 'pos' : 'neg') +
+      botMetric('Max drawdown', (data.max_drawdown_pct ?? 0).toFixed(2) + '%', 'neg') +
+      botMetric('Closed deals', data.closed_deals ?? 0, '') +
+      botMetric('Open deals', data.open_deals ?? 0, '') +
+      botMetric('Win rate', (data.win_rate_pct ?? 0).toFixed(1) + '%', '') +
+      botMetric('Capital locked', fmtMoney(data.capital_locked_gbp), '') +
+    '</div>' +
+    '<div class="section-title" style="margin-top:18px;"><span class="accent"></span> Recent Simulated Trades</div>' +
+    '<table class="tbl"><thead><tr><th>Side</th><th>Action</th><th class="num">GBP</th><th class="num">Price</th></tr></thead><tbody>' +
+      (trades || '<tr><td colspan="4" style="text-align:center; color:var(--txt-3); padding:18px;">No trades</td></tr>') +
+    '</tbody></table>' +
+    '<div class="bot-warning">' + escapeHtml(data.warning || 'Backtest estimate only.') + '</div>';
 }
 
 // ============================================================
