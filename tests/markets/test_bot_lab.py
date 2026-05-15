@@ -1,7 +1,14 @@
 import pytest
 
-from openjarvis.markets.bot_lab import DCAConfig, backtest_dca, backtest_dca_from_history
-from openjarvis.markets.markets_tools import TOOL_DISPATCH, TOOL_SCHEMAS, backtest_dca_bot
+from openjarvis.markets.bot_lab import (
+    DCAConfig,
+    GridConfig,
+    backtest_dca,
+    backtest_dca_from_history,
+    backtest_grid,
+    backtest_grid_from_history,
+)
+from openjarvis.markets.markets_tools import TOOL_DISPATCH, TOOL_SCHEMAS, backtest_dca_bot, backtest_grid_bot
 
 
 def _bar(ts, open_, high, low, close):
@@ -142,3 +149,131 @@ def test_markets_pro_bot_backtest_endpoint_helper(monkeypatch):
     assert result["ok"] is True
     assert result["ticker"] == "QWEN"
     assert result["closed_deals"] == 1
+
+
+def test_markets_pro_bot_backtest_endpoint_helper_routes_grid(monkeypatch):
+    from openjarvis.cli.brain_server import _markets_pro_bot_backtest
+
+    bars = [
+        _bar(1, 100.0, 101.0, 99.0, 100.0),
+        _bar(2, 100.0, 106.0, 94.0, 104.0),
+    ]
+    monkeypatch.setattr("openjarvis.markets.store.get_history", lambda *args, **kwargs: bars)
+
+    result = _markets_pro_bot_backtest(
+        {
+            "strategy": "grid",
+            "ticker": "qwen",
+            "lower_price": 90,
+            "upper_price": 110,
+            "grid_count": 4,
+            "order_gbp": 100,
+            "slippage_pct": 0.0,
+        }
+    )
+
+    assert result["ok"] is True
+    assert result["strategy"] == "grid"
+    assert result["ticker"] == "QWEN"
+
+
+def test_grid_backtest_buys_and_sells_crossed_levels():
+    bars = [
+        _bar(1, 100.0, 101.0, 99.0, 100.0),
+        _bar(2, 100.0, 101.0, 94.0, 96.0),
+        _bar(3, 96.0, 106.0, 95.0, 104.0),
+    ]
+    config = GridConfig(
+        ticker="QWEN",
+        initial_cash_gbp=1000.0,
+        lower_price=90.0,
+        upper_price=110.0,
+        grid_count=4,
+        order_gbp=100.0,
+        slippage_pct=0.0,
+    )
+
+    result = backtest_grid(bars, config)
+
+    assert result["ok"] is True
+    assert result["strategy"] == "grid"
+    assert result["closed_grid_trades"] >= 1
+    assert result["realized_pnl_gbp"] > 0
+    assert result["grid_step"] == 5.0
+    assert any(trade["kind"] == "grid_buy" for trade in result["trades"])
+    assert any(trade["kind"] == "grid_sell" for trade in result["trades"])
+
+
+def test_grid_backtest_reports_open_inventory_and_drawdown():
+    bars = [
+        _bar(1, 100.0, 101.0, 99.0, 100.0),
+        _bar(2, 100.0, 100.0, 94.0, 95.0),
+        _bar(3, 95.0, 96.0, 90.0, 91.0),
+    ]
+    config = GridConfig(
+        ticker="QWEN",
+        initial_cash_gbp=1000.0,
+        lower_price=90.0,
+        upper_price=110.0,
+        grid_count=4,
+        order_gbp=100.0,
+        slippage_pct=0.0,
+    )
+
+    result = backtest_grid(bars, config)
+
+    assert result["open_grid_orders"] > 0
+    assert result["capital_locked_gbp"] > 0
+    assert result["unrealized_pnl_gbp"] < 0
+    assert result["max_drawdown_pct"] > 0
+
+
+def test_grid_backtest_rejects_invalid_range():
+    with pytest.raises(ValueError, match="upper_price"):
+        backtest_grid(
+            [_bar(1, 100.0, 101.0, 99.0, 100.0), _bar(2, 100.0, 102.0, 99.0, 101.0)],
+            GridConfig(ticker="QWEN", lower_price=110.0, upper_price=90.0),
+        )
+
+
+def test_backtest_grid_from_history_uses_market_store(monkeypatch):
+    bars = [
+        _bar(1, 100.0, 101.0, 99.0, 100.0),
+        _bar(2, 100.0, 106.0, 94.0, 104.0),
+    ]
+
+    def fake_get_history(ticker, since_ts=None, limit=None):
+        assert ticker == "QWEN"
+        assert since_ts == 20
+        assert limit == 60
+        return bars
+
+    monkeypatch.setattr("openjarvis.markets.store.get_history", fake_get_history)
+
+    result = backtest_grid_from_history(
+        "QWEN",
+        since_ts=20,
+        limit=60,
+        lower_price=90,
+        upper_price=110,
+        grid_count=4,
+        order_gbp=100,
+        slippage_pct=0.0,
+    )
+
+    assert result["ticker"] == "QWEN"
+    assert result["bars"] == 2
+
+
+def test_backtest_grid_bot_is_registered_as_llm_tool(monkeypatch):
+    bars = [
+        _bar(1, 100.0, 101.0, 99.0, 100.0),
+        _bar(2, 100.0, 106.0, 94.0, 104.0),
+    ]
+    monkeypatch.setattr("openjarvis.markets.store.get_history", lambda *args, **kwargs: bars)
+
+    payload = backtest_grid_bot("QWEN", lower_price=90, upper_price=110, grid_count=4, order_gbp=100, slippage_pct=0.0)
+
+    assert '"ok": true' in payload
+    assert TOOL_DISPATCH["backtest_grid_bot"] is backtest_grid_bot
+    assert any(schema["function"]["name"] == "backtest_grid_bot" for schema in TOOL_SCHEMAS)

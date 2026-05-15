@@ -33,3 +33,6 @@ def test_bot_lab_ui_is_wired():
     assert "/markets-pro/bot/backtest" in html
     assert re.search(r"function\s+runDcaBacktest\s*\(", html)
     assert re.search(r"function\s+renderDcaBacktest\s*\(", html)
+    assert "Grid Bot Backtest" in html
+    assert re.search(r"function\s+runGridBacktest\s*\(", html)
+    assert re.search(r"function\s+renderGridBacktest\s*\(", html)

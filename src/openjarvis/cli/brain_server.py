@@ -713,6 +713,24 @@ def _markets_pro_bot_backtest(body: Dict[str, Any]) -> Dict[str, Any]:
     ticker = (body.get("ticker") or "").strip().upper()
     if not ticker:
         return {"ok": False, "error": "ticker required"}
+    strategy = (body.get("strategy") or "dca").strip().lower()
+    if strategy == "grid":
+        allowed = {
+            "initial_cash_gbp",
+            "lower_price",
+            "upper_price",
+            "grid_count",
+            "order_gbp",
+            "fee_rate",
+            "slippage_pct",
+        }
+        kwargs = {key: body[key] for key in allowed if key in body}
+        return bot_lab.backtest_grid_from_history(
+            ticker,
+            since_ts=body.get("since_ts"),
+            limit=body.get("limit", 500),
+            **kwargs,
+        )
     allowed = {
         "initial_cash_gbp",
         "base_order_gbp",

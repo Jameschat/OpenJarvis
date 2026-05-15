@@ -1074,6 +1074,43 @@ h1.page-title {
       <div class="empty-sub">Enter a coin with cached history, then run a DCA backtest.</div>
     </div>
   </div>
+
+  <div class="card" style="margin-top:18px;">
+    <div class="section-title"><span class="accent"></span> Grid Bot Backtest</div>
+    <div class="bot-form">
+      <label>Coin
+        <input id="grid-symbol" class="field" placeholder="BTC">
+      </label>
+      <label>Initial cash
+        <input id="grid-cash" class="field" type="number" min="1" step="1" value="1000">
+      </label>
+      <label>Lower price
+        <input id="grid-lower" class="field" type="number" min="0" step="any" placeholder="90">
+      </label>
+      <label>Upper price
+        <input id="grid-upper" class="field" type="number" min="0" step="any" placeholder="110">
+      </label>
+      <label>Grid count
+        <input id="grid-count" class="field" type="number" min="2" step="1" value="10">
+      </label>
+      <label>Order GBP
+        <input id="grid-order" class="field" type="number" min="1" step="1" value="100">
+      </label>
+      <label>History bars
+        <input id="grid-limit" class="field" type="number" min="2" step="1" value="500">
+      </label>
+      <label>Slippage %
+        <input id="grid-slippage" class="field" type="number" min="0" step="0.01" value="0.05">
+      </label>
+      <label>Fee rate
+        <input id="grid-fee" class="field" type="number" min="0" step="0.0001" value="0.001">
+      </label>
+      <button class="btn primary-solid" style="align-self:end;" onclick="runGridBacktest()">Run Grid</button>
+    </div>
+    <div id="grid-result" style="margin-top:14px;">
+      <div class="empty-sub">Set a lower/upper range, then run a paper-only grid simulation.</div>
+    </div>
+  </div>
 </section>
 
 
@@ -1600,6 +1637,75 @@ function renderDcaBacktest(data) {
       (trades || '<tr><td colspan="4" style="text-align:center; color:var(--txt-3); padding:18px;">No trades</td></tr>') +
     '</tbody></table>' +
     '<div class="bot-warning">' + escapeHtml(data.warning || 'Backtest estimate only.') + '</div>';
+}
+
+async function runGridBacktest() {
+  const result = document.getElementById('grid-result');
+  if (result) result.innerHTML = '<div class="empty-sub">Running grid backtest...</div>';
+  const body = {
+    strategy: 'grid',
+    ticker: document.getElementById('grid-symbol').value.trim(),
+    initial_cash_gbp: numOrNull(document.getElementById('grid-cash').value),
+    lower_price: numOrNull(document.getElementById('grid-lower').value),
+    upper_price: numOrNull(document.getElementById('grid-upper').value),
+    grid_count: Number(document.getElementById('grid-count').value || 10),
+    order_gbp: numOrNull(document.getElementById('grid-order').value),
+    limit: Number(document.getElementById('grid-limit').value || 500),
+    slippage_pct: numOrNull(document.getElementById('grid-slippage').value),
+    fee_rate: numOrNull(document.getElementById('grid-fee').value),
+  };
+  if (!body.ticker) {
+    result.innerHTML = '<div class="empty-sub" style="color:var(--neg);">Coin is required.</div>';
+    return;
+  }
+  Object.keys(body).forEach(k => {
+    if (body[k] == null || Number.isNaN(body[k])) delete body[k];
+  });
+  try {
+    const r = await fetch('/markets-pro/bot/backtest', {
+      method: 'POST',
+      credentials: 'include',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const data = await r.json();
+    renderGridBacktest(data);
+  } catch (e) {
+    console.error('[markets-pro] grid backtest failed', e);
+    result.innerHTML = '<div class="empty-sub" style="color:var(--neg);">' + escapeHtml(String(e.message || e)) + '</div>';
+  }
+}
+
+function renderGridBacktest(data) {
+  const result = document.getElementById('grid-result');
+  if (!data || data.ok === false) {
+    result.innerHTML = '<div class="empty-sub" style="color:var(--neg);">' + escapeHtml((data && data.error) || 'Grid backtest failed') + '</div>';
+    return;
+  }
+  const roiCls = (data.roi_pct || 0) >= 0 ? 'pos' : 'neg';
+  const pnlCls = (data.realized_pnl_gbp || 0) >= 0 ? 'pos' : 'neg';
+  let trades = '';
+  for (const t of (data.trades || []).slice(-8)) {
+    trades += '<tr><td>' + escapeHtml(t.side) + '</td><td>' + escapeHtml(t.kind) + '</td><td class="num">' +
+      fmtMoney(t.gross_gbp) + '</td><td class="num">' + escapeHtml(String(t.price)) + '</td></tr>';
+  }
+  result.innerHTML =
+    '<div class="bot-result-grid">' +
+      botMetric('ROI', (data.roi_pct ?? 0).toFixed(2) + '%', roiCls) +
+      botMetric('Realised P&L', fmtMoney(data.realized_pnl_gbp), pnlCls) +
+      botMetric('Unrealised P&L', fmtMoney(data.unrealized_pnl_gbp), (data.unrealized_pnl_gbp || 0) >= 0 ? 'pos' : 'neg') +
+      botMetric('Max drawdown', (data.max_drawdown_pct ?? 0).toFixed(2) + '%', 'neg') +
+      botMetric('Closed grid trades', data.closed_grid_trades ?? 0, '') +
+      botMetric('Open grid orders', data.open_grid_orders ?? 0, '') +
+      botMetric('Grid step', data.grid_step ?? '-', '') +
+      botMetric('Capital locked', fmtMoney(data.capital_locked_gbp), '') +
+    '</div>' +
+    '<div class="section-title" style="margin-top:18px;"><span class="accent"></span> Recent Simulated Grid Trades</div>' +
+    '<table class="tbl"><thead><tr><th>Side</th><th>Action</th><th class="num">GBP</th><th class="num">Price</th></tr></thead><tbody>' +
+      (trades || '<tr><td colspan="4" style="text-align:center; color:var(--txt-3); padding:18px;">No trades</td></tr>') +
+    '</tbody></table>' +
+    '<div class="bot-warning">' + escapeHtml(data.warning || 'Grid backtest estimate only.') + '</div>';
 }
 
 // ============================================================

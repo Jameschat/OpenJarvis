@@ -20,6 +20,18 @@ class DCAConfig:
     slippage_pct: float = 0.05
 
 
+@dataclass(frozen=True)
+class GridConfig:
+    ticker: str
+    initial_cash_gbp: float = 1000.0
+    lower_price: float = 90.0
+    upper_price: float = 110.0
+    grid_count: int = 10
+    order_gbp: float = 100.0
+    fee_rate: float = 0.001
+    slippage_pct: float = 0.05
+
+
 def _as_float(value: Any, name: str) -> float:
     try:
         return float(value)
@@ -63,6 +75,27 @@ def _validate(config: DCAConfig, bars: list[dict[str, float]]) -> None:
         raise ValueError("take_profit_pct must be greater than zero")
     if config.stop_loss_pct is not None and config.stop_loss_pct <= 0:
         raise ValueError("stop_loss_pct must be greater than zero when set")
+    if not 0 <= config.fee_rate < 1:
+        raise ValueError("fee_rate must be between 0 and 1")
+    if config.slippage_pct < 0:
+        raise ValueError("slippage_pct must be zero or greater")
+
+
+def _validate_grid(config: GridConfig, bars: list[dict[str, float]]) -> None:
+    if len(bars) < 2:
+        raise ValueError("Grid backtest requires at least two bars")
+    if not config.ticker:
+        raise ValueError("ticker is required")
+    if config.initial_cash_gbp <= 0:
+        raise ValueError("initial_cash_gbp must be greater than zero")
+    if config.lower_price <= 0:
+        raise ValueError("lower_price must be greater than zero")
+    if config.upper_price <= config.lower_price:
+        raise ValueError("upper_price must be greater than lower_price")
+    if config.grid_count < 2:
+        raise ValueError("grid_count must be at least 2")
+    if config.order_gbp <= 0:
+        raise ValueError("order_gbp must be greater than zero")
     if not 0 <= config.fee_rate < 1:
         raise ValueError("fee_rate must be between 0 and 1")
     if config.slippage_pct < 0:
@@ -293,4 +326,116 @@ def backtest_dca_from_history(ticker: str, since_ts: int | None = None, limit: i
     return backtest_dca(bars, config)
 
 
-__all__ = ["DCAConfig", "backtest_dca", "backtest_dca_from_history"]
+def backtest_grid(bars: Iterable[dict[str, Any]], config: GridConfig) -> dict[str, Any]:
+    """Backtest a simple fixed-range spot grid bot against OHLCV bars."""
+
+    series = _normalise_bars(bars)
+    _validate_grid(config, series)
+
+    slip = config.slippage_pct / 100.0
+    step = (config.upper_price - config.lower_price) / config.grid_count
+    buy_levels = [config.lower_price + step * i for i in range(config.grid_count)]
+    cash = config.initial_cash_gbp
+    open_units: dict[float, dict[str, float]] = {}
+    trades: list[dict[str, Any]] = []
+    realized_pnl = 0.0
+    closed_trades = 0
+    peak_equity = config.initial_cash_gbp
+    max_drawdown_pct = 0.0
+    max_capital_at_risk = 0.0
+
+    for bar in series:
+        for level in sorted(list(open_units.keys())):
+            target = level + step
+            if bar["low"] <= target <= bar["high"]:
+                unit = open_units.pop(level)
+                fill_price = target * (1.0 - slip)
+                net, gross, fee = _sell(unit["quantity"], fill_price, config)
+                cash += net
+                pnl = net - unit["cost_gbp"]
+                realized_pnl += pnl
+                closed_trades += 1
+                trades.append(_trade(bar["ts"], "sell", "grid_sell", fill_price, unit["quantity"], gross, fee, closed_trades))
+
+        for level in buy_levels:
+            if level in open_units:
+                continue
+            if bar["low"] <= level <= bar["high"] and cash > 0:
+                fill_price = level * (1.0 + slip)
+                amount = min(cash, config.order_gbp)
+                cash, quantity, fee = _buy(cash, amount, fill_price, config)
+                open_units[level] = {
+                    "quantity": quantity,
+                    "cost_gbp": amount,
+                    "entry_price": fill_price,
+                    "fee_gbp": fee,
+                }
+                trades.append(_trade(bar["ts"], "buy", "grid_buy", fill_price, quantity, amount, fee, len(trades) + 1))
+                max_capital_at_risk = max(max_capital_at_risk, sum(unit["cost_gbp"] for unit in open_units.values()))
+
+        mark_value = sum(unit["quantity"] * bar["close"] * (1.0 - config.fee_rate) for unit in open_units.values())
+        equity = cash + mark_value
+        peak_equity = max(peak_equity, equity)
+        if peak_equity > 0:
+            max_drawdown_pct = max(max_drawdown_pct, (peak_equity - equity) / peak_equity * 100.0)
+
+    last_close = series[-1]["close"]
+    capital_locked = sum(unit["cost_gbp"] for unit in open_units.values())
+    mark_value = sum(unit["quantity"] * last_close * (1.0 - config.fee_rate) for unit in open_units.values())
+    unrealized_pnl = mark_value - capital_locked
+    ending_equity = cash + mark_value
+    roi_pct = (ending_equity - config.initial_cash_gbp) / config.initial_cash_gbp * 100.0
+
+    return {
+        "ok": True,
+        "strategy": "grid",
+        "ticker": config.ticker,
+        "bars": len(series),
+        "first_ts": int(series[0]["ts"]),
+        "last_ts": int(series[-1]["ts"]),
+        "lower_price": _round_price(config.lower_price),
+        "upper_price": _round_price(config.upper_price),
+        "grid_count": config.grid_count,
+        "grid_step": _round_price(step),
+        "initial_cash_gbp": _round_money(config.initial_cash_gbp),
+        "ending_equity_gbp": _round_money(ending_equity),
+        "cash_gbp": _round_money(cash),
+        "realized_pnl_gbp": _round_money(realized_pnl),
+        "unrealized_pnl_gbp": _round_money(unrealized_pnl),
+        "roi_pct": round(roi_pct, 2),
+        "closed_grid_trades": closed_trades,
+        "open_grid_orders": len(open_units),
+        "capital_locked_gbp": _round_money(capital_locked),
+        "max_capital_at_risk_gbp": _round_money(max_capital_at_risk),
+        "max_drawdown_pct": round(max_drawdown_pct, 2),
+        "trades": trades,
+        "open_orders": [
+            {
+                "buy_level": _round_price(level),
+                "sell_level": _round_price(level + step),
+                "quantity": _round_qty(unit["quantity"]),
+                "capital_gbp": _round_money(unit["cost_gbp"]),
+                "entry_price": _round_price(unit["entry_price"]),
+            }
+            for level, unit in sorted(open_units.items())
+        ],
+        "warning": "Grid backtest estimate only. Candle order inside each bar is unknown; results depend on assumed fills, fees, slippage, and cached history quality.",
+    }
+
+
+def backtest_grid_from_history(ticker: str, since_ts: int | None = None, limit: int | None = None, **kwargs: Any) -> dict[str, Any]:
+    from openjarvis.markets import store
+
+    bars = store.get_history(ticker, since_ts=since_ts, limit=limit)
+    config = GridConfig(ticker=ticker, **kwargs)
+    return backtest_grid(bars, config)
+
+
+__all__ = [
+    "DCAConfig",
+    "GridConfig",
+    "backtest_dca",
+    "backtest_dca_from_history",
+    "backtest_grid",
+    "backtest_grid_from_history",
+]

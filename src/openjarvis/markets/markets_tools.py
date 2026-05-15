@@ -252,6 +252,38 @@ def backtest_dca_bot(
         return json.dumps({"ok": False, "error": str(exc), "ticker": (ticker or "").upper()})
 
 
+def backtest_grid_bot(
+    ticker: str,
+    initial_cash_gbp: float = 1000.0,
+    lower_price: float = 90.0,
+    upper_price: float = 110.0,
+    grid_count: int = 10,
+    order_gbp: float = 100.0,
+    fee_rate: float = 0.001,
+    slippage_pct: float = 0.05,
+    since_ts: int | None = None,
+    limit: int | None = 500,
+) -> str:
+    """Run a PAPER-ONLY fixed-range grid bot backtest."""
+    try:
+        result = _bot_lab.backtest_grid_from_history(
+            ticker=ticker,
+            since_ts=since_ts,
+            limit=limit,
+            initial_cash_gbp=initial_cash_gbp,
+            lower_price=lower_price,
+            upper_price=upper_price,
+            grid_count=grid_count,
+            order_gbp=order_gbp,
+            fee_rate=fee_rate,
+            slippage_pct=slippage_pct,
+        )
+        return json.dumps(result)
+    except Exception as exc:
+        logger.debug("backtest_grid_bot failed", exc_info=True)
+        return json.dumps({"ok": False, "error": str(exc), "ticker": (ticker or "").upper()})
+
+
 def analyze_chart(image_path: str, ticker_hint: str = "",
                   timeframe: str = "2h") -> str:
     """Analyse a crypto chart screenshot. See chart_analyst.analyze_chart
@@ -518,6 +550,34 @@ TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "backtest_grid_bot",
+            "description": (
+                "Run a PAPER-ONLY fixed-range grid trading bot backtest on cached OHLCV history. "
+                "Use for sideways/ranging strategy tests. Returns realised/unrealised P&L, ROI, "
+                "drawdown, closed grid trades, open grid inventory, and simulated trades. "
+                "This never places live orders."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "ticker": {"type": "string"},
+                    "initial_cash_gbp": {"type": "number", "default": 1000.0},
+                    "lower_price": {"type": "number"},
+                    "upper_price": {"type": "number"},
+                    "grid_count": {"type": "integer", "default": 10},
+                    "order_gbp": {"type": "number", "default": 100.0},
+                    "fee_rate": {"type": "number", "default": 0.001},
+                    "slippage_pct": {"type": "number", "default": 0.05},
+                    "since_ts": {"type": "integer"},
+                    "limit": {"type": "integer", "default": 500},
+                },
+                "required": ["ticker", "lower_price", "upper_price"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "analyze_chart",
             "description": (
                 "MANDATORY when the operator attaches a crypto chart "
@@ -585,6 +645,7 @@ TOOL_DISPATCH = {
     "paper_sell":       paper_sell,
     "paper_portfolio":  paper_portfolio,
     "backtest_dca_bot": backtest_dca_bot,
+    "backtest_grid_bot": backtest_grid_bot,
     "watchlist_get":    watchlist_get,
     "watchlist_add":    watchlist_add,
     "watchlist_remove": watchlist_remove,
@@ -597,5 +658,5 @@ __all__ = [
     "stock_price", "crypto_price", "crypto_prices_page", "crypto_top_100", "crypto_top_1000",
     "watchlist_get", "watchlist_add", "watchlist_remove",
     "paper_buy", "paper_sell", "paper_portfolio",
-    "backtest_dca_bot", "analyze_chart",
+    "backtest_dca_bot", "backtest_grid_bot", "analyze_chart",
 ]
