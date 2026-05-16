@@ -55,6 +55,8 @@ def _get(path: str) -> dict:
     try:
         with urllib.request.urlopen(url, timeout=_TIMEOUT) as resp:
             return json.loads(resp.read())
+    except json.JSONDecodeError as exc:
+        raise AgentMemoryUnavailable(f"invalid JSON from sidecar: {exc}") from exc
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
         raise AgentMemoryUnavailable(str(exc)) from exc
 
@@ -68,6 +70,8 @@ def _post(path: str, body: dict) -> dict:
     try:
         with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
             return json.loads(resp.read())
+    except json.JSONDecodeError as exc:
+        raise AgentMemoryUnavailable(f"invalid JSON from sidecar: {exc}") from exc
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
         raise AgentMemoryUnavailable(str(exc)) from exc
 
@@ -75,6 +79,8 @@ def _post(path: str, body: dict) -> dict:
 def _extract_snippet(result: dict) -> str:
     """Extract human-readable content from a search result object."""
     obs = result.get("observation", {})
+    if not isinstance(obs, dict):
+        return str(obs)[:200]
     # Try common content keys in order of preference
     for key in ("content", "text", "data", "summary", "title"):
         val = obs.get(key)

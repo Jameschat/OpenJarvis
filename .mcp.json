@@ -14,7 +14,7 @@
             "args": ["-y", "@agentmemory/agentmemory", "mcp"],
             "env": {
                 "AGENTMEMORY_URL": "http://localhost:7730",
-                "AGENTMEMORY_STRIP_PATTERNS": "OPENJARVIS_PUBLIC_PIN,OPENAI_API_KEY,OPENAI_BASE_URL,AGENTMEMORY_URL,sk-[A-Za-z0-9]+"
+                "AGENTMEMORY_STRIP_PATTERNS": "OPENJARVIS_PUBLIC_PIN,OPENAI_API_KEY,OPENAI_BASE_URL,AGENTMEMORY_URL,ANTHROPIC_API_KEY,sk-[A-Za-z0-9]+,sk-ant-[A-Za-z0-9-]+"
             }
         }
     }

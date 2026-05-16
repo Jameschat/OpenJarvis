@@ -2162,9 +2162,9 @@ function renderPaperBotSchedules(data) {
     let action = '';
     if (bot.status === 'active') {
       if (bot.dry_run && bot.strategy === 'signal') {
-        action += '<button class="btn" onclick="approvePaperBotExecution(\\'' + escapeHtml(bot.id) + '\\')">Approve paper</button> ';
+        action += '<button class="btn" onclick="approvePaperBotExecution(\'' + escapeHtml(bot.id) + '\')">Approve paper</button> ';
       }
-      action += '<button class="btn" onclick="cancelPaperBot(\\'' + escapeHtml(bot.id) + '\\')">Cancel</button>';
+      action += '<button class="btn" onclick="cancelPaperBot(\'' + escapeHtml(bot.id) + '\')">Cancel</button>';
     }
     return '<tr><td>' + escapeHtml(bot.name || bot.id) + '</td><td>' + escapeHtml(bot.ticker) + '</td><td>' +
       escapeHtml(bot.strategy) + '</td><td>' + escapeHtml(bot.status) + '</td><td>' + escapeHtml(dry) +

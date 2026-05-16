@@ -125,3 +125,17 @@ def test_insights_returns_empty_list_on_missing_key():
     import openjarvis.tools.agentmemory_client as c
     with patch("urllib.request.urlopen", return_value=_mock_response({})):
         assert c.insights() == []
+
+
+def test_search_handles_non_dict_observation():
+    """_extract_snippet does not raise when observation is a scalar."""
+    import openjarvis.tools.agentmemory_client as c
+    body = {
+        "results": [
+            {"observation": "plain string observation", "score": 0.5, "sessionId": "s1"}
+        ]
+    }
+    with patch("urllib.request.urlopen", return_value=_mock_response(body)):
+        hits = c.search("query")
+    assert len(hits) == 1
+    assert hits[0].snippet == "plain string observation"

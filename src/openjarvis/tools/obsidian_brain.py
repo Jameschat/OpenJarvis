@@ -758,7 +758,13 @@ def _try_brain(text: str) -> Optional[str]:
                 return f"I don't have any notes on {query} yet, sir."
             lines = [f"I found {len(hits)} note{'s' if len(hits)>1 else ''} on {query}, sir."]
             for path, snip in hits:
-                lines.append(f"From {path.stem}: {snip}")
+                path_str = str(path)
+                if path_str.startswith("agentmemory:"):
+                    display = path_str.replace("agentmemory:///", "").replace("agentmemory:\\", "").replace("agentmemory:/", "").lstrip("/\\")
+                    label = f"episodic-{display}" if display else "episodic"
+                else:
+                    label = path.stem
+                lines.append(f"From {label}: {snip}")
             return "\n".join(lines)[:1500]
 
     # Remember — write a note

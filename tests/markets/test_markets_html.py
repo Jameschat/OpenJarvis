@@ -1,5 +1,7 @@
 from pathlib import Path
 import re
+import shutil
+import subprocess
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -54,3 +56,23 @@ def test_bot_lab_ui_is_wired():
     assert re.search(r"function\s+loadPaperBotSchedules\s*\(", html)
     assert re.search(r"function\s+runDuePaperBots\s*\(", html)
     assert re.search(r"function\s+approvePaperBotExecution\s*\(", html)
+
+
+def test_markets_page_inline_javascript_has_valid_syntax(tmp_path):
+    node = shutil.which("node")
+    if not node:
+        return
+    html = MARKETS_HTML.read_text(encoding="utf-8-sig")
+    scripts = re.findall(r"<script[^>]*>([\s\S]*?)</script>", html, flags=re.IGNORECASE)
+
+    assert scripts
+    for index, script in enumerate(scripts, start=1):
+        script_path = tmp_path / f"markets-script-{index}.js"
+        script_path.write_text(script, encoding="utf-8")
+        result = subprocess.run(
+            [node, "--check", str(script_path)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, result.stderr
