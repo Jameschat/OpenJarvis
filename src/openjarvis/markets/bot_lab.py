@@ -60,7 +60,7 @@ def _normalise_bars(bars: Iterable[dict[str, Any]]) -> list[dict[str, float]]:
                 "high": _as_float(bar.get("high"), "bar.high"),
                 "low": _as_float(bar.get("low"), "bar.low"),
                 "close": _as_float(bar.get("close"), "bar.close"),
-                "volume": _as_float(bar.get("volume", 0.0), "bar.volume"),
+                "volume": _as_float(bar.get("volume") or 0.0, "bar.volume"),
             }
         )
     normalised.sort(key=lambda item: item["ts"])
@@ -184,21 +184,26 @@ def backtest_dca(bars: Iterable[dict[str, Any]], config: DCAConfig) -> dict[str,
     slip = config.slippage_pct / 100.0
     cash = config.initial_cash_gbp
     deal_id = 1
-    base_entry = series[0]["close"] * (1.0 + slip)
-    cash, base_quantity, base_fee = _buy(cash, config.base_order_gbp, base_entry, config)
-    deal = {
-        "deal_id": deal_id,
-        "opened_ts": int(series[0]["ts"]),
-        "base_entry_price": base_entry,
-        "quantity": base_quantity,
-        "cost_gbp": config.base_order_gbp,
-        "fees_gbp": base_fee,
-        "safety_orders_used": 0,
-        "max_unrealized_loss_gbp": 0.0,
-    }
-    trades = [
-        _trade(series[0]["ts"], "buy", "base_order", base_entry, base_quantity, config.base_order_gbp, base_fee, deal_id)
-    ]
+
+    def open_deal(bar: dict[str, float], next_deal_id: int) -> tuple[float, dict[str, Any], dict[str, Any]]:
+        base_entry = bar["close"] * (1.0 + slip)
+        next_cash, base_quantity, base_fee = _buy(cash, config.base_order_gbp, base_entry, config)
+        amount = min(cash, config.base_order_gbp)
+        next_deal = {
+            "deal_id": next_deal_id,
+            "opened_ts": int(bar["ts"]),
+            "base_entry_price": base_entry,
+            "quantity": base_quantity,
+            "cost_gbp": amount,
+            "fees_gbp": base_fee,
+            "safety_orders_used": 0,
+            "max_unrealized_loss_gbp": 0.0,
+        }
+        next_trade = _trade(bar["ts"], "buy", "base_order", base_entry, base_quantity, amount, base_fee, next_deal_id)
+        return next_cash, next_deal, next_trade
+
+    cash, deal, trade = open_deal(series[0], deal_id)
+    trades = [trade]
     deals: list[dict[str, Any]] = []
     peak_equity = config.initial_cash_gbp
     max_drawdown_pct = 0.0
@@ -206,57 +211,66 @@ def backtest_dca(bars: Iterable[dict[str, Any]], config: DCAConfig) -> dict[str,
     max_capital_at_risk = deal["cost_gbp"]
 
     for bar in series[1:]:
-        avg_entry = deal["cost_gbp"] / deal["quantity"]
-        stop_price = avg_entry * (1.0 - (config.stop_loss_pct or 0.0) / 100.0)
-        tp_price = avg_entry * (1.0 + config.take_profit_pct / 100.0)
+        opened_this_bar = False
+        if deal is None and cash > 0:
+            deal_id += 1
+            cash, deal, trade = open_deal(bar, deal_id)
+            trades.append(trade)
+            opened_this_bar = True
+            max_capital_at_risk = max(max_capital_at_risk, deal["cost_gbp"])
 
-        if config.stop_loss_pct is not None and bar["low"] <= stop_price:
-            fill_price = stop_price * (1.0 - slip)
-            net, gross, fee = _sell(deal["quantity"], fill_price, config)
-            cash += net
-            pnl = net - deal["cost_gbp"]
-            trades.append(_trade(bar["ts"], "sell", "stop_loss", fill_price, deal["quantity"], gross, fee, deal_id))
-            deal.update(
-                {
-                    "closed_ts": int(bar["ts"]),
-                    "close_reason": "stop_loss",
-                    "exit_price": fill_price,
-                    "realized_pnl_gbp": pnl,
-                    "fees_gbp": deal["fees_gbp"] + fee,
-                }
-            )
-            deals.append(_summarise_deal(deal))
-            deal = None
-        elif bar["high"] >= tp_price:
-            fill_price = tp_price * (1.0 - slip)
-            net, gross, fee = _sell(deal["quantity"], fill_price, config)
-            cash += net
-            pnl = net - deal["cost_gbp"]
-            trades.append(_trade(bar["ts"], "sell", "take_profit", fill_price, deal["quantity"], gross, fee, deal_id))
-            deal.update(
-                {
-                    "closed_ts": int(bar["ts"]),
-                    "close_reason": "take_profit",
-                    "exit_price": fill_price,
-                    "realized_pnl_gbp": pnl,
-                    "fees_gbp": deal["fees_gbp"] + fee,
-                }
-            )
-            deals.append(_summarise_deal(deal))
-            deal = None
-        elif deal["safety_orders_used"] < config.max_safety_orders and config.safety_order_gbp > 0:
-            next_order = deal["safety_orders_used"] + 1
-            trigger = deal["base_entry_price"] * (1.0 - (config.safety_order_deviation_pct * next_order) / 100.0)
-            if bar["low"] <= trigger and cash > 0:
-                fill_price = trigger * (1.0 + slip)
-                amount = min(cash, config.safety_order_gbp)
-                cash, quantity, fee = _buy(cash, amount, fill_price, config)
-                deal["quantity"] += quantity
-                deal["cost_gbp"] += amount
-                deal["fees_gbp"] += fee
-                deal["safety_orders_used"] = next_order
-                trades.append(_trade(bar["ts"], "buy", "safety_order", fill_price, quantity, amount, fee, deal_id))
-                max_capital_at_risk = max(max_capital_at_risk, deal["cost_gbp"])
+        if deal is not None and not opened_this_bar:
+            avg_entry = deal["cost_gbp"] / deal["quantity"]
+            stop_price = avg_entry * (1.0 - (config.stop_loss_pct or 0.0) / 100.0)
+            tp_price = avg_entry * (1.0 + config.take_profit_pct / 100.0)
+
+            if config.stop_loss_pct is not None and bar["low"] <= stop_price:
+                fill_price = stop_price * (1.0 - slip)
+                net, gross, fee = _sell(deal["quantity"], fill_price, config)
+                cash += net
+                pnl = net - deal["cost_gbp"]
+                trades.append(_trade(bar["ts"], "sell", "stop_loss", fill_price, deal["quantity"], gross, fee, deal_id))
+                deal.update(
+                    {
+                        "closed_ts": int(bar["ts"]),
+                        "close_reason": "stop_loss",
+                        "exit_price": fill_price,
+                        "realized_pnl_gbp": pnl,
+                        "fees_gbp": deal["fees_gbp"] + fee,
+                    }
+                )
+                deals.append(_summarise_deal(deal))
+                deal = None
+            elif bar["high"] >= tp_price:
+                fill_price = tp_price * (1.0 - slip)
+                net, gross, fee = _sell(deal["quantity"], fill_price, config)
+                cash += net
+                pnl = net - deal["cost_gbp"]
+                trades.append(_trade(bar["ts"], "sell", "take_profit", fill_price, deal["quantity"], gross, fee, deal_id))
+                deal.update(
+                    {
+                        "closed_ts": int(bar["ts"]),
+                        "close_reason": "take_profit",
+                        "exit_price": fill_price,
+                        "realized_pnl_gbp": pnl,
+                        "fees_gbp": deal["fees_gbp"] + fee,
+                    }
+                )
+                deals.append(_summarise_deal(deal))
+                deal = None
+            elif deal["safety_orders_used"] < config.max_safety_orders and config.safety_order_gbp > 0:
+                next_order = deal["safety_orders_used"] + 1
+                trigger = deal["base_entry_price"] * (1.0 - (config.safety_order_deviation_pct * next_order) / 100.0)
+                if bar["low"] <= trigger and cash > 0:
+                    fill_price = trigger * (1.0 + slip)
+                    amount = min(cash, config.safety_order_gbp)
+                    cash, quantity, fee = _buy(cash, amount, fill_price, config)
+                    deal["quantity"] += quantity
+                    deal["cost_gbp"] += amount
+                    deal["fees_gbp"] += fee
+                    deal["safety_orders_used"] = next_order
+                    trades.append(_trade(bar["ts"], "buy", "safety_order", fill_price, quantity, amount, fee, deal_id))
+                    max_capital_at_risk = max(max_capital_at_risk, deal["cost_gbp"])
 
         if deal is None:
             equity = cash

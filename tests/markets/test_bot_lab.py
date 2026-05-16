@@ -93,6 +93,25 @@ def test_dca_backtest_reports_open_exposure_and_drawdown():
     assert result["max_floating_drawdown_pct"] > 0
 
 
+def test_dca_backtest_reopens_after_closed_deal_on_next_bar():
+    bars = [
+        _bar(1, 100.0, 101.0, 99.0, 100.0),
+        _bar(2, 100.0, 104.0, 99.0, 103.0),
+        _bar(3, 103.0, 104.0, 101.0, 102.0),
+        _bar(4, 102.0, 103.0, 100.0, 101.0),
+    ]
+
+    result = backtest_dca(
+        bars,
+        DCAConfig(ticker="QWEN", base_order_gbp=100.0, take_profit_pct=2.0, slippage_pct=0.0),
+    )
+
+    assert result["closed_deals"] == 1
+    assert result["open_deals"] == 1
+    assert [trade["kind"] for trade in result["trades"]] == ["base_order", "take_profit", "base_order"]
+    assert result["trades"][-1]["deal_id"] == 2
+
+
 def test_dca_backtest_rejects_invalid_config_and_empty_history():
     with pytest.raises(ValueError, match="at least two bars"):
         backtest_dca([], DCAConfig(ticker="QWEN"))

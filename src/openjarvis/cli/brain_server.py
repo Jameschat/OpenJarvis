@@ -714,91 +714,94 @@ def _markets_pro_bot_backtest(body: Dict[str, Any]) -> Dict[str, Any]:
     if not ticker:
         return {"ok": False, "error": "ticker required"}
     strategy = (body.get("strategy") or "dca").strip().lower()
-    if strategy == "dca_sweep":
+    try:
+        if strategy == "dca_sweep":
+            allowed = {
+                "take_profit_pct_values",
+                "safety_order_deviation_pct_values",
+                "max_safety_orders_values",
+                "initial_cash_gbp",
+                "base_order_gbp",
+                "safety_order_gbp",
+                "fee_rate",
+                "slippage_pct",
+            }
+            kwargs = {key: body[key] for key in allowed if key in body}
+            return bot_lab.sweep_dca_from_history(
+                ticker,
+                since_ts=body.get("since_ts"),
+                limit=body.get("limit", 500),
+                **kwargs,
+            )
+        if strategy == "grid_sweep":
+            allowed = {
+                "lower_price_values",
+                "upper_price_values",
+                "grid_count_values",
+                "order_gbp_values",
+                "initial_cash_gbp",
+                "fee_rate",
+                "slippage_pct",
+            }
+            kwargs = {key: body[key] for key in allowed if key in body}
+            return bot_lab.sweep_grid_from_history(
+                ticker,
+                since_ts=body.get("since_ts"),
+                limit=body.get("limit", 500),
+                **kwargs,
+            )
+        if strategy == "grid":
+            allowed = {
+                "initial_cash_gbp",
+                "lower_price",
+                "upper_price",
+                "grid_count",
+                "order_gbp",
+                "fee_rate",
+                "slippage_pct",
+            }
+            kwargs = {key: body[key] for key in allowed if key in body}
+            return bot_lab.backtest_grid_from_history(
+                ticker,
+                since_ts=body.get("since_ts"),
+                limit=body.get("limit", 500),
+                **kwargs,
+            )
+        if strategy == "signal":
+            allowed = {
+                "signals",
+                "initial_cash_gbp",
+                "default_order_gbp",
+                "fee_rate",
+                "slippage_pct",
+            }
+            kwargs = {key: body[key] for key in allowed if key in body}
+            return bot_lab.backtest_signal_from_history(
+                ticker,
+                since_ts=body.get("since_ts"),
+                limit=body.get("limit", 500),
+                **kwargs,
+            )
         allowed = {
-            "take_profit_pct_values",
-            "safety_order_deviation_pct_values",
-            "max_safety_orders_values",
             "initial_cash_gbp",
             "base_order_gbp",
             "safety_order_gbp",
+            "max_safety_orders",
+            "safety_order_deviation_pct",
+            "take_profit_pct",
+            "stop_loss_pct",
             "fee_rate",
             "slippage_pct",
         }
         kwargs = {key: body[key] for key in allowed if key in body}
-        return bot_lab.sweep_dca_from_history(
+        return bot_lab.backtest_dca_from_history(
             ticker,
             since_ts=body.get("since_ts"),
             limit=body.get("limit", 500),
             **kwargs,
         )
-    if strategy == "grid_sweep":
-        allowed = {
-            "lower_price_values",
-            "upper_price_values",
-            "grid_count_values",
-            "order_gbp_values",
-            "initial_cash_gbp",
-            "fee_rate",
-            "slippage_pct",
-        }
-        kwargs = {key: body[key] for key in allowed if key in body}
-        return bot_lab.sweep_grid_from_history(
-            ticker,
-            since_ts=body.get("since_ts"),
-            limit=body.get("limit", 500),
-            **kwargs,
-        )
-    if strategy == "grid":
-        allowed = {
-            "initial_cash_gbp",
-            "lower_price",
-            "upper_price",
-            "grid_count",
-            "order_gbp",
-            "fee_rate",
-            "slippage_pct",
-        }
-        kwargs = {key: body[key] for key in allowed if key in body}
-        return bot_lab.backtest_grid_from_history(
-            ticker,
-            since_ts=body.get("since_ts"),
-            limit=body.get("limit", 500),
-            **kwargs,
-        )
-    if strategy == "signal":
-        allowed = {
-            "signals",
-            "initial_cash_gbp",
-            "default_order_gbp",
-            "fee_rate",
-            "slippage_pct",
-        }
-        kwargs = {key: body[key] for key in allowed if key in body}
-        return bot_lab.backtest_signal_from_history(
-            ticker,
-            since_ts=body.get("since_ts"),
-            limit=body.get("limit", 500),
-            **kwargs,
-        )
-    allowed = {
-        "initial_cash_gbp",
-        "base_order_gbp",
-        "safety_order_gbp",
-        "max_safety_orders",
-        "safety_order_deviation_pct",
-        "take_profit_pct",
-        "stop_loss_pct",
-        "fee_rate",
-        "slippage_pct",
-    }
-    kwargs = {key: body[key] for key in allowed if key in body}
-    return bot_lab.backtest_dca_from_history(
-        ticker,
-        since_ts=body.get("since_ts"),
-        limit=body.get("limit", 500),
-        **kwargs,
-    )
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc), "ticker": ticker, "strategy": strategy}
 
 
 def _markets_pro_paper_bot_schedule(body: Dict[str, Any]) -> Dict[str, Any]:
