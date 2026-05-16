@@ -32,18 +32,26 @@ class FasterWhisperBackend(SpeechBackend):
         self._model: Optional[WhisperModel] = None
 
     def _ensure_model(self) -> WhisperModel:
-        """Lazy-load the Whisper model on first use."""
+        """Lazy-load the Whisper model on first use, falling back to CPU."""
         if self._model is None:
             if WhisperModel is None:
                 raise ImportError(
                     "faster-whisper is not installed. "
                     "Install with: uv sync --extra speech"
                 )
-            self._model = WhisperModel(
-                self._model_size,
-                device=self._device,
-                compute_type=self._compute_type,
-            )
+            # Try requested device first, fall back to CPU
+            try:
+                self._model = WhisperModel(
+                    self._model_size,
+                    device=self._device,
+                    compute_type=self._compute_type,
+                )
+            except Exception:
+                self._model = WhisperModel(
+                    self._model_size,
+                    device="cpu",
+                    compute_type="float32",
+                )
         return self._model
 
     def transcribe(
@@ -56,18 +64,32 @@ class FasterWhisperBackend(SpeechBackend):
         """Transcribe audio bytes using Faster-Whisper."""
         model = self._ensure_model()
 
-        # Write audio to a temp file (faster-whisper needs a file path)
+        # Write audio to a temp file (faster-whisper needs a file path).
+        # Use delete=False because on Windows the file is locked while open.
         suffix = f".{format}" if not format.startswith(".") else format
-        with tempfile.NamedTemporaryFile(suffix=suffix, delete=True) as tmp:
+        tmp = tempfile.NamedTemporaryFile(suffix=suffix, delete=False)
+        try:
             tmp.write(audio)
             tmp.flush()
+            tmp.close()
 
-            kwargs = {}
+            kwargs = {
+                "beam_size": 5,
+                "vad_filter": True,
+                "vad_parameters": {"min_silence_duration_ms": 500},
+                "initial_prompt": "Jarvis, ",
+                "condition_on_previous_text": False,
+                "no_speech_threshold": 0.5,
+            }
             if language:
                 kwargs["language"] = language
 
             segments_iter, info = model.transcribe(tmp.name, **kwargs)
             segments_list = list(segments_iter)
+        finally:
+            import os
+
+            os.unlink(tmp.name)
 
         # Build result
         text = "".join(seg.text for seg in segments_list).strip()

@@ -1,0 +1,630 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TikTok Business — J.A.R.V.I.S.</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #0a0a0f; color: #e2e8f0; font-family: 'Segoe UI', system-ui, sans-serif; font-size: 13px; min-height: 100vh; }
+
+/* Ops banner */
+.ops-banner { height: 38px; background: #0d0d18; border-bottom: 1px solid #1e2040; display: flex; align-items: center; padding: 0 12px; gap: 6px; }
+.ops-banner .brand { color: #e2e8f0; font-weight: 600; font-size: 11px; letter-spacing: 0.08em; margin-right: 8px; }
+.ops-btn { padding: 3px 10px; border-radius: 4px; border: 1px solid #2a2d4a; background: transparent; color: #94a3b8; cursor: pointer; font-size: 10px; letter-spacing: 0.06em; text-decoration: none; display: inline-flex; align-items: center; }
+.ops-btn:hover { color: #e2e8f0; border-color: #4a4d6a; }
+.ops-btn.active { background: rgba(255,45,85,0.15); border-color: #ff2d55; color: #ff6b8a; }
+
+/* Header */
+.tk-header { background: linear-gradient(135deg, #0d0d18, #1a0a1e); border-bottom: 1px solid #2a1535; padding: 14px 20px; display: flex; align-items: center; justify-content: space-between; }
+.tk-logo { font-size: 20px; font-weight: 700; letter-spacing: -0.02em; }
+.tk-logo .pink { color: #ff2d55; }
+.tk-pipeline-status { font-size: 10px; color: #64748b; letter-spacing: 0.08em; display: flex; align-items: center; gap: 6px; }
+.live-dot { width: 6px; height: 6px; border-radius: 50%; background: #4ade80; animation: pulse 2s infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+.tk-stats { display: flex; gap: 28px; }
+.tk-stat-val { font-size: 18px; font-weight: 700; }
+.tk-stat-val.green { color: #4ade80; }
+.tk-stat-label { font-size: 10px; color: #64748b; letter-spacing: 0.06em; }
+
+/* Tabs */
+.tk-tabs { display: flex; background: #0a0a0f; border-bottom: 1px solid #1e2040; padding: 0 20px; position: sticky; top: 0; z-index: 10; }
+.tk-tab { padding: 10px 16px; font-size: 11px; letter-spacing: 0.08em; color: #64748b; cursor: pointer; border-bottom: 2px solid transparent; transition: all .2s; user-select: none; }
+.tk-tab:hover:not(.active) { color: #94a3b8; }
+.tk-tab.active { color: #ff2d55; border-bottom-color: #ff2d55; }
+.tk-tab .badge { background: #ff2d55; color: #fff; font-size: 9px; border-radius: 8px; padding: 1px 5px; margin-left: 4px; }
+
+/* Tab panels */
+.tab-panel { display: none; padding: 16px 20px; }
+.tab-panel.active { display: flex; gap: 16px; }
+.tab-panel.single { display: none; flex-direction: column; gap: 12px; }
+.tab-panel.single.active { display: flex; }
+
+/* Layout columns */
+.col-left { width: 320px; flex-shrink: 0; display: flex; flex-direction: column; gap: 12px; }
+.col-right { flex: 1; display: flex; flex-direction: column; gap: 12px; }
+
+/* Panel */
+.panel { background: #0d0d18; border: 1px solid #1e2040; border-radius: 8px; overflow: hidden; }
+.panel-head { padding: 8px 12px; border-bottom: 1px solid #1e2040; display: flex; align-items: center; justify-content: space-between; }
+.panel-head-title { font-size: 10px; letter-spacing: .1em; color: #64748b; font-weight: 600; }
+.panel-head-meta { font-size: 10px; color: #475569; }
+.panel-body { padding: 10px 12px; }
+
+/* Trend items */
+.trend-item { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px solid #1a1e30; }
+.trend-item:last-child { border-bottom: none; }
+.score-badge { width: 34px; height: 34px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; flex-shrink: 0; }
+.score-high { background: rgba(255,45,85,.2); color: #ff6b8a; border: 1px solid #ff2d55; }
+.score-med { background: rgba(251,191,36,.15); color: #fbbf24; border: 1px solid #f59e0b; }
+.score-low { background: rgba(100,116,139,.15); color: #64748b; border: 1px solid #334155; }
+.trend-info { flex: 1; min-width: 0; }
+.trend-title { font-size: 12px; color: #e2e8f0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.trend-source { font-size: 10px; color: #475569; }
+.status-pill { font-size: 9px; padding: 2px 6px; border-radius: 3px; flex-shrink: 0; }
+.pill-scripting { background: rgba(139,92,246,.2); color: #a78bfa; border: 1px solid #7c3aed; }
+.pill-generating { background: rgba(255,45,85,.2); color: #ff6b8a; border: 1px solid #ff2d55; }
+.pill-queued { background: rgba(59,130,246,.2); color: #60a5fa; border: 1px solid #2563eb; }
+.pill-below { color: #475569; font-size: 9px; }
+
+/* Agent rows */
+.agent-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid #1a1e30; }
+.agent-row:last-child { border-bottom: none; }
+.agent-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.dot-active { background: #4ade80; animation: pulse 1.5s infinite; }
+.dot-idle { background: #334155; }
+.dot-queued { background: #fbbf24; }
+.agent-name { font-size: 11px; color: #94a3b8; width: 130px; flex-shrink: 0; }
+.agent-task { font-size: 10px; color: #475569; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Video approval card */
+.video-card { border: 1px solid #1e2040; border-radius: 8px; overflow: hidden; background: #0d0d18; }
+.video-card-row { display: flex; }
+.video-thumb { width: 72px; aspect-ratio: 9/16; background: linear-gradient(135deg, #1a0a2e, #0a1a2e); display: flex; align-items: center; justify-content: center; color: #475569; font-size: 20px; flex-shrink: 0; border-right: 1px solid #1e2040; }
+.video-info { flex: 1; padding: 12px; display: flex; flex-direction: column; justify-content: space-between; }
+.video-title { font-size: 13px; color: #e2e8f0; font-weight: 600; margin-bottom: 3px; }
+.video-meta { font-size: 10px; color: #64748b; margin-bottom: 6px; }
+.video-caption { font-size: 11px; color: #94a3b8; font-style: italic; margin-bottom: 10px; }
+.video-actions { display: flex; gap: 8px; }
+.btn { padding: 5px 14px; border-radius: 5px; font-size: 11px; cursor: pointer; font-weight: 500; border: none; }
+.btn-approve { background: #16a34a; color: #fff; }
+.btn-reject { background: transparent; border: 1px solid #dc2626; color: #f87171; }
+.btn-preview { background: transparent; border: 1px solid #334155; color: #94a3b8; }
+.btn-post { background: #ff2d55; color: #fff; }
+
+/* Posted grid */
+.posted-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; }
+.posted-card { border: 1px solid #1e2040; border-radius: 6px; overflow: hidden; cursor: pointer; transition: border-color .2s; }
+.posted-card:hover { border-color: #ff2d55; }
+.posted-thumb { aspect-ratio: 9/16; background: linear-gradient(135deg, #1a0a2e, #0a1a2e); display: flex; align-items: center; justify-content: center; color: #475569; font-size: 24px; }
+.posted-body { padding: 6px 8px; }
+.posted-title { font-size: 11px; color: #cbd5e1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.posted-stats { font-size: 10px; color: #64748b; display: flex; gap: 8px; margin-top: 2px; }
+.stat-green { color: #4ade80; }
+.stat-amber { color: #fbbf24; }
+
+/* Finance cards */
+.finance-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.finance-card { background: #0d0d18; border: 1px solid #1e2040; border-radius: 8px; padding: 14px; }
+.finance-val { font-size: 26px; font-weight: 700; color: #4ade80; }
+.finance-label { font-size: 10px; color: #64748b; letter-spacing: .08em; margin-top: 2px; }
+.progress-bar { height: 5px; background: #1e2040; border-radius: 3px; margin-top: 10px; overflow: hidden; }
+.progress-fill { height: 100%; background: linear-gradient(90deg, #ff2d55, #4ade80); border-radius: 3px; transition: width .5s; }
+.progress-label { font-size: 9px; color: #475569; margin-top: 4px; }
+
+/* Finance table */
+.finance-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+.finance-table th { text-align: left; font-size: 9px; letter-spacing: .08em; color: #475569; padding: 6px 8px; border-bottom: 1px solid #1e2040; }
+.finance-table td { padding: 6px 8px; border-bottom: 1px solid #1a1e30; color: #94a3b8; }
+.finance-table tr:last-child td { border-bottom: none; }
+
+/* Comment cards */
+.comment-card { border: 1px solid #1e2040; border-radius: 8px; padding: 12px; background: #0d0d18; }
+.comment-video-title { font-size: 10px; color: #64748b; letter-spacing: .06em; margin-bottom: 8px; }
+.comment-original { background: #0a0a0f; border-radius: 6px; padding: 8px 10px; margin-bottom: 8px; }
+.comment-handle { font-size: 10px; color: #ff6b8a; margin-bottom: 3px; }
+.comment-text { font-size: 12px; color: #94a3b8; }
+.comment-draft { border-left: 2px solid #ff2d55; padding-left: 10px; margin-bottom: 10px; font-size: 12px; color: #e2e8f0; font-style: italic; }
+
+/* Settings form */
+.settings-section { margin-bottom: 20px; }
+.settings-label { font-size: 10px; letter-spacing: .08em; color: #64748b; margin-bottom: 6px; display: block; }
+.settings-input { width: 100%; background: #0a0a0f; border: 1px solid #2a2d4a; border-radius: 5px; padding: 7px 10px; color: #e2e8f0; font-size: 12px; }
+.settings-input:focus { outline: none; border-color: #ff2d55; }
+.settings-row { display: flex; gap: 10px; align-items: center; }
+.btn-settings { padding: 7px 16px; background: #ff2d55; border: none; border-radius: 5px; color: #fff; font-size: 12px; cursor: pointer; }
+.btn-settings:hover { background: #e0253d; }
+.btn-connect { padding: 7px 16px; background: transparent; border: 1px solid #ff2d55; border-radius: 5px; color: #ff6b8a; font-size: 12px; cursor: pointer; }
+.connected-badge { background: rgba(74,222,128,.15); color: #4ade80; border: 1px solid #16a34a; font-size: 10px; padding: 3px 8px; border-radius: 4px; }
+.disconnected-badge { background: rgba(239,68,68,.1); color: #f87171; border: 1px solid #dc2626; font-size: 10px; padding: 3px 8px; border-radius: 4px; }
+.range-row { display: flex; align-items: center; gap: 12px; }
+.range-row input[type=range] { flex: 1; accent-color: #ff2d55; }
+.range-val { font-size: 14px; font-weight: 700; color: #ff2d55; width: 30px; text-align: center; }
+.btn-trigger { padding: 8px 20px; background: rgba(255,45,85,.15); border: 1px solid #ff2d55; border-radius: 6px; color: #ff6b8a; font-size: 12px; cursor: pointer; letter-spacing: .04em; }
+.btn-trigger:hover { background: rgba(255,45,85,.25); }
+</style>
+</head>
+<body>
+
+<!-- Operations Center banner -->
+<div class="ops-banner">
+  <span class="brand">OPERATIONS CENTER</span>
+  <a class="ops-btn" href="/">🏠 JARVIS</a>
+  <a class="ops-btn" href="/markets">📈 MARKETS</a>
+  <a class="ops-btn active" href="/tiktok">📱 TIKTOK</a>
+</div>
+
+<!-- Header -->
+<div class="tk-header">
+  <div>
+    <div class="tk-logo"><span class="pink">Tik</span>Tok Business</div>
+    <div class="tk-pipeline-status" style="margin-top:4px">
+      <span class="live-dot" id="live-dot"></span>
+      <span id="pipeline-status">loading…</span>
+    </div>
+  </div>
+  <div class="tk-stats">
+    <div>
+      <div class="tk-stat-val" id="stat-followers">—</div>
+      <div class="tk-stat-label">FOLLOWERS</div>
+    </div>
+    <div>
+      <div class="tk-stat-val" id="stat-views">—</div>
+      <div class="tk-stat-label">TOTAL VIEWS</div>
+    </div>
+    <div>
+      <div class="tk-stat-val" id="stat-engagement">—</div>
+      <div class="tk-stat-label">AVG ENGAGEMENT</div>
+    </div>
+    <div>
+      <div class="tk-stat-val green" id="stat-revenue">£—</div>
+      <div class="tk-stat-label">EST. THIS MONTH</div>
+    </div>
+  </div>
+</div>
+
+<!-- Tabs -->
+<div class="tk-tabs">
+  <div class="tk-tab active" onclick="switchTab('pipeline')">PIPELINE</div>
+  <div class="tk-tab" onclick="switchTab('queue')">APPROVAL QUEUE <span class="badge" id="queue-badge" style="display:none">0</span></div>
+  <div class="tk-tab" onclick="switchTab('posted')">POSTED</div>
+  <div class="tk-tab" onclick="switchTab('finance')">FINANCE</div>
+  <div class="tk-tab" onclick="switchTab('comments')">COMMENTS <span class="badge" id="comments-badge" style="display:none">0</span></div>
+  <div class="tk-tab" onclick="switchTab('settings')">SETTINGS</div>
+</div>
+
+<!-- PIPELINE TAB -->
+<div id="tab-pipeline" class="tab-panel active">
+  <div class="col-left">
+    <div class="panel">
+      <div class="panel-head">
+        <span class="panel-head-title">🔥 TREND PIPELINE</span>
+        <button class="btn-trigger" onclick="triggerScan(this)">▶ Scan Now</button>
+      </div>
+      <div class="panel-body" id="trends-list"><div style="color:#475569;font-size:11px">No trends scored yet</div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-head">
+        <span class="panel-head-title">⚙ AGENT ACTIVITY</span>
+        <span class="panel-head-meta" id="active-count">0 active</span>
+      </div>
+      <div class="panel-body" id="agents-list"></div>
+    </div>
+  </div>
+  <div class="col-right">
+    <div class="panel" id="top-queue-panel">
+      <div class="panel-head">
+        <span class="panel-head-title">✅ NEXT FOR APPROVAL</span>
+        <span class="panel-head-meta" id="queue-count-label">0 pending</span>
+      </div>
+      <div class="panel-body" id="top-queue-body"><div style="color:#475569;font-size:11px">No videos awaiting approval</div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-head">
+        <span class="panel-head-title">📤 RECENTLY POSTED</span>
+        <span class="panel-head-meta" id="posted-count">0 videos</span>
+      </div>
+      <div class="panel-body"><div class="posted-grid" id="recent-posted-grid"></div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><span class="panel-head-title">💰 REVENUE SNAPSHOT</span></div>
+      <div class="panel-body">
+        <div class="finance-grid">
+          <div class="finance-card">
+            <div class="finance-val" id="snap-revenue">£0</div>
+            <div class="finance-label">ESTIMATED THIS MONTH</div>
+            <div class="progress-bar"><div class="progress-fill" id="snap-bar" style="width:0%"></div></div>
+            <div class="progress-label" id="snap-label">0% to £5,000 target</div>
+          </div>
+          <div class="finance-card">
+            <div class="finance-val" style="color:#60a5fa" id="snap-views">0</div>
+            <div class="finance-label">VIEWS THIS MONTH</div>
+            <div style="font-size:10px;color:#475569;margin-top:6px" id="snap-rpm">RPM £7.50/1k</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- APPROVAL QUEUE TAB -->
+<div id="tab-queue" class="tab-panel single">
+  <div id="queue-list"><div style="color:#475569;font-size:11px">No videos awaiting approval</div></div>
+</div>
+
+<!-- POSTED TAB -->
+<div id="tab-posted" class="tab-panel single">
+  <div class="posted-grid" id="full-posted-grid"></div>
+</div>
+
+<!-- FINANCE TAB -->
+<div id="tab-finance" class="tab-panel single">
+  <div class="finance-grid" style="margin-bottom:16px">
+    <div class="finance-card">
+      <div class="finance-val" id="fin-revenue">£0</div>
+      <div class="finance-label">ESTIMATED THIS MONTH</div>
+      <div class="progress-bar"><div class="progress-fill" id="fin-bar-5k" style="width:0%"></div></div>
+      <div class="progress-label" id="fin-label-5k">0% to £5,000</div>
+      <div class="progress-bar" style="margin-top:6px"><div class="progress-fill" id="fin-bar-10k" style="width:0%;background:linear-gradient(90deg,#ff2d55,#a78bfa)"></div></div>
+      <div class="progress-label" id="fin-label-10k">0% to £10,000</div>
+    </div>
+    <div class="finance-card">
+      <div class="finance-val" style="color:#60a5fa" id="fin-views">0</div>
+      <div class="finance-label">VIEWS THIS MONTH</div>
+      <div style="margin-top:10px">
+        <div style="font-size:10px;color:#64748b">Videos this month: <span id="fin-count">0</span></div>
+        <div style="font-size:10px;color:#64748b">Engagement rate: <span id="fin-engagement">0%</span></div>
+        <div style="font-size:10px;color:#64748b">RPM: <span id="fin-rpm">£7.50</span>/1k views</div>
+      </div>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="panel-head"><span class="panel-head-title">PER VIDEO EARNINGS</span></div>
+    <div class="panel-body">
+      <table class="finance-table">
+        <thead><tr><th>VIDEO</th><th>VIEWS</th><th>LIKES</th><th>EST. £</th></tr></thead>
+        <tbody id="fin-table-body"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- COMMENTS TAB -->
+<div id="tab-comments" class="tab-panel single">
+  <div id="comments-list"><div style="color:#475569;font-size:11px">No comment replies awaiting approval</div></div>
+</div>
+
+<!-- SETTINGS TAB -->
+<div id="tab-settings" class="tab-panel single">
+  <div class="panel" style="max-width:600px">
+    <div class="panel-head"><span class="panel-head-title">🔑 KLING AI</span></div>
+    <div class="panel-body">
+      <div class="settings-section">
+        <label class="settings-label">API KEY</label>
+        <div class="settings-row">
+          <input class="settings-input" type="password" id="kling-key" placeholder="kling_api_key…">
+          <input class="settings-input" type="password" id="kling-secret" placeholder="kling_api_secret…" style="margin-left:8px">
+        </div>
+      </div>
+      <div id="kling-status" class="disconnected-badge" style="display:inline-flex">Not configured</div>
+    </div>
+  </div>
+
+  <div class="panel" style="max-width:600px;margin-top:12px">
+    <div class="panel-head"><span class="panel-head-title">📱 TIKTOK ACCOUNT</span></div>
+    <div class="panel-body">
+      <div class="settings-section">
+        <label class="settings-label">CLIENT KEY</label>
+        <input class="settings-input" type="text" id="tt-client-key" placeholder="TikTok app client_key">
+        <label class="settings-label" style="margin-top:8px">CLIENT SECRET</label>
+        <input class="settings-input" type="password" id="tt-client-secret" placeholder="TikTok app client_secret">
+        <label class="settings-label" style="margin-top:8px">REDIRECT URI</label>
+        <input class="settings-input" type="text" id="tt-redirect-uri" placeholder="https://jarvis.local/tiktok/oauth/callback">
+      </div>
+      <div style="display:flex;align-items:center;gap:12px">
+        <button class="btn-connect" onclick="connectTikTok()">🔗 Connect TikTok Account</button>
+        <span id="tt-status" class="disconnected-badge">Not connected</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel" style="max-width:600px;margin-top:12px">
+    <div class="panel-head"><span class="panel-head-title">⚙ PIPELINE SETTINGS</span></div>
+    <div class="panel-body">
+      <label class="settings-label">TREND SCORE THRESHOLD (videos below this are skipped)</label>
+      <div class="range-row">
+        <input type="range" min="0" max="100" value="70" id="threshold-slider" oninput="document.getElementById('threshold-val').textContent=this.value">
+        <span class="range-val" id="threshold-val">70</span>
+      </div>
+      <div style="margin-top:16px">
+        <label class="settings-label">MANUAL TRIGGER</label>
+        <button class="btn-trigger" onclick="triggerScan(this)">▶ Run Trend Scan Now</button>
+      </div>
+    </div>
+  </div>
+
+  <div style="margin-top:16px;max-width:600px">
+    <button class="btn-settings" onclick="saveSettings()">💾 Save Settings</button>
+  </div>
+</div>
+
+<script>
+function escapeHtml(s) {
+  if (s == null) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+function escapeAttr(s) {
+  if (s == null) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+let state = {};
+
+function switchTab(name) {
+  document.querySelectorAll('.tk-tab').forEach((t,i) => t.classList.toggle('active', ['pipeline','queue','posted','finance','comments','settings'][i] === name));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+}
+
+function fmt(n) {
+  if (n >= 1000000) return (n/1000000).toFixed(1) + 'M';
+  if (n >= 1000) return (n/1000).toFixed(1) + 'k';
+  return String(n);
+}
+
+function renderTrends(trends) {
+  const el = document.getElementById('trends-list');
+  if (!trends || !trends.length) { el.innerHTML = '<div style="color:#475569;font-size:11px">No trends scored yet — click Scan Now</div>'; return; }
+  el.innerHTML = trends.slice(0,10).map(t => {
+    const sc = t.tiktok_score || 0;
+    const cls = sc >= 80 ? 'score-high' : sc >= 60 ? 'score-med' : 'score-low';
+    const status = t.status || 'below';
+    const pillCls = {qualified:'pill-queued',scripting:'pill-scripting',generating:'pill-generating',queued:'pill-queued'}[status] || 'pill-below';
+    return `<div class="trend-item">
+      <div class="score-badge ${cls}">${sc}</div>
+      <div class="trend-info">
+        <div class="trend-title" title="${escapeAttr(t.title)}">${escapeHtml(t.title)}</div>
+        <div class="trend-source">${escapeHtml(t.source || '')}</div>
+      </div>
+      <span class="status-pill ${pillCls}">${status}</span>
+    </div>`;
+  }).join('');
+}
+
+function renderAgents(agents) {
+  const el = document.getElementById('agents-list');
+  const agentDefs = [
+    {id:'trend-scorer',name:'trend-scorer'},
+    {id:'script-writer-tiktok',name:'script-writer'},
+    {id:'video-generator',name:'video-generator'},
+    {id:'tiktok-publisher',name:'publisher'},
+    {id:'stats-puller',name:'stats-puller'},
+    {id:'comment-responder',name:'comment-responder'},
+  ];
+  el.innerHTML = agentDefs.map(a => {
+    const info = (agents || []).find(x => x.id === a.id) || {};
+    const active = info.status === 'running';
+    const queued = info.status === 'queued';
+    const dotCls = active ? 'dot-active' : queued ? 'dot-queued' : 'dot-idle';
+    const task = info.current_task || (active ? 'running…' : 'idle');
+    return `<div class="agent-row"><div class="agent-dot ${dotCls}"></div><div class="agent-name">${a.name}</div><div class="agent-task">${task}</div></div>`;
+  }).join('');
+  const activeCount = (agents || []).filter(a => a.status === 'running').length;
+  document.getElementById('active-count').textContent = activeCount + ' active';
+}
+
+function renderQueue(queue) {
+  const pending = (queue && queue.pending) || [];
+  const badge = document.getElementById('queue-badge');
+  const countLabel = document.getElementById('queue-count-label');
+  badge.textContent = pending.length;
+  badge.style.display = pending.length ? 'inline' : 'none';
+  countLabel.textContent = pending.length + ' pending';
+
+  const topEl = document.getElementById('top-queue-body');
+  if (!pending.length) { topEl.innerHTML = '<div style="color:#475569;font-size:11px">No videos awaiting approval</div>'; }
+  else { topEl.innerHTML = videoCard(pending[0]); }
+
+  const qEl = document.getElementById('queue-list');
+  if (!pending.length) { qEl.innerHTML = '<div style="color:#475569;font-size:11px">No videos awaiting approval</div>'; return; }
+  qEl.innerHTML = pending.map(videoCard).join('');
+}
+
+function videoCard(v) {
+  return `<div class="video-card" style="margin-bottom:10px">
+    <div class="video-card-row">
+      <div class="video-thumb">🎬</div>
+      <div class="video-info">
+        <div>
+          <div class="video-title">${escapeHtml(v.title)}</div>
+          <div class="video-meta">Generated by Kling AI</div>
+          <div class="video-caption">"${escapeHtml(v.caption)}"</div>
+        </div>
+        <div class="video-actions">
+          <button class="btn btn-preview" data-action="preview-video" data-id="${escapeAttr(v.id)}" data-path="${escapeAttr(v.video_path)}">▶ Preview</button>
+          <button class="btn btn-approve" data-action="approve-video" data-id="${escapeAttr(v.id)}">✓ Approve</button>
+          <button class="btn btn-reject" data-action="reject-video" data-id="${escapeAttr(v.id)}">✕ Reject</button>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderPosted(posted) {
+  const sorted = [...(posted || [])].sort((a,b) => (b.views||0)-(a.views||0));
+  document.getElementById('posted-count').textContent = sorted.length + ' videos';
+  const grid = (limit) => sorted.slice(0, limit).map(p => `
+    <div class="posted-card">
+      <div class="posted-thumb">🎥</div>
+      <div class="posted-body">
+        <div class="posted-title" title="${escapeAttr(p.title)}">${escapeHtml(p.title)}</div>
+        <div class="posted-stats">
+          <span class="${p.views>10000?'stat-green':'stat-amber'}">↑ ${fmt(p.views||0)}</span>
+          <span>❤ ${fmt(p.likes||0)}</span>
+        </div>
+      </div>
+    </div>`).join('');
+  document.getElementById('recent-posted-grid').innerHTML = grid(4);
+  document.getElementById('full-posted-grid').innerHTML = grid(999);
+}
+
+function renderFinance(fin) {
+  if (!fin) return;
+  const rev = fin.est_earnings_gbp || 0;
+  document.getElementById('stat-revenue').textContent = '£' + rev.toFixed(0);
+  document.getElementById('stat-views').textContent = fmt(fin.total_views || 0);
+  document.getElementById('stat-engagement').textContent = (fin.engagement_rate_pct || 0).toFixed(1) + '%';
+  document.getElementById('snap-revenue').textContent = '£' + rev.toFixed(0);
+  document.getElementById('snap-views').textContent = fmt(fin.total_views || 0);
+  document.getElementById('snap-rpm').textContent = 'RPM £' + (fin.rpm_gbp || 7.5).toFixed(2) + '/1k';
+  document.getElementById('snap-bar').style.width = Math.min(100, fin.target_5k_pct || 0) + '%';
+  document.getElementById('snap-label').textContent = (fin.target_5k_pct || 0).toFixed(1) + '% to £5,000 target';
+  document.getElementById('fin-revenue').textContent = '£' + rev.toFixed(0);
+  document.getElementById('fin-views').textContent = fmt(fin.total_views || 0);
+  document.getElementById('fin-bar-5k').style.width = Math.min(100, fin.target_5k_pct || 0) + '%';
+  document.getElementById('fin-label-5k').textContent = (fin.target_5k_pct || 0).toFixed(1) + '% to £5,000';
+  document.getElementById('fin-bar-10k').style.width = Math.min(100, fin.target_10k_pct || 0) + '%';
+  document.getElementById('fin-label-10k').textContent = (fin.target_10k_pct || 0).toFixed(1) + '% to £10,000';
+  document.getElementById('fin-count').textContent = fin.video_count || 0;
+  document.getElementById('fin-engagement').textContent = (fin.engagement_rate_pct || 0).toFixed(1) + '%';
+  document.getElementById('fin-rpm').textContent = '£' + (fin.rpm_gbp || 7.5).toFixed(2);
+  const rows = (fin.per_video || []).map(v => `<tr><td title="${escapeAttr(v.title)}">${escapeHtml(v.title.slice(0,40))}</td><td>${fmt(v.views)}</td><td>${fmt(v.likes||0)}</td><td>£${v.est_earnings_gbp.toFixed(2)}</td></tr>`).join('');
+  document.getElementById('fin-table-body').innerHTML = rows || '<tr><td colspan="4" style="color:#475569">No videos posted yet</td></tr>';
+}
+
+function renderComments(comments) {
+  const pending = (comments || []).filter(c => c.status === 'pending');
+  const badge = document.getElementById('comments-badge');
+  badge.textContent = pending.length;
+  badge.style.display = pending.length ? 'inline' : 'none';
+  const el = document.getElementById('comments-list');
+  if (!pending.length) { el.innerHTML = '<div style="color:#475569;font-size:11px">No comment replies awaiting approval</div>'; return; }
+  el.innerHTML = pending.map(c => `
+    <div class="comment-card" style="margin-bottom:10px">
+      <div class="comment-video-title">VIDEO · ${escapeHtml(c.video_id)}</div>
+      <div class="comment-original">
+        <div class="comment-handle">${escapeHtml(c.commenter)}</div>
+        <div class="comment-text">${escapeHtml(c.original_comment)}</div>
+      </div>
+      <div class="comment-draft">${escapeHtml(c.draft_reply)}</div>
+      <div class="video-actions">
+        <button class="btn btn-approve" data-action="approve-comment" data-id="${escapeAttr(c.id)}">✓ Post Reply</button>
+        <button class="btn btn-reject" data-action="reject-comment" data-id="${escapeAttr(c.id)}">✕ Discard</button>
+      </div>
+    </div>`).join('');
+}
+
+function renderSettings(settings) {
+  if (!settings) return;
+  document.getElementById('threshold-slider').value = settings.threshold || 70;
+  document.getElementById('threshold-val').textContent = settings.threshold || 70;
+  document.getElementById('kling-status').textContent = settings.kling_connected ? 'Connected' : 'Not configured';
+  document.getElementById('kling-status').className = settings.kling_connected ? 'connected-badge' : 'disconnected-badge';
+  document.getElementById('tt-status').textContent = settings.tiktok_connected ? 'Connected' : 'Not connected';
+  document.getElementById('tt-status').className = settings.tiktok_connected ? 'connected-badge' : 'disconnected-badge';
+}
+
+async function fetchState() {
+  try {
+    const r = await fetch('/tiktok/state');
+    state = await r.json();
+    renderTrends(state.trends || []);
+    renderAgents(state.agents || []);
+    renderQueue(state.queue);
+    renderPosted(state.posted || []);
+    renderFinance(state.finance);
+    renderComments(state.comments || []);
+    renderSettings(state.settings);
+    if (state.settings && state.settings.tiktok_connected) {
+      document.getElementById('stat-followers').textContent = fmt(state.followers || 0);
+    }
+    document.getElementById('pipeline-status').textContent = 'PIPELINE ACTIVE';
+    document.getElementById('live-dot').style.background = '#4ade80';
+  } catch(e) {
+    document.getElementById('pipeline-status').textContent = 'ERROR — Jarvis not reachable';
+    document.getElementById('live-dot').style.background = '#ef4444';
+  }
+}
+
+async function approveVideo(id) {
+  await fetch('/tiktok/approve/' + id, {method:'POST'});
+  await fetchState();
+}
+async function rejectVideo(id) {
+  if (!confirm('Reject this video?')) return;
+  await fetch('/tiktok/reject/' + id, {method:'POST'});
+  await fetchState();
+}
+async function approveComment(id) {
+  await fetch('/tiktok/comments/approve/' + id, {method:'POST'});
+  await fetchState();
+}
+async function rejectComment(id) {
+  await fetch('/tiktok/comments/reject/' + id, {method:'POST'});
+  await fetchState();
+}
+
+document.addEventListener('click', async function(e) {
+  const btn = e.target.closest('[data-action]');
+  if (!btn) return;
+  const action = btn.dataset.action;
+  const id = btn.dataset.id;
+  if (action === 'approve-video') {
+    await approveVideo(id);
+  } else if (action === 'reject-video') {
+    await rejectVideo(id);
+  } else if (action === 'approve-comment') {
+    await approveComment(id);
+  } else if (action === 'reject-comment') {
+    await rejectComment(id);
+  } else if (action === 'preview-video') {
+    alert('Video path: ' + btn.dataset.path + '\n\nOpen this file in a video player to preview before approving.');
+  }
+});
+async function triggerScan(btn) {
+  btn.textContent = '⏳ Scanning…'; btn.disabled = true;
+  try {
+    const r = await fetch('/tiktok/trigger', {method:'POST'});
+    const d = await r.json();
+    if (!d.ok) {
+      alert('Error: ' + d.error);
+    } else if (d.qualified > 0) {
+      alert(`Scan complete - ${d.qualified} trends qualified`);
+    } else if (d.scanned > 0) {
+      alert(`Scan complete - 0 trends met threshold ${d.threshold}. Top score was ${d.top_score}; showing top ${d.scanned} candidates. Lower the threshold in Settings to qualify them.`);
+    } else {
+      alert('Scan complete - no trends fetched from HN or Reddit. Try again later.');
+    }
+  } finally {
+    btn.textContent = '▶ Scan Now'; btn.disabled = false;
+    fetchState();
+  }
+}
+async function saveSettings() {
+  const body = {
+    kling_api_key: document.getElementById('kling-key').value,
+    kling_api_secret: document.getElementById('kling-secret').value,
+    tiktok_client_key: document.getElementById('tt-client-key').value,
+    tiktok_client_secret: document.getElementById('tt-client-secret').value,
+    tiktok_redirect_uri: document.getElementById('tt-redirect-uri').value,
+    threshold: parseInt(document.getElementById('threshold-slider').value),
+  };
+  await fetch('/tiktok/settings', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+  alert('Settings saved');
+  fetchState();
+}
+function connectTikTok() {
+  const ck = document.getElementById('tt-client-key').value;
+  const ru = document.getElementById('tt-redirect-uri').value;
+  if (!ck || !ru) { alert('Save your client key and redirect URI first'); return; }
+  window.open(`https://www.tiktok.com/v2/auth/authorize/?client_key=${ck}&scope=user.info.basic,video.publish,video.upload,comment.list,comment.create&response_type=code&redirect_uri=${encodeURIComponent(ru)}&state=jarvis`, '_blank');
+}
+
+fetchState();
+setInterval(fetchState, 5000);
+
+const host = window.location.origin;
+document.getElementById('tt-redirect-uri').placeholder = host + '/tiktok/oauth/callback';
+</script>
+</body>
+</html>

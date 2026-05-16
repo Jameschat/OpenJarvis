@@ -1,0 +1,703 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Jarvis OS</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg-a: #0d141d;
+      --bg-b: #14202b;
+      --bg-c: #14312d;
+      --panel: rgba(15, 23, 42, 0.84);
+      --panel-strong: rgba(8, 17, 31, 0.9);
+      --line: rgba(255,255,255,0.16);
+      --text: #e7eef7;
+      --muted: #9fb2c6;
+      --accent: #8ee7c6;
+      --blue: #38bdf8;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      font-family: Inter, "Segoe UI", system-ui, sans-serif;
+      background: #050a12;
+      color: var(--text);
+      overflow: hidden;
+    }
+    button, input { font: inherit; }
+    .desktop-shell {
+      min-height: 100vh;
+      padding: 24px;
+      display: grid;
+      grid-template-rows: 1fr auto;
+      gap: 16px;
+      background:
+        radial-gradient(circle at 50% 0%, rgba(123,97,255,0.38), transparent 38%),
+        linear-gradient(135deg, var(--bg-a), var(--bg-b) 46%, var(--bg-c));
+      overflow: hidden;
+    }
+    .desktop-canvas {
+      position: relative;
+      min-height: 0;
+      border-radius: 24px;
+      overflow: hidden;
+    }
+    .desktop-shortcuts {
+      position: absolute;
+      top: 8px;
+      left: 8px;
+      display: grid;
+      grid-template-columns: repeat(2, 82px);
+      gap: 16px 12px;
+      z-index: 5;
+    }
+    .shortcut {
+      appearance: none;
+      border: 0;
+      color: var(--text);
+      background: transparent;
+      display: grid;
+      gap: 7px;
+      justify-items: center;
+      cursor: pointer;
+    }
+    .shortcut-icon {
+      width: 54px;
+      height: 54px;
+      border-radius: 16px;
+      display: grid;
+      place-items: center;
+      background:
+        linear-gradient(180deg, rgba(255,255,255,0.26), rgba(255,255,255,0.08)),
+        rgba(255,255,255,0.12);
+      border: 1px solid rgba(255,255,255,0.22);
+      box-shadow: 0 14px 36px rgba(0,0,0,0.38);
+      transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
+    }
+    .shortcut:hover .shortcut-icon {
+      transform: translateY(-2px) scale(1.03);
+      border-color: rgba(255,255,255,0.38);
+      box-shadow: 0 18px 46px rgba(0,0,0,0.44), inset 0 1px 0 rgba(255,255,255,0.3);
+    }
+    .shortcut:active .shortcut-icon {
+      transform: translateY(0) scale(0.98);
+    }
+    .ambient-clock {
+      position: absolute;
+      left: 50%;
+      top: 46px;
+      transform: translateX(-50%);
+      width: max-content;
+      font-size: clamp(58px, 6.2vw, 112px);
+      font-weight: 300;
+      color: rgba(231,238,247,0.36);
+      letter-spacing: 0;
+      text-align: center;
+      pointer-events: none;
+    }
+    .widget-grid {
+      position: absolute;
+      top: 34px;
+      right: 22px;
+      width: min(360px, calc(100vw - 330px));
+      display: grid;
+      grid-template-columns: repeat(2, minmax(150px, 1fr));
+      gap: 12px;
+      z-index: 4;
+    }
+    .widget {
+      min-height: 94px;
+      padding: 13px 14px;
+      border-radius: 18px;
+      background: rgba(8, 17, 31, 0.72);
+      border: 1px solid var(--line);
+      box-shadow: 0 18px 48px rgba(0,0,0,0.34);
+      backdrop-filter: blur(20px);
+    }
+    .widget .label {
+      font-size: 11px;
+      color: var(--accent);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .widget .value {
+      margin-top: 8px;
+      font-size: 24px;
+      font-weight: 700;
+    }
+    .widget .sub {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .app-window {
+      position: absolute;
+      left: 50%;
+      bottom: 98px;
+      transform: translateX(-50%);
+      width: min(840px, 44vw);
+      min-height: 390px;
+      border-radius: 18px;
+      overflow: hidden;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      box-shadow: 0 28px 90px rgba(0,0,0,0.55);
+      backdrop-filter: blur(22px);
+      z-index: 6;
+    }
+    @media (min-width: 821px) and (max-width: 1180px) {
+      .widget-grid {
+        width: 220px;
+        grid-template-columns: 1fr;
+      }
+      .app-window {
+        left: 50%;
+        width: min(500px, 48vw);
+        min-width: 0;
+      }
+    }
+    @media (min-width: 1181px) and (max-width: 1499px) {
+      .widget-grid {
+        width: 300px;
+        grid-template-columns: 1fr;
+      }
+    }
+    .window-titlebar {
+      height: 46px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 15px;
+      background: rgba(17, 28, 45, 0.82);
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+    }
+    .window-titlebar span { color: var(--muted); font-size: 12px; }
+    .window-body { padding: 16px; }
+    .tabs { display: flex; gap: 8px; flex-wrap: wrap; }
+    .chip {
+      border: 1px solid rgba(142,231,198,0.24);
+      background: rgba(142,231,198,0.08);
+      color: var(--text);
+      border-radius: 999px;
+      padding: 7px 11px;
+      cursor: pointer;
+      transition: background 150ms ease, border-color 150ms ease, transform 150ms ease;
+    }
+    .chip:hover, .chip.active {
+      background: rgba(142,231,198,0.18);
+      border-color: rgba(142,231,198,0.45);
+    }
+    .chip:active {
+      transform: scale(0.98);
+    }
+    .transcript {
+      margin-top: 14px;
+      height: 220px;
+      border-radius: 14px;
+      padding: 12px;
+      background: var(--panel-strong);
+      border: 1px solid rgba(255,255,255,0.1);
+      color: #cbd5e1;
+      overflow: auto;
+      line-height: 1.55;
+    }
+    .view-panel {
+      display: grid;
+      gap: 12px;
+    }
+    .view-heading {
+      margin: 0;
+      font-size: 18px;
+      color: var(--text);
+    }
+    .view-copy {
+      margin: 0;
+      color: #cbd5e1;
+    }
+    .view-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .view-tile {
+      min-height: 62px;
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 12px;
+      padding: 10px;
+      background: rgba(255,255,255,0.05);
+    }
+    .view-tile strong {
+      display: block;
+      color: var(--text);
+      font-size: 13px;
+    }
+    .view-tile span {
+      display: block;
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .activity-line {
+      border-left: 2px solid rgba(142,231,198,0.45);
+      padding-left: 10px;
+      color: #dbeafe;
+    }
+    .command-row { margin-top: 12px; display: flex; gap: 8px; }
+    .command-row input {
+      flex: 1;
+      min-width: 0;
+      border: 1px solid rgba(255,255,255,0.16);
+      background: rgba(8,17,31,0.82);
+      color: var(--text);
+      border-radius: 13px;
+      padding: 10px 12px;
+    }
+    .command-row button, .start-menu button, .taskbar button {
+      border: 1px solid rgba(255,255,255,0.16);
+      background:
+        linear-gradient(180deg, rgba(255,255,255,0.22), rgba(255,255,255,0.08)),
+        rgba(255,255,255,0.10);
+      color: var(--text);
+      border-radius: 12px;
+      padding: 9px 12px;
+      cursor: pointer;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.22), 0 8px 22px rgba(0,0,0,0.24);
+      transition: transform 150ms ease, border-color 150ms ease, box-shadow 150ms ease, background 150ms ease;
+    }
+    .command-row button:hover, .start-menu button:hover, .taskbar button:hover {
+      transform: translateY(-1px);
+      border-color: rgba(255,255,255,0.34);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.3), 0 12px 28px rgba(0,0,0,0.32);
+    }
+    .command-row button:active, .start-menu button:active, .taskbar button:active {
+      transform: translateY(0) scale(0.98);
+      box-shadow: inset 0 1px 8px rgba(0,0,0,0.24), 0 5px 16px rgba(0,0,0,0.24);
+    }
+    .start-menu {
+      position: absolute;
+      left: 50%;
+      bottom: 82px;
+      transform: translateX(-50%);
+      width: min(420px, calc(100vw - 32px));
+      display: none;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+      padding: 14px;
+      background: rgba(15, 23, 42, 0.88);
+      border: 1px solid var(--line);
+      box-shadow: 0 24px 80px rgba(0,0,0,0.58);
+      border-radius: 20px;
+      backdrop-filter: blur(22px);
+      z-index: 10;
+    }
+    .start-menu.open { display: grid; }
+    .taskbar {
+      height: 62px;
+      justify-self: center;
+      width: min(760px, calc(100vw - 32px));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      padding: 0 16px;
+      border-radius: 21px;
+      background: rgba(11,18,32,0.88);
+      border: 1px solid rgba(255,255,255,0.16);
+      box-shadow: 0 20px 58px rgba(0,0,0,0.56);
+      backdrop-filter: blur(22px);
+    }
+    .tray {
+      margin-left: 10px;
+      color: var(--muted);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+    @media (min-width: 1500px) {
+      .app-window {
+        width: min(940px, 46vw);
+        min-height: 420px;
+      }
+      .transcript { height: 250px; }
+    }
+    @media (max-width: 820px) {
+      html, body { height: auto; min-height: 100%; }
+      body { overflow-y: auto; overflow-x: hidden; }
+      .desktop-shell {
+        min-height: 100dvh;
+        display: block;
+        padding: 12px;
+        overflow: visible;
+      }
+      .desktop-canvas {
+        min-height: auto;
+        display: grid;
+        gap: 16px;
+        overflow: visible;
+        padding-bottom: 4px;
+      }
+      .desktop-shortcuts {
+        position: static;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+      }
+      .ambient-clock {
+        position: static;
+        transform: none;
+        width: auto;
+        font-size: 48px;
+        line-height: 1;
+        padding: 10px 6px 0;
+      }
+      .widget-grid {
+        position: static;
+        width: auto;
+        grid-template-columns: 1fr;
+      }
+      .view-grid { grid-template-columns: 1fr; }
+      .app-window {
+        position: static;
+        width: auto;
+        min-height: auto;
+        margin-top: 2px;
+      }
+      .start-menu {
+        position: fixed;
+        left: 12px;
+        right: 12px;
+        bottom: 82px;
+        transform: none;
+        width: auto;
+      }
+      .taskbar {
+        position: sticky;
+        bottom: 10px;
+        margin-top: 16px;
+        overflow-x: auto;
+        justify-content: flex-start;
+      }
+    }
+    @media (min-width: 821px) and (max-width: 980px) {
+      html, body { height: auto; min-height: 100%; }
+      body { overflow-y: auto; overflow-x: hidden; }
+      .desktop-shell {
+        min-height: 100dvh;
+        display: block;
+        padding: 18px;
+        overflow: visible;
+      }
+      .desktop-canvas {
+        min-height: auto;
+        display: grid;
+        gap: 18px;
+        overflow: visible;
+      }
+      .desktop-shortcuts {
+        position: static;
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+      }
+      .ambient-clock {
+        position: static;
+        transform: none;
+        width: auto;
+        font-size: 58px;
+        line-height: 1;
+        padding: 8px 0 0;
+      }
+      .widget-grid {
+        position: static;
+        width: auto;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .view-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .app-window {
+        position: static;
+        transform: none;
+        width: auto;
+        min-height: auto;
+      }
+      .taskbar {
+        position: sticky;
+        bottom: 12px;
+        margin-top: 18px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main id="jarvis-os-root" class="desktop-shell">
+    <section class="desktop-canvas" aria-label="Jarvis OS desktop">
+      <div class="desktop-shortcuts">
+        <button class="shortcut" data-open="mission"><span class="shortcut-icon">J</span><span>Jarvis</span></button>
+        <button class="shortcut" data-open="mission"><span class="shortcut-icon">Run</span><span>Missions</span></button>
+        <button class="shortcut" data-open="projects"><span class="shortcut-icon">Dev</span><span>Projects</span></button>
+        <button class="shortcut" data-open="plugins"><span class="shortcut-icon">Add</span><span>Plugins</span></button>
+        <button class="shortcut" data-open="memory"><span class="shortcut-icon">Mem</span><span>Memory</span></button>
+        <button class="shortcut" data-open="models"><span class="shortcut-icon">AI</span><span>Models</span></button>
+      </div>
+
+      <div id="desktop-clock" class="ambient-clock">--:--</div>
+
+      <section id="widget-grid" class="widget-grid" aria-label="Jarvis OS widgets">
+        <article id="widget-model" class="widget"><div class="label">Local Model</div><div id="model-value" class="value">Qwen</div><div id="model-sub" class="sub">Loading</div></article>
+        <article id="widget-missions" class="widget"><div class="label">Missions</div><div id="missions-value" class="value">--</div><div id="missions-sub" class="sub">Active work</div></article>
+        <article id="widget-agents" class="widget"><div class="label">Agents</div><div id="agents-value" class="value">--</div><div id="agents-sub" class="sub">Queue</div></article>
+        <article id="widget-plugins" class="widget"><div class="label">Plugins</div><div id="plugins-value" class="value">--</div><div id="plugins-sub" class="sub">Learning queue</div></article>
+        <article id="widget-markets" class="widget"><div class="label">Markets</div><div id="markets-value" class="value">--</div><div id="markets-sub" class="sub">Pulse</div></article>
+        <article id="widget-gpu" class="widget"><div class="label">GPU</div><div id="gpu-value" class="value">--</div><div id="gpu-sub" class="sub">Local load</div></article>
+        <article id="widget-schedule" class="widget"><div class="label">Calendar</div><div id="schedule-value" class="value">--</div><div id="schedule-sub" class="sub">Scheduled work</div></article>
+        <article id="widget-inbox" class="widget"><div class="label">Inbox</div><div id="inbox-value" class="value">--</div><div id="inbox-sub" class="sub">Approvals</div></article>
+        <article id="widget-memory" class="widget"><div class="label">Memory</div><div id="memory-value" class="value">--</div><div id="memory-sub" class="sub">Brain recall</div></article>
+      </section>
+
+      <section id="mission-window" class="app-window" aria-label="Mission Session">
+        <div class="window-titlebar"><strong id="window-title">Mission Session</strong><span id="mission-model">local Qwen</span></div>
+        <div class="window-body">
+          <div class="tabs">
+            <button class="chip active" data-tab="chat">Chat</button>
+            <button class="chip" data-tab="plan">Plan</button>
+            <button class="chip" data-tab="files">Files</button>
+            <button class="chip" data-tab="tools">Tools</button>
+            <button class="chip" data-tab="logs">Logs</button>
+          </div>
+          <div id="session-content" class="transcript" aria-live="polite"></div>
+          <div class="command-row"><input id="mission-input" aria-label="Create a mission for Jarvis OS" placeholder="Ask Jarvis to run a mission..."><button id="mission-start-button" type="button" aria-label="Start mission">Start</button></div>
+        </div>
+      </section>
+
+      <nav id="start-menu" class="start-menu" aria-label="Jarvis OS Start menu">
+        <button type="button" data-open="mission">New Mission</button>
+        <button type="button" data-open="projects">New Project</button>
+        <button type="button" data-open="plugins">Plugin Studio</button>
+        <button type="button" data-open="models">Model Center</button>
+        <button type="button" data-open="memory">Memory</button>
+        <button type="button" data-open="settings">Settings</button>
+      </nav>
+    </section>
+
+    <footer class="taskbar" aria-label="Jarvis OS taskbar">
+      <button id="start-button" type="button">Start</button>
+      <button type="button" data-open="mission">Mission</button>
+      <button type="button" data-open="operations">Operations</button>
+      <button type="button" data-open="plugins">Plugins</button>
+      <button type="button" data-open="memory">Memory</button>
+      <button type="button" data-open="models">Models</button>
+      <span id="tray-status" class="tray">Qwen 3.6 27B · Local-first</span>
+    </footer>
+  </main>
+
+  <script>
+    function setText(id, value) {
+      const node = document.getElementById(id);
+      if (node) node.textContent = value == null ? '' : String(value);
+    }
+    function setWidget(name, widget) {
+      if (!widget) return;
+      setText(name + '-value', widget.value);
+      setText(name + '-sub', widget.label + ' · ' + widget.status);
+    }
+    function updateClock(value) {
+      setText('desktop-clock', value || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+    }
+    const views = {
+      mission: {
+        title: 'Mission Session',
+        activeTab: 'chat',
+        copy: 'Start a task, ask a question, or hand Jarvis a mission. Local Qwen 3.6 27B is the default engine.',
+        tiles: [['Default engine', 'qwen3.6:27b local-first'], ['Escalation', 'Claude/Codex standby'], ['Output', 'Chat response and vault notes'], ['Status', 'Ready for a mission']]
+      },
+      projects: {
+        title: 'Projects',
+        activeTab: 'files',
+        copy: 'Project sessions are where Jarvis will keep scoped workspaces, plans, files, and handoffs.',
+        tiles: [['OpenJarvis', 'Active evolution branch'], ['Jarvis OS', 'Desktop shell v1'], ['Brain vault', 'Project state and context'], ['Next', 'Create project sessions']]
+      },
+      plugins: {
+        title: 'Plugin Studio',
+        activeTab: 'tools',
+        copy: 'Plugin Studio is the place for adding tools, MCP servers, skills, and GitHub-sourced capability upgrades.',
+        tiles: [['Capability scout', 'Find candidates'], ['Install queue', 'Approval required'], ['Tool registry', 'Local-first'], ['Safety', 'No secrets or deletes']]
+      },
+      memory: {
+        title: 'Memory',
+        activeTab: 'files',
+        copy: 'Memory surfaces the Brain vault, recall signals, project state, and stable decisions Jarvis should reuse.',
+        tiles: [['Brain', 'Obsidian vault linked'], ['Recall', 'Retrieval reranking active'], ['Knowledge', 'Operator-reviewed notes'], ['Handoffs', 'Shared with Claude/Codex']]
+      },
+      models: {
+        title: 'Model Center',
+        activeTab: 'tools',
+        copy: 'Model Center shows the local model posture and where cloud assistants are allowed to help.',
+        tiles: [['Primary', 'qwen3.6:27b'], ['Mode', 'Local-first'], ['Cloud help', 'Only when required'], ['Fallback', 'LiteLLM router']]
+      },
+      operations: {
+        title: 'Operations',
+        activeTab: 'logs',
+        copy: 'Operations shows active missions, scheduled work, agent queue, markets, and health signals.',
+        tiles: [['Missions', 'Live queue widget'], ['Schedule', 'Daily jobs visible'], ['Markets', 'Pulse widget'], ['Agents', 'Queue status']]
+      },
+      settings: {
+        title: 'Settings',
+        activeTab: 'tools',
+        copy: 'Settings will hold Jarvis OS preferences, model routing, permissions, plugin approvals, and desktop layout.',
+        tiles: [['Layout', 'Desktop widgets'], ['Permissions', 'Approval required'], ['Model routing', 'Local-first'], ['Restart', 'jarvis.bat applies code changes']]
+      },
+      plan: {
+        title: 'Plan',
+        activeTab: 'plan',
+        copy: 'Plan view is for breaking a mission into steps before Jarvis executes it.',
+        tiles: [['Step 1', 'Understand the request'], ['Step 2', 'Pick tools/modules'], ['Step 3', 'Execute and verify'], ['Step 4', 'Report outcome']]
+      },
+      files: {
+        title: 'Files',
+        activeTab: 'files',
+        copy: 'Files view will expose project artifacts, vault notes, generated files, and session handoffs.',
+        tiles: [['Workspace', 'E:/Claude/OpenJarvis'], ['Vault', 'Brain project notes'], ['Inbox', 'Approvals and drops'], ['Output', 'Links appear here']]
+      },
+      tools: {
+        title: 'Tools',
+        activeTab: 'tools',
+        copy: 'Tools view is the launcher for available Jarvis skills, plugins, MCP tools, and local modules.',
+        tiles: [['Chat', '/chat command path'], ['Agents', 'Department workers'], ['Plugins', 'Capability upgrades'], ['Browser', 'Local browser automation']]
+      },
+      logs: {
+        title: 'Logs',
+        activeTab: 'logs',
+        copy: 'Logs view shows recent Jarvis OS actions from this page.',
+        tiles: []
+      }
+    };
+    const activity = ['Jarvis OS ready. Choose a desktop icon, Start menu item, taskbar app, or type a mission.'];
+    let currentView = 'mission';
+    function clearNode(node) {
+      while (node && node.firstChild) node.removeChild(node.firstChild);
+    }
+    function renderPanel(viewKey) {
+      const view = views[viewKey] || views.mission;
+      currentView = viewKey;
+      setText('window-title', view.title);
+      document.querySelectorAll('[data-tab]').forEach((button) => {
+        button.classList.toggle('active', button.dataset.tab === view.activeTab);
+      });
+      const root = document.getElementById('session-content');
+      clearNode(root);
+      const panel = document.createElement('div');
+      panel.className = 'view-panel';
+      const heading = document.createElement('h3');
+      heading.className = 'view-heading';
+      heading.textContent = view.title;
+      const copy = document.createElement('p');
+      copy.className = 'view-copy';
+      copy.textContent = view.copy;
+      panel.appendChild(heading);
+      panel.appendChild(copy);
+      if (viewKey === 'logs') {
+        activity.slice(-8).forEach((line) => {
+          const row = document.createElement('div');
+          row.className = 'activity-line';
+          row.textContent = line;
+          panel.appendChild(row);
+        });
+      } else {
+        const grid = document.createElement('div');
+        grid.className = 'view-grid';
+        view.tiles.forEach(([title, detail]) => {
+          const tile = document.createElement('div');
+          tile.className = 'view-tile';
+          const strong = document.createElement('strong');
+          strong.textContent = title;
+          const span = document.createElement('span');
+          span.textContent = detail;
+          tile.appendChild(strong);
+          tile.appendChild(span);
+          grid.appendChild(tile);
+        });
+        panel.appendChild(grid);
+      }
+      root.appendChild(panel);
+    }
+    function openView(viewKey) {
+      renderPanel(viewKey || 'mission');
+      activity.push('Opened ' + (views[viewKey] ? views[viewKey].title : 'Mission Session') + '.');
+      document.getElementById('start-menu').classList.remove('open');
+    }
+    async function startMission() {
+      const input = document.getElementById('mission-input');
+      const text = (input.value || '').trim();
+      if (!text) {
+        activity.push('Mission input was empty.');
+        renderPanel('logs');
+        input.focus();
+        return;
+      }
+      activity.push('Mission submitted: ' + text);
+      renderPanel('logs');
+      input.value = '';
+      try {
+        const response = await fetch('/chat', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          credentials: 'include',
+          body: JSON.stringify({text})
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Jarvis rejected the mission.');
+        activity.push('Jarvis: ' + (data.response || 'Mission accepted.'));
+      } catch (err) {
+        activity.push('Jarvis OS could not reach /chat: ' + (err && err.message ? err.message : 'unknown error'));
+      }
+      renderPanel('logs');
+    }
+    async function fetchState() {
+      try {
+        const res = await fetch("/jarvis-os/state");
+        if (!res.ok) throw new Error('state unavailable');
+        const state = await res.json();
+        updateClock(state.time);
+        setText('model-value', state.model && state.model.primary);
+        setText('model-sub', state.model && (state.model.mode + ' · ' + state.model.escalation));
+        setText('mission-model', state.model && state.model.alias);
+        setText('tray-status', (state.model && state.model.primary ? state.model.primary : 'Qwen') + ' · Local-first');
+        const widgets = state.widgets || {};
+        setWidget('missions', widgets.missions);
+        setWidget('agents', widgets.agents);
+        setWidget('plugins', widgets.plugins);
+        setWidget('markets', widgets.markets);
+        setWidget('gpu', widgets.gpu);
+        setWidget('schedule', widgets.schedule);
+        setWidget('inbox', widgets.inbox);
+        setWidget('memory', widgets.memory);
+      } catch (err) {
+        updateClock();
+        setText('tray-status', 'Jarvis OS state offline');
+      }
+    }
+    document.getElementById('start-button').addEventListener('click', () => {
+      document.getElementById('start-menu').classList.toggle('open');
+    });
+    document.querySelectorAll('[data-open]').forEach((button) => {
+      button.addEventListener('click', () => openView(button.dataset.open));
+    });
+    document.querySelectorAll('[data-tab]').forEach((button) => {
+      button.addEventListener('click', () => openView(button.dataset.tab));
+    });
+    document.getElementById('mission-start-button').addEventListener('click', startMission);
+    document.getElementById('mission-input').addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        startMission();
+      }
+    });
+    document.addEventListener('click', (event) => {
+      if (!event.target.closest('#start-menu') && !event.target.closest('#start-button')) {
+        document.getElementById('start-menu').classList.remove('open');
+      }
+    });
+    updateClock();
+    renderPanel('mission');
+    fetchState();
+    setInterval(fetchState, 10000);
+  </script>
+</body>
+</html>

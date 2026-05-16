@@ -29,7 +29,36 @@ class _BrowserSession:
             )
         self._playwright = sync_playwright().start()
         self._browser = self._playwright.chromium.launch(headless=True)
-        self._page = self._browser.new_page()
+        # Use an explicit context so we can pre-seed cookies. Without this,
+        # GDPR-region browsers (EU operator sessions) hit YouTube/Google's
+        # consent wall on first navigation and the agent burns turns trying
+        # to click "Reject all" via non-existent CSS :contains() selectors.
+        # Pre-setting CONSENT=YES+ skips the wall entirely.
+        context = self._browser.new_context(
+            user_agent=(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/126.0.0.0 Safari/537.36"
+            ),
+            viewport={"width": 1280, "height": 800},
+            locale="en-GB",
+        )
+        try:
+            context.add_cookies([
+                # Google/YouTube — accept-cookies state
+                {"name": "CONSENT", "value": "YES+",
+                 "domain": ".google.com", "path": "/"},
+                {"name": "CONSENT", "value": "YES+",
+                 "domain": ".youtube.com", "path": "/"},
+                {"name": "SOCS", "value": "CAESEwgDEgk0ODE3Nzk3MjQaAmVuIAEaBgiA_LyaBg",
+                 "domain": ".youtube.com", "path": "/"},
+            ])
+        except Exception:
+            # Cookie injection is best-effort. If Playwright rejects the
+            # shape, the worst case is the agent sees a consent wall and
+            # fails gracefully on that turn.
+            pass
+        self._page = context.new_page()
 
     @property
     def page(self):

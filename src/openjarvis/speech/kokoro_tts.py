@@ -70,7 +70,11 @@ class KokoroTTSBackend(TTSBackend):
         )
 
     def available_voices(self) -> List[str]:
-        return ["af_heart", "af_bella", "am_adam", "am_michael"]
+        return [
+            "bm_george", "bm_daniel", "bm_lewis", "bm_fable",
+            "am_adam", "am_michael", "am_echo", "am_onyx", "am_puck",
+            "af_heart", "af_bella", "af_nova", "af_sky",
+        ]
 
     def health(self) -> bool:
         try:

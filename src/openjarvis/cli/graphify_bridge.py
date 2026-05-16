@@ -1,0 +1,555 @@
+"""In-process bridge to the graphify knowledge graph.
+
+The graphify CLI builds a graph from the operator's Obsidian vault and
+saves it to ``graphify-out/graph.json``. This module loads that graph
+once, caches it (with mtime check for staleness), and exposes:
+
+  * ``query(question, mode="bfs", depth=3)`` — find nodes whose label
+    matches the question, traverse outward, return ranked subgraph.
+    Use for "how does X relate to Y", "what's connected to Z", etc.
+  * ``path(a, b)`` — shortest path between two named concepts. Use for
+    "how does X reach Y" / "what bridges X and Y".
+  * ``explain(node)`` — dump everything connected to a single node.
+    Use for "tell me what X is and what it touches".
+  * ``refresh()`` — kick off graphify in a background subprocess to
+    rebuild the graph from the live vault. Non-blocking; the next
+    query that lands after the rebuild auto-loads the new graph via
+    mtime check.
+  * ``note_vault_write()`` / ``staleness()`` — track how many vault
+    writes have happened since the last refresh, so the HUD can show
+    a STALE indicator and the operator can refresh on demand.
+
+Read ops have zero side effects. Refresh runs the actual graphify CLI
+externally — never inline — so a long-running rebuild can't poison
+the Jarvis process.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import os
+import re
+import threading
+from collections import deque
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+
+logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Graph location + lazy load
+# ---------------------------------------------------------------------------
+
+def _graphify_dir() -> Path:
+    env = os.environ.get("OPENJARVIS_GRAPHIFY_DIR", "").strip()
+    if env:
+        return Path(env)
+    return Path(r"E:\Claude\Brain-Graphs\graphify-out")
+
+
+def _graph_file() -> Path:
+    return _graphify_dir() / "graph.json"
+
+
+_lock = threading.Lock()
+_cache: Optional[Dict[str, Any]] = None
+_cache_mtime: float = 0.0
+# Built indices for fast lookup
+_nodes_by_id: Dict[str, Dict[str, Any]] = {}
+_adj: Dict[str, List[Tuple[str, Dict[str, Any]]]] = {}  # undirected adjacency
+_label_to_id: Dict[str, str] = {}                       # lowercase label -> id
+
+
+def _build_indices(graph: Dict[str, Any]) -> None:
+    global _nodes_by_id, _adj, _label_to_id
+    _nodes_by_id = {}
+    _adj = {}
+    _label_to_id = {}
+    for n in graph.get("nodes") or []:
+        nid = n.get("id")
+        if not nid:
+            continue
+        _nodes_by_id[nid] = n
+        _adj.setdefault(nid, [])
+        label = (n.get("label") or "").strip().lower()
+        if label and label not in _label_to_id:
+            _label_to_id[label] = nid
+    for e in graph.get("links") or graph.get("edges") or []:
+        s = e.get("source")
+        t = e.get("target")
+        if not s or not t or s not in _nodes_by_id or t not in _nodes_by_id:
+            continue
+        _adj.setdefault(s, []).append((t, e))
+        _adj.setdefault(t, []).append((s, e))
+
+
+def _load(force: bool = False) -> Optional[Dict[str, Any]]:
+    """Load + index the graph, with mtime cache. Returns None if no graph."""
+    global _cache, _cache_mtime
+    p = _graph_file()
+    if not p.exists():
+        return None
+    mtime = p.stat().st_mtime
+    with _lock:
+        if force or _cache is None or mtime > _cache_mtime:
+            try:
+                _cache = json.loads(p.read_text(encoding="utf-8"))
+                _cache_mtime = mtime
+                _build_indices(_cache)
+                logger.info("graphify_bridge: loaded %d nodes, %d edges from %s",
+                            len(_nodes_by_id), sum(len(v) for v in _adj.values()) // 2, p)
+            except Exception as exc:
+                logger.exception("graphify_bridge: failed to load graph: %s", exc)
+                return None
+        return _cache
+
+
+# ---------------------------------------------------------------------------
+# Node matching — fuzzy by label
+# ---------------------------------------------------------------------------
+
+_WORD_RE = re.compile(r"[a-z0-9]+")
+
+
+def _tokens(text: str) -> List[str]:
+    return _WORD_RE.findall((text or "").lower())
+
+
+def _score_node(node: Dict[str, Any], query_tokens: List[str]) -> int:
+    label = (node.get("label") or "").lower()
+    nid = (node.get("id") or "").lower()
+    score = 0
+    for t in query_tokens:
+        if not t or len(t) < 2:
+            continue
+        if t in label:
+            score += 3
+        if t in nid:
+            score += 1
+    return score
+
+
+def _find_nodes(query: str, top_n: int = 3) -> List[str]:
+    """Return up to top_n node ids whose labels match the query best."""
+    if not _nodes_by_id:
+        return []
+    qt = _tokens(query)
+    if not qt:
+        return []
+    # Exact label match wins
+    direct = _label_to_id.get(query.strip().lower())
+    if direct:
+        return [direct]
+    scored = []
+    for nid, node in _nodes_by_id.items():
+        s = _score_node(node, qt)
+        if s > 0:
+            scored.append((s, nid))
+    scored.sort(reverse=True)
+    return [nid for _, nid in scored[:top_n]]
+
+
+def _node_brief(node: Dict[str, Any]) -> Dict[str, Any]:
+    """Compact node dict suitable for tool output."""
+    return {
+        "id": node.get("id"),
+        "label": node.get("label"),
+        "source_file": node.get("source_file"),
+        "community": node.get("community"),
+    }
+
+
+def _edge_brief(s: str, t: str, edge: Dict[str, Any]) -> Dict[str, Any]:
+    sl = (_nodes_by_id.get(s, {}) or {}).get("label") or s
+    tl = (_nodes_by_id.get(t, {}) or {}).get("label") or t
+    return {
+        "from": sl,
+        "to": tl,
+        "relation": edge.get("relation"),
+        "confidence": edge.get("confidence"),
+        "score": edge.get("confidence_score"),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Public ops
+# ---------------------------------------------------------------------------
+
+def status() -> Dict[str, Any]:
+    """Tiny info dict the LLM can use to decide whether the graph is usable."""
+    g = _load()
+    if g is None:
+        return {"available": False, "reason": "no graph.json — run `graphify <vault path>` first"}
+    return {
+        "available": True,
+        "nodes": len(_nodes_by_id),
+        "edges": sum(len(v) for v in _adj.values()) // 2,
+        "communities": len({(n.get("community")) for n in _nodes_by_id.values() if n.get("community") is not None}),
+        "graph_dir": str(_graphify_dir()),
+    }
+
+
+def query(question: str, mode: str = "bfs", depth: int = 3,
+          max_nodes: int = 30) -> Dict[str, Any]:
+    """Traverse the graph from the best-matching nodes for the question.
+
+    mode: 'bfs' = explore neighbours layer by layer (broad context).
+          'dfs' = follow one chain deep first (trace a path).
+    """
+    g = _load()
+    if g is None:
+        return {"error": "graph not available", "hint": "run `graphify <vault path>` first"}
+    starts = _find_nodes(question, top_n=3)
+    if not starts:
+        return {"hits": [], "note": f"no nodes match query terms in {question!r}"}
+
+    visited = set(starts)
+    edges_seen: List[Tuple[str, str, Dict[str, Any]]] = []
+
+    if mode == "dfs":
+        stack = [(s, 0) for s in reversed(starts)]
+        while stack and len(visited) < max_nodes:
+            node, d = stack.pop()
+            if d >= depth:
+                continue
+            for nb, edge in _adj.get(node, []):
+                if nb not in visited:
+                    visited.add(nb)
+                    edges_seen.append((node, nb, edge))
+                    stack.append((nb, d + 1))
+                    if len(visited) >= max_nodes:
+                        break
+    else:
+        # BFS
+        frontier = deque(starts)
+        layer = {s: 0 for s in starts}
+        while frontier and len(visited) < max_nodes:
+            node = frontier.popleft()
+            d = layer[node]
+            if d >= depth:
+                continue
+            for nb, edge in _adj.get(node, []):
+                if nb not in visited:
+                    visited.add(nb)
+                    layer[nb] = d + 1
+                    edges_seen.append((node, nb, edge))
+                    frontier.append(nb)
+                    if len(visited) >= max_nodes:
+                        break
+
+    # Score nodes by query-term overlap so the model sees the most relevant first
+    qt = _tokens(question)
+    ranked = sorted(visited,
+                    key=lambda nid: _score_node(_nodes_by_id[nid], qt),
+                    reverse=True)
+    return {
+        "started_from": [_nodes_by_id[s].get("label") for s in starts],
+        "mode": mode,
+        "depth": depth,
+        "node_count": len(ranked),
+        "nodes": [_node_brief(_nodes_by_id[nid]) for nid in ranked],
+        "edges": [_edge_brief(s, t, e) for s, t, e in edges_seen[:50]],
+    }
+
+
+def path(a: str, b: str) -> Dict[str, Any]:
+    """Shortest path between two named concepts."""
+    g = _load()
+    if g is None:
+        return {"error": "graph not available"}
+    a_ids = _find_nodes(a, top_n=1)
+    b_ids = _find_nodes(b, top_n=1)
+    if not a_ids:
+        return {"error": f"no node matches {a!r}"}
+    if not b_ids:
+        return {"error": f"no node matches {b!r}"}
+    src, tgt = a_ids[0], b_ids[0]
+    if src == tgt:
+        return {"hops": 0, "path": [_node_brief(_nodes_by_id[src])]}
+
+    # BFS for unweighted shortest path
+    prev: Dict[str, Optional[str]] = {src: None}
+    edge_in: Dict[str, Optional[Dict[str, Any]]] = {src: None}
+    q = deque([src])
+    while q:
+        node = q.popleft()
+        if node == tgt:
+            break
+        for nb, edge in _adj.get(node, []):
+            if nb not in prev:
+                prev[nb] = node
+                edge_in[nb] = edge
+                q.append(nb)
+    if tgt not in prev:
+        return {
+            "error": f"no path between {_nodes_by_id[src].get('label')} and {_nodes_by_id[tgt].get('label')}",
+        }
+
+    # Reconstruct
+    chain: List[str] = []
+    cur: Optional[str] = tgt
+    while cur is not None:
+        chain.append(cur)
+        cur = prev.get(cur)
+    chain.reverse()
+    out_nodes = [_node_brief(_nodes_by_id[nid]) for nid in chain]
+    out_edges = []
+    for i in range(len(chain) - 1):
+        e = edge_in.get(chain[i + 1])
+        if e:
+            out_edges.append(_edge_brief(chain[i], chain[i + 1], e))
+    return {
+        "hops": len(chain) - 1,
+        "from": _nodes_by_id[src].get("label"),
+        "to":   _nodes_by_id[tgt].get("label"),
+        "path": out_nodes,
+        "edges": out_edges,
+    }
+
+
+def explain(node: str) -> Dict[str, Any]:
+    """Everything connected to a single node."""
+    g = _load()
+    if g is None:
+        return {"error": "graph not available"}
+    matches = _find_nodes(node, top_n=1)
+    if not matches:
+        return {"error": f"no node matches {node!r}"}
+    nid = matches[0]
+    n = _nodes_by_id[nid]
+    neighbours = []
+    for nb, edge in _adj.get(nid, []):
+        nb_node = _nodes_by_id.get(nb, {})
+        neighbours.append({
+            "label": nb_node.get("label"),
+            "relation": edge.get("relation"),
+            "confidence": edge.get("confidence"),
+            "source_file": nb_node.get("source_file"),
+        })
+    return {
+        "node": _node_brief(n),
+        "degree": len(neighbours),
+        "neighbours": neighbours[:40],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Staleness tracking + background refresh
+# ---------------------------------------------------------------------------
+
+_writes_since_refresh = 0
+_last_refresh_started: float = 0.0
+# _refresh_proc retained for back-compat with staleness() readers but is
+# always None now — refresh() runs synchronously via vault_graph rather
+# than spawning a subprocess. See refresh() docstring.
+_refresh_proc: Any = None
+_refresh_lock = threading.Lock()
+
+
+def note_vault_write() -> None:
+    """Called by obsidian_brain on every vault write so we can show a
+    'STALE' indicator and prompt a refresh when enough has changed."""
+    global _writes_since_refresh
+    with _refresh_lock:
+        _writes_since_refresh += 1
+
+
+def staleness() -> Dict[str, Any]:
+    """Summary the HUD or LLM can use to decide whether to refresh."""
+    with _refresh_lock:
+        writes = _writes_since_refresh
+        last_started = _last_refresh_started
+        proc = _refresh_proc
+    p = _graph_file()
+    age_seconds = None
+    if p.exists():
+        import time
+        age_seconds = int(time.time() - p.stat().st_mtime)
+    refreshing = bool(proc and proc.poll() is None)
+    return {
+        "writes_since_refresh": writes,
+        "graph_age_seconds": age_seconds,
+        "refresh_in_progress": refreshing,
+        "last_refresh_started": last_started,
+    }
+
+
+def _vault_root() -> Path:
+    return Path(os.environ.get(
+        "OPENJARVIS_GRAPHIFY_VAULT_ROOT",
+        r"E:\Claude\Obsidian\Claude\Brain",
+    ))
+
+
+def _vault_subfolders() -> List[str]:
+    raw = os.environ.get(
+        "OPENJARVIS_GRAPHIFY_SUBFOLDERS",
+        "Knowledge,Projects,Decisions,People,Daily,Content",
+    )
+    return [s.strip() for s in raw.split(",") if s.strip()]
+
+
+def _staging_dir() -> Path:
+    return Path(os.environ.get(
+        "OPENJARVIS_GRAPHIFY_STAGING",
+        str(_graphify_dir().parent / "source"),
+    ))
+
+
+def _stage_vault_subset() -> int:
+    """Mirror the chosen vault subfolders into the staging dir. Returns
+    file count. Best-effort copy — overwrites destination."""
+    import shutil
+    src = _vault_root()
+    dst = _staging_dir()
+    if dst.exists():
+        shutil.rmtree(dst, ignore_errors=True)
+    dst.mkdir(parents=True, exist_ok=True)
+    n = 0
+    for sub in _vault_subfolders():
+        sp = src / sub
+        if not sp.exists():
+            continue
+        shutil.copytree(sp, dst / sub)
+        n += sum(1 for _ in (dst / sub).rglob("*.md"))
+    return n
+
+
+def refresh(blocking: bool = False) -> Dict[str, Any]:
+    """Rebuild the vault graph synchronously via the in-process
+    `vault_graph` extractor (Path B of the graphify-broken-deferred
+    resolution, 2026-04-29). Replaces the previous spawn of an external
+    `graphify <path>` CLI which is no longer valid since graphifyy
+    shifted to a code-only API.
+
+    Returns a stats dict. `blocking` is retained as a kwarg for
+    backwards compatibility with existing callers but the extractor
+    is fast (~0.3s on a 2k-file vault) so it always runs synchronously."""
+    global _writes_since_refresh, _last_refresh_started, _cache, _cache_mtime
+    import time
+
+    with _refresh_lock:
+        try:
+            from openjarvis.tools import vault_graph
+        except Exception as exc:
+            logger.exception("graphify_bridge: vault_graph import failed")
+            return {"started": False, "reason": f"vault_graph import failed: {exc}"}
+
+        # Stage the vault subset (existing behaviour — keeps the source
+        # snapshot in Brain-Graphs/source/ for compatibility with any
+        # external tooling that still reads from there).
+        try:
+            file_count = _stage_vault_subset()
+        except Exception as exc:
+            logger.exception("graphify_bridge: staging copy failed")
+            return {"started": False, "reason": f"staging copy failed: {exc}"}
+        if file_count == 0:
+            return {"started": False, "reason": "no files in staging — check vault path / subfolders"}
+
+        _last_refresh_started = time.time()
+        _writes_since_refresh = 0
+
+        # Build directly from the staged source. Output to graphify-out/
+        # so the existing /graphify routes + HUD button find graph.json.
+        try:
+            stats = vault_graph.build_graph(
+                vault_root=_staging_dir(),
+                output_path=_graph_file(),
+            )
+        except Exception as exc:
+            logger.exception("graphify_bridge: vault_graph build failed")
+            return {"started": False, "reason": f"build failed: {exc}"}
+
+        # Invalidate the in-process cache so the next read picks up the
+        # newly-written graph immediately.
+        _cache = None
+        _cache_mtime = 0
+
+        # Append a one-line summary to refresh.log so the operator can
+        # see when rebuilds happened without reopening graph.json.
+        try:
+            log_path = _graphify_dir().parent / "refresh.log"
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            with log_path.open("a", encoding="utf-8") as fh:
+                fh.write(
+                    f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] "
+                    f"vault_graph: {stats.get('nodes', 0)} nodes, "
+                    f"{stats.get('edges', 0)} edges, "
+                    f"{stats.get('communities', 0)} communities, "
+                    f"{stats.get('duration_seconds', 0)}s\n"
+                )
+        except Exception:
+            pass
+
+    return {
+        "started":      True,
+        "files_staged": file_count,
+        "stats":        stats,
+        "blocking":     True,   # always synchronous now
+    }
+
+
+__all__ = ["status", "query", "path", "explain",
+           "note_vault_write", "staleness", "refresh",
+           "start_daily_rebuild", "stop_daily_rebuild"]
+
+
+# ---------------------------------------------------------------------------
+# Daily scheduled rebuild (Path B follow-up, 2026-04-29). Operator wants
+# the graph kept fresh every midnight without depending on the heavier
+# agent-runner scheduler (which is hardcoded to dispatch to agents). One
+# small dedicated thread that wakes at the configured hour:minute, fires
+# refresh(), and goes back to sleep.
+# ---------------------------------------------------------------------------
+
+_daily_thread: Any = None
+_daily_stop = threading.Event()
+
+
+def start_daily_rebuild(hour: int = 0, minute: int = 0) -> Dict[str, Any]:
+    """Background thread that fires refresh() daily at the given local
+    time. Default 00:00 (midnight). Idempotent — second call returns
+    the existing thread's status without spawning a duplicate."""
+    global _daily_thread
+    if _daily_thread is not None and _daily_thread.is_alive():
+        return {"started": False, "reason": "daily rebuild thread already running"}
+
+    from datetime import datetime, timedelta
+    import time
+
+    def _loop() -> None:
+        logger.info("graphify daily-rebuild thread started; firing at %02d:%02d local",
+                    hour, minute)
+        while not _daily_stop.is_set():
+            now = datetime.now()
+            target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+            if target <= now:
+                target += timedelta(days=1)
+            sleep_s = max(1.0, (target - now).total_seconds())
+            # _daily_stop.wait returns True if set during the wait —
+            # exit cleanly on shutdown rather than firing a final rebuild.
+            if _daily_stop.wait(sleep_s):
+                return
+            try:
+                logger.info("graphify daily-rebuild firing")
+                stats = refresh(blocking=True)
+                logger.info("graphify daily-rebuild result: %s", stats)
+            except Exception:
+                logger.exception("graphify daily-rebuild crashed (continuing)")
+            # Loop again to compute next target — the next iteration will
+            # roll forward by 24h via the target-already-passed branch.
+
+    _daily_stop.clear()
+    _daily_thread = threading.Thread(
+        target=_loop, daemon=True, name="graphify-daily-rebuild"
+    )
+    _daily_thread.start()
+    return {"started": True, "fire_at": f"{hour:02d}:{minute:02d}"}
+
+
+def stop_daily_rebuild() -> None:
+    """Idempotent shutdown — sets the stop event so the rebuild thread
+    exits at its next wait boundary."""
+    _daily_stop.set()

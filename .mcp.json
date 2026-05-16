@@ -1,0 +1,21 @@
+{
+    "mcpServers": {
+        "code-review-graph": {
+            "command": "C:\\Users\\User\\.openjarvis\\tools\\code-review-graph-venv\\Scripts\\code-review-graph.exe",
+            "args": [
+                "serve",
+                "--repo",
+                "E:\\Claude\\OpenJarvis"
+            ]
+        },
+        "agentmemory": {
+            "type": "stdio",
+            "command": "npx",
+            "args": ["-y", "@agentmemory/agentmemory", "mcp"],
+            "env": {
+                "AGENTMEMORY_URL": "http://localhost:7730",
+                "AGENTMEMORY_STRIP_PATTERNS": "OPENJARVIS_PUBLIC_PIN,OPENAI_API_KEY,OPENAI_BASE_URL,AGENTMEMORY_URL,ANTHROPIC_API_KEY,sk-[A-Za-z0-9]+,sk-ant-[A-Za-z0-9-]+"
+            }
+        }
+    }
+}

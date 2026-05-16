@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1.0">
+<title>J.A.R.V.I.S. · Graphify</title>
+<style>
+  html, body {
+    margin: 0; padding: 0; width: 100vw; height: 100vh; overflow: hidden;
+    background: radial-gradient(ellipse at center, #0a0e1a 0%, #04060c 70%, #000 100%);
+    color: #e8f1ff;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+  }
+  #graph { width: 100vw; height: 100vh; }
+  /* Top header bar — matches mission control glass aesthetic */
+  #hdr {
+    position: fixed; top: 14px; left: 50%; transform: translateX(-50%);
+    z-index: 5; pointer-events: none;
+    background: rgba(8,14,24,0.65);
+    border: 1px solid rgba(155,242,255,0.25);
+    border-radius: 10px;
+    padding: 10px 18px;
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    text-align: center; min-width: 320px;
+  }
+  #hdr h1 {
+    margin: 0; font-size: 13px; letter-spacing: 4px;
+    color: rgba(180,215,255,0.92); font-weight: 500;
+  }
+  #hdr .meta {
+    margin-top: 4px; font-size: 11px; letter-spacing: 1.5px;
+    color: rgba(155,242,255,0.7);
+    font-family: 'Consolas','SF Mono','Menlo',monospace;
+  }
+  /* Search/filter input */
+  #filter {
+    position: fixed; top: 70px; left: 50%; transform: translateX(-50%);
+    z-index: 5;
+    background: rgba(8,14,24,0.7);
+    border: 1px solid rgba(155,242,255,0.25);
+    border-radius: 6px;
+    color: #e8f1ff; font: inherit; font-size: 12px;
+    padding: 6px 12px; min-width: 280px;
+    outline: none; transition: border-color 0.15s;
+  }
+  #filter::placeholder { color: rgba(160,180,210,0.4); letter-spacing: 1px; }
+  #filter:focus { border-color: rgba(155,242,255,0.6); }
+  /* Selected node panel — bottom-left */
+  #info {
+    position: fixed; left: 22px; bottom: 22px; z-index: 5;
+    width: min(360px, 35vw); max-height: 50vh; overflow-y: auto;
+    background: rgba(8,14,24,0.78);
+    border: 1px solid rgba(155,242,255,0.25);
+    border-radius: 10px;
+    padding: 14px 16px;
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    font-size: 12px; line-height: 1.5;
+    display: none;
+  }
+  #info.visible { display: block; }
+  #info h2 {
+    margin: 0 0 6px 0; font-size: 14px; color: #e8f1ff;
+    font-weight: 600;
+  }
+  #info .src {
+    font-family: 'Consolas','SF Mono','Menlo',monospace;
+    font-size: 10px; color: rgba(155,242,255,0.65);
+    word-break: break-all; margin-bottom: 8px;
+  }
+  #info .badge {
+    display: inline-block;
+    padding: 2px 8px; border-radius: 999px;
+    font-size: 10px; letter-spacing: 1px;
+    background: rgba(94,224,161,0.18);
+    border: 1px solid rgba(94,224,161,0.45);
+    color: #b6f5d0; margin-right: 4px;
+  }
+  #info ul { margin: 6px 0 0 0; padding: 0 0 0 16px; }
+  #info li { margin-bottom: 4px; color: rgba(220,235,255,0.85); }
+  #info .rel {
+    font-family: 'Consolas',monospace;
+    font-size: 10px; color: rgba(155,242,255,0.7);
+  }
+  /* Legend bottom-right */
+  #legend {
+    position: fixed; right: 22px; bottom: 22px; z-index: 5;
+    background: rgba(8,14,24,0.65);
+    border: 1px solid rgba(155,242,255,0.18);
+    border-radius: 8px; padding: 10px 14px;
+    font-size: 11px; letter-spacing: 0.4px;
+    color: rgba(220,235,255,0.7);
+    backdrop-filter: blur(6px);
+  }
+  #legend .row { margin: 3px 0; display: flex; align-items: center; gap: 8px; }
+  #legend .swatch {
+    display: inline-block; width: 10px; height: 10px; border-radius: 2px;
+  }
+  /* Back-to-jarvis */
+  #back {
+    position: fixed; top: 14px; left: 14px; z-index: 5;
+    background: rgba(8,14,24,0.7);
+    border: 1px solid rgba(155,242,255,0.25);
+    color: rgba(220,235,255,0.85);
+    font: inherit; font-size: 11px; letter-spacing: 1px;
+    padding: 6px 12px; border-radius: 6px;
+    cursor: pointer; text-decoration: none;
+  }
+  #back:hover {
+    background: rgba(94,224,161,0.18);
+    border-color: rgba(94,224,161,0.5);
+  }
+  /* Loading state */
+  #boot {
+    position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
+    z-index: 6; color: rgba(180,215,255,0.85);
+    font-size: 13px; letter-spacing: 3px;
+  }
+  #boot.hidden { display: none; }
+</style>
+</head>
+<body>
+<a id="back" href="/brain.html">◀ MISSION CONTROL</a>
+<div id="hdr">
+  <h1>GRAPHIFY · SECOND BRAIN</h1>
+  <div class="meta" id="meta">loading…</div>
+</div>
+<input id="filter" type="text" placeholder="filter nodes by label…" autocomplete="off" spellcheck="false">
+<div id="info"></div>
+<div id="legend">
+  <div class="row"><span class="swatch" style="background:#5ee0a1"></span>EXTRACTED edge</div>
+  <div class="row"><span class="swatch" style="background:#ffc95a"></span>INFERRED edge</div>
+  <div class="row"><span class="swatch" style="background:#e87070"></span>AMBIGUOUS edge</div>
+  <div class="row" style="margin-top:6px;color:rgba(220,235,255,0.55);">
+    drag to rotate · scroll to zoom · click node for details
+  </div>
+</div>
+<div id="boot">LOADING GRAPH…</div>
+<div id="graph"></div>
+
+<!-- 3d-force-graph: Three.js + d3-force-3d combo. CDN load. -->
+<script src="https://unpkg.com/three@0.158.0/build/three.min.js"></script>
+<script src="https://unpkg.com/3d-force-graph@1.73.4/dist/3d-force-graph.min.js"></script>
+<script>
+(async () => {
+  const elGraph = document.getElementById('graph');
+  const elMeta = document.getElementById('meta');
+  const elInfo = document.getElementById('info');
+  const elBoot = document.getElementById('boot');
+  const elFilter = document.getElementById('filter');
+
+  // Load graph data from the Jarvis brain server
+  let data;
+  try {
+    const r = await fetch('/graphify/graph.json', { credentials: 'include' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    data = await r.json();
+  } catch (e) {
+    elBoot.textContent = 'GRAPH LOAD FAILED: ' + (e.message || e);
+    return;
+  }
+
+  // graphify uses NetworkX node-link shape: {nodes, links}
+  // Each link has source/target (string node ids), relation, confidence, confidence_score
+  // Each node has id, label, community, source_file, etc.
+  const nodes = data.nodes || [];
+  const links = data.links || [];
+
+  // Pre-build neighbour map for click-highlight
+  const neighboursByNode = new Map();
+  const linksByNode = new Map();
+  for (const n of nodes) {
+    neighboursByNode.set(n.id, new Set());
+    linksByNode.set(n.id, new Set());
+  }
+  for (const l of links) {
+    const s = typeof l.source === 'object' ? l.source.id : l.source;
+    const t = typeof l.target === 'object' ? l.target.id : l.target;
+    if (neighboursByNode.has(s)) neighboursByNode.get(s).add(t);
+    if (neighboursByNode.has(t)) neighboursByNode.get(t).add(s);
+    linksByNode.get(s)?.add(l);
+    linksByNode.get(t)?.add(l);
+  }
+
+  // Community count for header meta
+  const communities = new Set(nodes.map(n => n.community).filter(c => c !== undefined && c !== null));
+  elMeta.textContent =
+    `${nodes.length} nodes · ${links.length} edges · ${communities.size} communities`;
+
+  // Confidence -> link colour
+  const confColour = (c) => {
+    if (c === 'EXTRACTED') return 'rgba(94,224,161,0.55)';
+    if (c === 'INFERRED')  return 'rgba(255,201,90,0.55)';
+    if (c === 'AMBIGUOUS') return 'rgba(232,112,112,0.55)';
+    return 'rgba(155,242,255,0.35)';
+  };
+
+  // Highlight state
+  const highlightNodes = new Set();
+  const highlightLinks = new Set();
+  let hoverNode = null;
+
+  const Graph = ForceGraph3D()(elGraph)
+    .graphData({ nodes, links })
+    .backgroundColor('#04060c')
+    .nodeId('id')
+    .nodeLabel(n => n.label || n.id)
+    .nodeAutoColorBy('community')
+    .nodeRelSize(5)
+    .nodeOpacity(0.92)
+    .nodeVal(n => 1 + (neighboursByNode.get(n.id)?.size || 0) * 0.4)
+    .linkColor(l => highlightLinks.has(l) ? '#9bf2ff' : confColour(l.confidence))
+    .linkWidth(l => highlightLinks.has(l) ? 2.0 : 0.6)
+    .linkOpacity(0.55)
+    .linkDirectionalParticles(l => highlightLinks.has(l) ? 3 : 0)
+    .linkDirectionalParticleSpeed(0.005)
+    .linkDirectionalParticleColor(() => '#9bf2ff')
+    .onNodeClick((node) => {
+      // Centre + zoom on the clicked node
+      const dist = 130;
+      const ratio = 1 + dist / Math.hypot(node.x, node.y, node.z);
+      Graph.cameraPosition(
+        { x: node.x * ratio, y: node.y * ratio, z: node.z * ratio },
+        node, 1500,
+      );
+      showInfo(node);
+      // Highlight neighbours
+      highlightNodes.clear();
+      highlightLinks.clear();
+      highlightNodes.add(node.id);
+      const nbs = neighboursByNode.get(node.id) || new Set();
+      nbs.forEach(id => highlightNodes.add(id));
+      (linksByNode.get(node.id) || new Set()).forEach(l => highlightLinks.add(l));
+      Graph
+        .nodeColor(Graph.nodeColor())   // re-evaluate
+        .linkColor(Graph.linkColor())
+        .linkWidth(Graph.linkWidth())
+        .linkDirectionalParticles(Graph.linkDirectionalParticles());
+    })
+    .onBackgroundClick(() => {
+      highlightNodes.clear();
+      highlightLinks.clear();
+      hideInfo();
+      Graph
+        .linkColor(Graph.linkColor())
+        .linkWidth(Graph.linkWidth())
+        .linkDirectionalParticles(Graph.linkDirectionalParticles());
+    });
+
+  // Once the simulation has cooled, fade boot screen
+  setTimeout(() => elBoot.classList.add('hidden'), 600);
+
+  // --- Filter / search ---
+  elFilter.addEventListener('input', (ev) => {
+    const q = (ev.target.value || '').trim().toLowerCase();
+    if (!q) {
+      // Reset all node visibility
+      Graph.nodeVisibility(() => true).linkVisibility(() => true);
+      return;
+    }
+    const matchNodes = new Set(
+      nodes.filter(n => (n.label || '').toLowerCase().includes(q) ||
+                        (n.id || '').toLowerCase().includes(q))
+           .map(n => n.id)
+    );
+    // Also keep one-hop neighbours so context survives
+    const keep = new Set(matchNodes);
+    matchNodes.forEach(id => (neighboursByNode.get(id) || new Set()).forEach(nb => keep.add(nb)));
+    Graph
+      .nodeVisibility(n => keep.has(n.id))
+      .linkVisibility(l => {
+        const s = typeof l.source === 'object' ? l.source.id : l.source;
+        const t = typeof l.target === 'object' ? l.target.id : l.target;
+        return keep.has(s) && keep.has(t);
+      });
+  });
+
+  // --- Info panel ---
+  function showInfo(node) {
+    const nbs = (linksByNode.get(node.id) || new Set());
+    const items = [];
+    nbs.forEach(l => {
+      const otherId = (typeof l.source === 'object' ? l.source.id : l.source) === node.id
+        ? (typeof l.target === 'object' ? l.target.id : l.target)
+        : (typeof l.source === 'object' ? l.source.id : l.source);
+      const other = nodes.find(n => n.id === otherId);
+      if (other) {
+        items.push(`<li><span class="rel">--${escapeHtml(l.relation || '?')}--></span> ${escapeHtml(other.label || other.id)}</li>`);
+      }
+    });
+    elInfo.innerHTML = `
+      <h2>${escapeHtml(node.label || node.id)}</h2>
+      <div class="src">${escapeHtml(node.source_file || '(no source)')}</div>
+      <span class="badge">community ${node.community ?? '?'}</span>
+      <span class="badge">${nbs.size} edges</span>
+      ${node.file_type ? `<span class="badge">${escapeHtml(node.file_type)}</span>` : ''}
+      ${items.length ? `<ul>${items.slice(0, 12).join('')}</ul>` : ''}
+    `;
+    elInfo.classList.add('visible');
+  }
+  function hideInfo() { elInfo.classList.remove('visible'); }
+
+  function escapeHtml(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  }
+
+  // Resize on viewport change
+  window.addEventListener('resize', () => {
+    Graph.width(window.innerWidth).height(window.innerHeight);
+  });
+  Graph.width(window.innerWidth).height(window.innerHeight);
+})();
+</script>
+</body>
+</html>

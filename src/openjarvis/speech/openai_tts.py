@@ -44,9 +44,16 @@ class OpenAITTSBackend(TTSBackend):
 
     backend_id = "openai_tts"
 
-    def __init__(self, *, api_key: str = "", model: str = "tts-1") -> None:
+    def __init__(
+        self, *, api_key: str = "", model: str = ""
+    ) -> None:
         self._api_key = api_key or os.environ.get("OPENAI_API_KEY", "")
-        self._model = model
+        # Default to the higher-quality HD model; override via env var if needed
+        self._model = (
+            model
+            or os.environ.get("OPENAI_TTS_MODEL", "")
+            or "tts-1-hd"
+        )
 
     def synthesize(
         self,
@@ -76,7 +83,16 @@ class OpenAITTSBackend(TTSBackend):
         )
 
     def available_voices(self) -> List[str]:
-        return ["alloy", "echo", "fable", "onyx", "nova", "shimmer"]
+        # Original 6 + newer expressive voices (ash, sage, coral, ballad, verse)
+        return [
+            "fable",    # British male (closest to Iron Man JARVIS)
+            "onyx",     # Deep American male
+            "echo",     # Neutral American male
+            "ash",      # Newer, natural conversational
+            "sage",     # Newer, warm
+            "coral",    # Newer, friendly
+            "alloy", "nova", "shimmer",  # Original lineup
+        ]
 
     def health(self) -> bool:
         return bool(self._api_key)
