@@ -1085,7 +1085,7 @@ textarea.field {
   <div class="page-head">
     <div class="page-eyebrow"><span class="pulse-dot"></span> Strategy Backtests</div>
     <h1 class="page-title">Bot Lab</h1>
-    <div class="page-sub">Paper-only DCA strategy tests against cached OHLCV history. No exchange account or live order is used.</div>
+    <div class="page-sub">Paper-only strategy tests against fresh live OHLCV history. No exchange account or live order is used.</div>
   </div>
 
   <div class="card">
@@ -1127,7 +1127,7 @@ textarea.field {
       <button class="btn primary-solid" style="align-self:end;" onclick="runDcaBacktest()">Run Backtest</button>
     </div>
     <div id="bot-result" style="margin-top:14px;">
-      <div class="empty-sub">Enter a coin with cached history, then run a DCA backtest.</div>
+      <div class="empty-sub">Enter a coin, then run a live-history DCA backtest.</div>
     </div>
   </div>
 
@@ -1226,7 +1226,7 @@ textarea.field {
       <button class="btn primary-solid" style="align-self:end;" onclick="runGridSweep()">Run Sweep</button>
     </div>
     <div id="grid-sweep-result" style="margin-top:14px;">
-      <div class="empty-sub">Tests grid ranges, grid counts, and order sizes against cached history.</div>
+      <div class="empty-sub">Tests grid ranges, grid counts, and order sizes against fresh live history.</div>
     </div>
   </div>
 
@@ -1260,7 +1260,7 @@ textarea.field {
 ]</textarea>
     </label>
     <div id="signal-result" style="margin-top:14px;">
-      <div class="empty-sub">Paste buy/sell alert JSON to replay a custom signal strategy against cached candles.</div>
+      <div class="empty-sub">Paste buy/sell alert JSON to replay a custom signal strategy against live candles.</div>
     </div>
   </div>
 

@@ -363,7 +363,7 @@ def _summarise_deal(deal: dict[str, Any]) -> dict[str, Any]:
 
 
 def backtest_dca_from_history(ticker: str, since_ts: int | None = None, limit: int | None = None, **kwargs: Any) -> dict[str, Any]:
-    bars = _get_history_with_lazy_crypto_backfill(ticker, since_ts=since_ts, limit=limit)
+    bars = _get_live_crypto_history_for_backtest(ticker, since_ts=since_ts, limit=limit)
     config = DCAConfig(ticker=ticker, **kwargs)
     return backtest_dca(bars, config)
 
@@ -461,12 +461,12 @@ def backtest_grid(bars: Iterable[dict[str, Any]], config: GridConfig) -> dict[st
             }
             for level, unit in sorted(open_units.items())
         ],
-        "warning": "Grid backtest estimate only. Candle order inside each bar is unknown; results depend on assumed fills, fees, slippage, and cached history quality.",
+        "warning": "Grid backtest estimate only. Candle order inside each bar is unknown; results depend on assumed fills, fees, slippage, and live history quality.",
     }
 
 
 def backtest_grid_from_history(ticker: str, since_ts: int | None = None, limit: int | None = None, **kwargs: Any) -> dict[str, Any]:
-    bars = _get_history_with_lazy_crypto_backfill(ticker, since_ts=since_ts, limit=limit)
+    bars = _get_live_crypto_history_for_backtest(ticker, since_ts=since_ts, limit=limit)
     config = GridConfig(ticker=ticker, **kwargs)
     return backtest_grid(bars, config)
 
@@ -501,7 +501,7 @@ def _bar_for_signal(series: list[dict[str, float]], ts: float) -> dict[str, floa
 
 
 def backtest_signal(bars: Iterable[dict[str, Any]], config: SignalConfig) -> dict[str, Any]:
-    """Replay buy/sell webhook-style signals against cached OHLCV history."""
+    """Replay buy/sell webhook-style signals against OHLCV history."""
 
     series = _normalise_bars(bars)
     _validate_signal(config, series)
@@ -582,12 +582,12 @@ def backtest_signal(bars: Iterable[dict[str, Any]], config: SignalConfig) -> dic
         "max_drawdown_pct": round(max_drawdown_pct, 2),
         "trades": trades,
         "skipped_signals": skipped,
-        "warning": "Signal simulation is paper-only. It replays webhook-style alerts against cached candle closes and never places live orders.",
+        "warning": "Signal simulation is paper-only. It replays webhook-style alerts against live candle closes and never places live orders.",
     }
 
 
 def backtest_signal_from_history(ticker: str, since_ts: int | None = None, limit: int | None = None, **kwargs: Any) -> dict[str, Any]:
-    bars = _get_history_with_lazy_crypto_backfill(ticker, since_ts=since_ts, limit=limit)
+    bars = _get_live_crypto_history_for_backtest(ticker, since_ts=since_ts, limit=limit)
     config = SignalConfig(ticker=ticker, **kwargs)
     return backtest_signal(bars, config)
 
@@ -669,7 +669,7 @@ def sweep_dca(
         "ticker": ticker,
         "runs": len(results),
         "top_results": results[: max(1, int(top_n))],
-        "warning": "Sweep results are historical estimates only. A high score can be overfit to the selected cached history.",
+        "warning": "Sweep results are historical estimates only. A high score can be overfit to the selected live history window.",
     }
 
 
@@ -724,41 +724,62 @@ def sweep_grid(
         "ticker": ticker,
         "runs": len(results),
         "top_results": results[: max(1, int(top_n))],
-        "warning": "Sweep results are historical estimates only. A high score can be overfit to the selected cached history.",
+        "warning": "Sweep results are historical estimates only. A high score can be overfit to the selected live history window.",
     }
 
 
 def sweep_dca_from_history(ticker: str, since_ts: int | None = None, limit: int | None = None, **kwargs: Any) -> dict[str, Any]:
-    bars = _get_history_with_lazy_crypto_backfill(ticker, since_ts=since_ts, limit=limit)
+    bars = _get_live_crypto_history_for_backtest(ticker, since_ts=since_ts, limit=limit)
     return sweep_dca(bars, ticker=ticker, **kwargs)
 
 
 def sweep_grid_from_history(ticker: str, since_ts: int | None = None, limit: int | None = None, **kwargs: Any) -> dict[str, Any]:
-    bars = _get_history_with_lazy_crypto_backfill(ticker, since_ts=since_ts, limit=limit)
+    bars = _get_live_crypto_history_for_backtest(ticker, since_ts=since_ts, limit=limit)
     return sweep_grid(bars, ticker=ticker, **kwargs)
 
 
-def _get_history_with_lazy_crypto_backfill(
+def _get_live_crypto_history_for_backtest(
     ticker: str, *, since_ts: int | None = None, limit: int | None = None
 ) -> list[dict[str, Any]]:
     from openjarvis.markets import store
+    from openjarvis.markets.sources import coingecko
 
-    bars = store.get_history(ticker, since_ts=since_ts, limit=limit)
-    if len(bars) >= 2:
-        return bars
-    if since_ts is not None:
-        return bars
+    bars = coingecko.fetch_history(ticker, range_str=_history_range_for_limit(limit)) or []
+    if bars:
+        store.insert_history_bars(ticker, bars, source="coingecko")
+    return _filter_history_bars(bars, since_ts=since_ts, limit=limit)
 
+
+def _history_range_for_limit(limit: int | None) -> str:
+    if limit is None:
+        return "3mo"
     try:
-        from openjarvis.markets.sources import coingecko
+        n = int(limit)
+    except (TypeError, ValueError):
+        return "3mo"
+    if n <= 30:
+        return "1mo"
+    if n <= 90:
+        return "3mo"
+    if n <= 180:
+        return "6mo"
+    return "1y"
 
-        fetched = coingecko.fetch_history(ticker, range_str="3mo") or []
-        if fetched:
-            store.insert_history_bars(ticker, fetched, source="coingecko")
-            bars = store.get_history(ticker, since_ts=since_ts, limit=limit)
-    except Exception:
-        return bars
-    return bars
+
+def _filter_history_bars(
+    bars: Iterable[dict[str, Any]], *, since_ts: int | None = None, limit: int | None = None
+) -> list[dict[str, Any]]:
+    filtered = list(bars)
+    if since_ts is not None:
+        filtered = [bar for bar in filtered if float(bar.get("ts") or 0.0) >= since_ts]
+    filtered.sort(key=lambda bar: float(bar.get("ts") or 0.0))
+    if limit is not None:
+        try:
+            n = max(0, int(limit))
+        except (TypeError, ValueError):
+            n = len(filtered)
+        filtered = filtered[-n:]
+    return filtered
 
 
 __all__ = [

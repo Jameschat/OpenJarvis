@@ -37,6 +37,26 @@ def _bar(ts, open_, high, low, close):
     }
 
 
+def _patch_live_history(monkeypatch, bars, *, expected_ticker="QWEN", expected_range=None):
+    inserted = []
+
+    def fake_fetch_history(ticker, range_str="3mo"):
+        assert ticker == expected_ticker
+        if expected_range is not None:
+            assert range_str == expected_range
+        return bars
+
+    def fake_insert_history_bars(ticker, written_bars, source=""):
+        assert ticker == expected_ticker
+        assert source == "coingecko"
+        inserted.extend(written_bars)
+        return len(written_bars)
+
+    monkeypatch.setattr("openjarvis.markets.sources.coingecko.fetch_history", fake_fetch_history)
+    monkeypatch.setattr("openjarvis.markets.store.insert_history_bars", fake_insert_history_bars)
+    return inserted
+
+
 def test_dca_backtest_takes_profit_after_safety_order():
     bars = [
         _bar(1, 100.0, 101.0, 99.0, 100.0),
@@ -123,19 +143,12 @@ def test_dca_backtest_rejects_invalid_config_and_empty_history():
         )
 
 
-def test_backtest_dca_from_history_uses_market_store(monkeypatch):
+def test_backtest_dca_from_history_uses_live_market_history(monkeypatch):
     bars = [
-        _bar(1, 100.0, 101.0, 99.0, 100.0),
-        _bar(2, 100.0, 104.0, 99.0, 103.0),
+        _bar(10, 100.0, 101.0, 99.0, 100.0),
+        _bar(11, 100.0, 104.0, 99.0, 103.0),
     ]
-
-    def fake_get_history(ticker, since_ts=None, limit=None):
-        assert ticker == "QWEN"
-        assert since_ts == 10
-        assert limit == 50
-        return bars
-
-    monkeypatch.setattr("openjarvis.markets.store.get_history", fake_get_history)
+    inserted = _patch_live_history(monkeypatch, bars, expected_range="3mo")
 
     result = backtest_dca_from_history(
         "QWEN",
@@ -150,30 +163,16 @@ def test_backtest_dca_from_history_uses_market_store(monkeypatch):
     assert result["ticker"] == "QWEN"
     assert result["bars"] == 2
     assert result["closed_deals"] == 1
+    assert inserted == bars
 
 
-def test_backtest_dca_from_history_lazy_backfills_missing_crypto_history(monkeypatch):
+def test_backtest_dca_from_history_ignores_stale_cache_and_uses_live_crypto_history(monkeypatch):
     fetched_bars = [
         _bar(1, 100.0, 101.0, 99.0, 100.0),
         _bar(2, 100.0, 104.0, 99.0, 103.0),
     ]
-    stored_bars = []
-    inserted = []
-
-    def fake_get_history(ticker, since_ts=None, limit=None):
-        assert ticker == "SOL"
-        return list(stored_bars)
-
-    def fake_insert_history_bars(ticker, bars, source=""):
-        assert ticker == "SOL"
-        assert source == "coingecko"
-        inserted.extend(bars)
-        stored_bars.extend(bars)
-        return len(bars)
-
-    monkeypatch.setattr("openjarvis.markets.store.get_history", fake_get_history)
-    monkeypatch.setattr("openjarvis.markets.store.insert_history_bars", fake_insert_history_bars)
-    monkeypatch.setattr("openjarvis.markets.sources.coingecko.fetch_history", lambda ticker, range_str="3mo": fetched_bars)
+    monkeypatch.setattr("openjarvis.markets.store.get_history", lambda *args, **kwargs: [_bar(99, 1.0, 1.0, 1.0, 1.0)])
+    inserted = _patch_live_history(monkeypatch, fetched_bars, expected_ticker="SOL", expected_range="3mo")
 
     result = backtest_dca_from_history("SOL", base_order_gbp=100, take_profit_pct=2.0, slippage_pct=0.0)
 
@@ -189,7 +188,7 @@ def test_backtest_dca_bot_is_registered_as_llm_tool(monkeypatch):
         _bar(2, 100.0, 104.0, 99.0, 103.0),
     ]
 
-    monkeypatch.setattr("openjarvis.markets.store.get_history", lambda *args, **kwargs: bars)
+    _patch_live_history(monkeypatch, bars)
 
     payload = backtest_dca_bot("QWEN", base_order_gbp=100, take_profit_pct=2.0, slippage_pct=0.0)
 
@@ -205,7 +204,7 @@ def test_markets_pro_bot_backtest_endpoint_helper(monkeypatch):
         _bar(1, 100.0, 101.0, 99.0, 100.0),
         _bar(2, 100.0, 104.0, 99.0, 103.0),
     ]
-    monkeypatch.setattr("openjarvis.markets.store.get_history", lambda *args, **kwargs: bars)
+    _patch_live_history(monkeypatch, bars)
 
     result = _markets_pro_bot_backtest(
         {"ticker": "qwen", "base_order_gbp": 100, "take_profit_pct": 2.0, "slippage_pct": 0.0}
@@ -223,7 +222,7 @@ def test_markets_pro_bot_backtest_endpoint_helper_routes_grid(monkeypatch):
         _bar(1, 100.0, 101.0, 99.0, 100.0),
         _bar(2, 100.0, 106.0, 94.0, 104.0),
     ]
-    monkeypatch.setattr("openjarvis.markets.store.get_history", lambda *args, **kwargs: bars)
+    _patch_live_history(monkeypatch, bars)
 
     result = _markets_pro_bot_backtest(
         {
@@ -249,7 +248,7 @@ def test_markets_pro_bot_backtest_endpoint_helper_routes_dca_sweep(monkeypatch):
         _bar(1, 100.0, 101.0, 99.0, 100.0),
         _bar(2, 100.0, 104.0, 99.0, 103.0),
     ]
-    monkeypatch.setattr("openjarvis.markets.store.get_history", lambda *args, **kwargs: bars)
+    _patch_live_history(monkeypatch, bars)
 
     result = _markets_pro_bot_backtest(
         {
@@ -325,19 +324,12 @@ def test_grid_backtest_rejects_invalid_range():
         )
 
 
-def test_backtest_grid_from_history_uses_market_store(monkeypatch):
+def test_backtest_grid_from_history_uses_live_market_history(monkeypatch):
     bars = [
-        _bar(1, 100.0, 101.0, 99.0, 100.0),
-        _bar(2, 100.0, 106.0, 94.0, 104.0),
+        _bar(20, 100.0, 101.0, 99.0, 100.0),
+        _bar(21, 100.0, 106.0, 94.0, 104.0),
     ]
-
-    def fake_get_history(ticker, since_ts=None, limit=None):
-        assert ticker == "QWEN"
-        assert since_ts == 20
-        assert limit == 60
-        return bars
-
-    monkeypatch.setattr("openjarvis.markets.store.get_history", fake_get_history)
+    inserted = _patch_live_history(monkeypatch, bars, expected_range="3mo")
 
     result = backtest_grid_from_history(
         "QWEN",
@@ -352,6 +344,7 @@ def test_backtest_grid_from_history_uses_market_store(monkeypatch):
 
     assert result["ticker"] == "QWEN"
     assert result["bars"] == 2
+    assert inserted == bars
 
 
 def test_backtest_grid_bot_is_registered_as_llm_tool(monkeypatch):
@@ -359,7 +352,7 @@ def test_backtest_grid_bot_is_registered_as_llm_tool(monkeypatch):
         _bar(1, 100.0, 101.0, 99.0, 100.0),
         _bar(2, 100.0, 106.0, 94.0, 104.0),
     ]
-    monkeypatch.setattr("openjarvis.markets.store.get_history", lambda *args, **kwargs: bars)
+    _patch_live_history(monkeypatch, bars)
 
     payload = backtest_grid_bot("QWEN", lower_price=90, upper_price=110, grid_count=4, order_gbp=100, slippage_pct=0.0)
 
@@ -420,12 +413,12 @@ def test_sweep_grid_ranks_parameter_variants():
     assert "grid_count" in result["top_results"][0]["config"]
 
 
-def test_sweep_dca_from_history_uses_market_store(monkeypatch):
+def test_sweep_dca_from_history_uses_live_market_history(monkeypatch):
     bars = [
         _bar(1, 100.0, 101.0, 99.0, 100.0),
         _bar(2, 100.0, 104.0, 99.0, 103.0),
     ]
-    monkeypatch.setattr("openjarvis.markets.store.get_history", lambda *args, **kwargs: bars)
+    _patch_live_history(monkeypatch, bars)
 
     result = sweep_dca_from_history(
         "QWEN",
@@ -444,7 +437,7 @@ def test_sweep_dca_bot_is_registered_as_llm_tool(monkeypatch):
         _bar(1, 100.0, 101.0, 99.0, 100.0),
         _bar(2, 100.0, 104.0, 99.0, 103.0),
     ]
-    monkeypatch.setattr("openjarvis.markets.store.get_history", lambda *args, **kwargs: bars)
+    _patch_live_history(monkeypatch, bars)
 
     payload = sweep_dca_bot("QWEN", take_profit_pct_values=[1.0], safety_order_deviation_pct_values=[3.0])
 
@@ -453,12 +446,12 @@ def test_sweep_dca_bot_is_registered_as_llm_tool(monkeypatch):
     assert any(schema["function"]["name"] == "sweep_dca_bot" for schema in TOOL_SCHEMAS)
 
 
-def test_sweep_grid_from_history_uses_market_store(monkeypatch):
+def test_sweep_grid_from_history_uses_live_market_history(monkeypatch):
     bars = [
         _bar(1, 100.0, 101.0, 99.0, 100.0),
         _bar(2, 100.0, 106.0, 94.0, 104.0),
     ]
-    monkeypatch.setattr("openjarvis.markets.store.get_history", lambda *args, **kwargs: bars)
+    _patch_live_history(monkeypatch, bars)
 
     result = sweep_grid_from_history(
         "QWEN",
@@ -478,7 +471,7 @@ def test_sweep_grid_bot_is_registered_as_llm_tool(monkeypatch):
         _bar(1, 100.0, 101.0, 99.0, 100.0),
         _bar(2, 100.0, 106.0, 94.0, 104.0),
     ]
-    monkeypatch.setattr("openjarvis.markets.store.get_history", lambda *args, **kwargs: bars)
+    _patch_live_history(monkeypatch, bars)
 
     payload = sweep_grid_bot(
         "QWEN",
@@ -501,7 +494,7 @@ def test_markets_pro_bot_backtest_endpoint_helper_routes_grid_sweep(monkeypatch)
         _bar(1, 100.0, 101.0, 99.0, 100.0),
         _bar(2, 100.0, 106.0, 94.0, 104.0),
     ]
-    monkeypatch.setattr("openjarvis.markets.store.get_history", lambda *args, **kwargs: bars)
+    _patch_live_history(monkeypatch, bars)
 
     result = _markets_pro_bot_backtest(
         {
@@ -548,12 +541,12 @@ def test_signal_backtest_replays_buy_and_sell_alerts():
     assert [trade["kind"] for trade in result["trades"]] == ["signal_buy", "signal_sell"]
 
 
-def test_signal_backtest_from_history_uses_market_store(monkeypatch):
+def test_signal_backtest_from_history_uses_live_market_history(monkeypatch):
     bars = [
         _bar(1, 100.0, 101.0, 99.0, 100.0),
         _bar(2, 100.0, 106.0, 99.0, 105.0),
     ]
-    monkeypatch.setattr("openjarvis.markets.store.get_history", lambda *args, **kwargs: bars)
+    _patch_live_history(monkeypatch, bars)
 
     result = backtest_signal_from_history(
         "QWEN",
@@ -572,7 +565,7 @@ def test_backtest_signal_bot_is_registered_as_llm_tool(monkeypatch):
         _bar(1, 100.0, 101.0, 99.0, 100.0),
         _bar(2, 100.0, 106.0, 99.0, 105.0),
     ]
-    monkeypatch.setattr("openjarvis.markets.store.get_history", lambda *args, **kwargs: bars)
+    _patch_live_history(monkeypatch, bars)
 
     payload = backtest_signal_bot(
         "QWEN",
@@ -593,7 +586,7 @@ def test_markets_pro_bot_backtest_endpoint_helper_routes_signal(monkeypatch):
         _bar(1, 100.0, 101.0, 99.0, 100.0),
         _bar(2, 100.0, 106.0, 99.0, 105.0),
     ]
-    monkeypatch.setattr("openjarvis.markets.store.get_history", lambda *args, **kwargs: bars)
+    _patch_live_history(monkeypatch, bars)
 
     result = _markets_pro_bot_backtest(
         {
