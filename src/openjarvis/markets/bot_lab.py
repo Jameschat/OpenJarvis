@@ -363,9 +363,7 @@ def _summarise_deal(deal: dict[str, Any]) -> dict[str, Any]:
 
 
 def backtest_dca_from_history(ticker: str, since_ts: int | None = None, limit: int | None = None, **kwargs: Any) -> dict[str, Any]:
-    from openjarvis.markets import store
-
-    bars = store.get_history(ticker, since_ts=since_ts, limit=limit)
+    bars = _get_history_with_lazy_crypto_backfill(ticker, since_ts=since_ts, limit=limit)
     config = DCAConfig(ticker=ticker, **kwargs)
     return backtest_dca(bars, config)
 
@@ -468,9 +466,7 @@ def backtest_grid(bars: Iterable[dict[str, Any]], config: GridConfig) -> dict[st
 
 
 def backtest_grid_from_history(ticker: str, since_ts: int | None = None, limit: int | None = None, **kwargs: Any) -> dict[str, Any]:
-    from openjarvis.markets import store
-
-    bars = store.get_history(ticker, since_ts=since_ts, limit=limit)
+    bars = _get_history_with_lazy_crypto_backfill(ticker, since_ts=since_ts, limit=limit)
     config = GridConfig(ticker=ticker, **kwargs)
     return backtest_grid(bars, config)
 
@@ -591,9 +587,7 @@ def backtest_signal(bars: Iterable[dict[str, Any]], config: SignalConfig) -> dic
 
 
 def backtest_signal_from_history(ticker: str, since_ts: int | None = None, limit: int | None = None, **kwargs: Any) -> dict[str, Any]:
-    from openjarvis.markets import store
-
-    bars = store.get_history(ticker, since_ts=since_ts, limit=limit)
+    bars = _get_history_with_lazy_crypto_backfill(ticker, since_ts=since_ts, limit=limit)
     config = SignalConfig(ticker=ticker, **kwargs)
     return backtest_signal(bars, config)
 
@@ -735,17 +729,36 @@ def sweep_grid(
 
 
 def sweep_dca_from_history(ticker: str, since_ts: int | None = None, limit: int | None = None, **kwargs: Any) -> dict[str, Any]:
-    from openjarvis.markets import store
-
-    bars = store.get_history(ticker, since_ts=since_ts, limit=limit)
+    bars = _get_history_with_lazy_crypto_backfill(ticker, since_ts=since_ts, limit=limit)
     return sweep_dca(bars, ticker=ticker, **kwargs)
 
 
 def sweep_grid_from_history(ticker: str, since_ts: int | None = None, limit: int | None = None, **kwargs: Any) -> dict[str, Any]:
+    bars = _get_history_with_lazy_crypto_backfill(ticker, since_ts=since_ts, limit=limit)
+    return sweep_grid(bars, ticker=ticker, **kwargs)
+
+
+def _get_history_with_lazy_crypto_backfill(
+    ticker: str, *, since_ts: int | None = None, limit: int | None = None
+) -> list[dict[str, Any]]:
     from openjarvis.markets import store
 
     bars = store.get_history(ticker, since_ts=since_ts, limit=limit)
-    return sweep_grid(bars, ticker=ticker, **kwargs)
+    if len(bars) >= 2:
+        return bars
+    if since_ts is not None:
+        return bars
+
+    try:
+        from openjarvis.markets.sources import coingecko
+
+        fetched = coingecko.fetch_history(ticker, range_str="3mo") or []
+        if fetched:
+            store.insert_history_bars(ticker, fetched, source="coingecko")
+            bars = store.get_history(ticker, since_ts=since_ts, limit=limit)
+    except Exception:
+        return bars
+    return bars
 
 
 __all__ = [

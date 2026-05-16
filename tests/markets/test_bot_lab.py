@@ -152,6 +152,37 @@ def test_backtest_dca_from_history_uses_market_store(monkeypatch):
     assert result["closed_deals"] == 1
 
 
+def test_backtest_dca_from_history_lazy_backfills_missing_crypto_history(monkeypatch):
+    fetched_bars = [
+        _bar(1, 100.0, 101.0, 99.0, 100.0),
+        _bar(2, 100.0, 104.0, 99.0, 103.0),
+    ]
+    stored_bars = []
+    inserted = []
+
+    def fake_get_history(ticker, since_ts=None, limit=None):
+        assert ticker == "SOL"
+        return list(stored_bars)
+
+    def fake_insert_history_bars(ticker, bars, source=""):
+        assert ticker == "SOL"
+        assert source == "coingecko"
+        inserted.extend(bars)
+        stored_bars.extend(bars)
+        return len(bars)
+
+    monkeypatch.setattr("openjarvis.markets.store.get_history", fake_get_history)
+    monkeypatch.setattr("openjarvis.markets.store.insert_history_bars", fake_insert_history_bars)
+    monkeypatch.setattr("openjarvis.markets.sources.coingecko.fetch_history", lambda ticker, range_str="3mo": fetched_bars)
+
+    result = backtest_dca_from_history("SOL", base_order_gbp=100, take_profit_pct=2.0, slippage_pct=0.0)
+
+    assert result["ok"] is True
+    assert result["ticker"] == "SOL"
+    assert result["bars"] == 2
+    assert inserted == fetched_bars
+
+
 def test_backtest_dca_bot_is_registered_as_llm_tool(monkeypatch):
     bars = [
         _bar(1, 100.0, 101.0, 99.0, 100.0),
