@@ -241,8 +241,16 @@ def list_paper_bot_schedules() -> str:
 
 
 def run_due_paper_bots() -> str:
-    """Run due paper-bot dry-run checks. No paper or live orders are placed."""
+    """Run due paper-bot checks. Paper execution requires prior approval."""
     return json.dumps(_paper_scheduler.run_due_paper_bots())
+
+
+def approve_paper_bot_execution(bot_id: str, approval_phrase: str) -> str:
+    """Enable PAPER-ONLY signal execution for a saved scheduler bot."""
+    return json.dumps(_paper_scheduler.approve_paper_execution(
+        bot_id,
+        approval_phrase=approval_phrase,
+    ))
 
 
 def backtest_dca_bot(
@@ -708,10 +716,30 @@ TOOL_SCHEMAS = [
         "function": {
             "name": "run_due_paper_bots",
             "description": (
-                "Run due paper-bot scheduler checks in dry-run mode only. "
-                "This evaluates backtests/sweeps and rolls schedules forward; it never places paper or live orders."
+                "Run due paper-bot scheduler checks. Dry-run schedules evaluate backtests/sweeps. "
+                "Paper execution only works after explicit approval and uses paper-broker signal actions; "
+                "it never places live orders."
             ),
             "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "approve_paper_bot_execution",
+            "description": (
+                "Enable PAPER-ONLY execution for an existing scheduler bot. Requires the exact "
+                "approval_phrase PAPER ONLY. Execution is restricted to explicit signal actions and "
+                "never places live orders."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "bot_id": {"type": "string"},
+                    "approval_phrase": {"type": "string"},
+                },
+                "required": ["bot_id", "approval_phrase"],
+            },
         },
     },
     {
@@ -905,6 +933,7 @@ TOOL_DISPATCH = {
     "schedule_paper_bot": schedule_paper_bot,
     "list_paper_bot_schedules": list_paper_bot_schedules,
     "run_due_paper_bots": run_due_paper_bots,
+    "approve_paper_bot_execution": approve_paper_bot_execution,
     "backtest_dca_bot": backtest_dca_bot,
     "backtest_grid_bot": backtest_grid_bot,
     "backtest_signal_bot": backtest_signal_bot,
@@ -922,6 +951,6 @@ __all__ = [
     "stock_price", "crypto_price", "crypto_prices_page", "crypto_top_100", "crypto_top_1000",
     "watchlist_get", "watchlist_add", "watchlist_remove",
     "paper_buy", "paper_sell", "paper_portfolio",
-    "schedule_paper_bot", "list_paper_bot_schedules", "run_due_paper_bots",
+    "schedule_paper_bot", "list_paper_bot_schedules", "run_due_paper_bots", "approve_paper_bot_execution",
     "backtest_dca_bot", "backtest_grid_bot", "backtest_signal_bot", "sweep_dca_bot", "sweep_grid_bot", "analyze_chart",
 ]

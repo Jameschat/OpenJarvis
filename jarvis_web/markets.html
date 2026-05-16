@@ -1239,7 +1239,7 @@ h1.page-title {
   "take_profit_pct": 2
 }</textarea>
     </label>
-    <div class="bot-warning">Scheduler entries are dry-run monitors by default. No live exchange order path exists here.</div>
+    <div class="bot-warning">Scheduler entries are dry-run monitors by default. Paper execution requires typing PAPER ONLY and only runs explicit one-shot signal actions. No live exchange order path exists here.</div>
     <div id="paperbot-result" style="margin-top:14px;">
       <div class="empty-sub">Save a dry-run paper bot schedule to monitor strategy checks without placing orders.</div>
     </div>
@@ -2099,9 +2099,30 @@ async function cancelPaperBot(id) {
   }
 }
 
+async function approvePaperBotExecution(id) {
+  const phrase = window.prompt('Type PAPER ONLY to enable paper-broker signal execution for this bot.');
+  if (phrase !== 'PAPER ONLY') return;
+  const result = document.getElementById('paperbot-result');
+  if (result) result.innerHTML = '<div class="empty-sub">Approving paper-only execution...</div>';
+  try {
+    const r = await fetch('/markets-pro/bot/approve-execution', {
+      method: 'POST',
+      credentials: 'include',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ id, approval_phrase: phrase }),
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const data = await r.json();
+    if (!data.ok) throw new Error(data.error || 'Approval failed');
+    await loadPaperBotSchedules();
+  } catch (e) {
+    result.innerHTML = '<div class="empty-sub" style="color:var(--neg);">' + escapeHtml(String(e.message || e)) + '</div>';
+  }
+}
+
 async function runDuePaperBots() {
   const result = document.getElementById('paperbot-result');
-  if (result) result.innerHTML = '<div class="empty-sub">Running due dry-run checks...</div>';
+  if (result) result.innerHTML = '<div class="empty-sub">Running due paper-bot checks...</div>';
   try {
     const r = await fetch('/markets-pro/bot/run-due', {
       method: 'POST',
@@ -2115,12 +2136,13 @@ async function runDuePaperBots() {
       const status = item.ok ? 'OK' : 'Blocked';
       const detail = item.note || item.error || '';
       return '<tr><td>' + escapeHtml(item.ticker || '') + '</td><td>' + escapeHtml(item.strategy || '') +
-        '</td><td>' + escapeHtml(status) + '</td><td>' + escapeHtml(detail) + '</td></tr>';
+        '</td><td>' + (item.executed_paper ? 'Paper action' : 'Monitor') + '</td><td>' +
+        escapeHtml(status) + '</td><td>' + escapeHtml(detail) + '</td></tr>';
     }).join('');
     result.innerHTML =
-      '<div class="bot-warning">Dry-run checks completed. No paper or live orders were placed.</div>' +
-      '<table class="tbl"><thead><tr><th>Coin</th><th>Strategy</th><th>Status</th><th>Result</th></tr></thead><tbody>' +
-      (rows || '<tr><td colspan="4" style="text-align:center; color:var(--txt-3); padding:18px;">No due schedules</td></tr>') +
+      '<div class="bot-warning">Due checks completed. Live exchange orders are still unavailable here.</div>' +
+      '<table class="tbl"><thead><tr><th>Coin</th><th>Strategy</th><th>Mode</th><th>Status</th><th>Result</th></tr></thead><tbody>' +
+      (rows || '<tr><td colspan="5" style="text-align:center; color:var(--txt-3); padding:18px;">No due schedules</td></tr>') +
       '</tbody></table>';
   } catch (e) {
     console.error('[markets-pro] run due paper bots failed', e);
@@ -2137,9 +2159,13 @@ function renderPaperBotSchedules(data) {
   const rows = (data.bots || []).map(bot => {
     const next = bot.next_run_at ? new Date(bot.next_run_at * 1000).toLocaleString() : '-';
     const dry = bot.dry_run ? 'Dry run' : 'Paper execution';
-    const action = bot.status === 'active'
-      ? '<button class="btn" onclick="cancelPaperBot(\\'' + escapeHtml(bot.id) + '\\')">Cancel</button>'
-      : '';
+    let action = '';
+    if (bot.status === 'active') {
+      if (bot.dry_run && bot.strategy === 'signal') {
+        action += '<button class="btn" onclick="approvePaperBotExecution(\\'' + escapeHtml(bot.id) + '\\')">Approve paper</button> ';
+      }
+      action += '<button class="btn" onclick="cancelPaperBot(\\'' + escapeHtml(bot.id) + '\\')">Cancel</button>';
+    }
     return '<tr><td>' + escapeHtml(bot.name || bot.id) + '</td><td>' + escapeHtml(bot.ticker) + '</td><td>' +
       escapeHtml(bot.strategy) + '</td><td>' + escapeHtml(bot.status) + '</td><td>' + escapeHtml(dry) +
       '</td><td>' + escapeHtml(next) + '</td><td>' + action + '</td></tr>';

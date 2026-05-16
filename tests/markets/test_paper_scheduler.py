@@ -165,7 +165,81 @@ def test_run_due_paper_bots_refuses_execution_enabled_bots(monkeypatch, tmp_path
     assert result["checked"] == 1
     assert result["results"][0]["bot_id"] == created["id"]
     assert result["results"][0]["ok"] is False
-    assert "dry-run checks only" in result["results"][0]["error"]
+    assert "signal strategy" in result["results"][0]["error"]
+
+
+def test_approve_paper_execution_requires_exact_phrase(monkeypatch, tmp_path):
+    monkeypatch.setenv("OPENJARVIS_PAPER_BOT_DIR", str(tmp_path))
+    from openjarvis.markets import paper_scheduler
+
+    created = paper_scheduler.schedule_paper_bot(ticker="BTC", strategy="signal", now_ts=100)["bot"]
+
+    rejected = paper_scheduler.approve_paper_execution(created["id"], approval_phrase="yes", now_ts=200)
+    approved = paper_scheduler.approve_paper_execution(created["id"], approval_phrase="PAPER ONLY", now_ts=300)
+
+    assert rejected["ok"] is False
+    assert "PAPER ONLY" in rejected["error"]
+    assert approved["ok"] is True
+    assert approved["bot"]["execute_paper"] is True
+    assert approved["bot"]["dry_run"] is False
+    assert approved["bot"]["paper_execution_approved_at"] == 300
+
+
+def test_run_due_paper_bots_executes_approved_signal_once(monkeypatch, tmp_path):
+    monkeypatch.setenv("OPENJARVIS_PAPER_BOT_DIR", str(tmp_path))
+    from openjarvis.markets import paper_scheduler
+
+    created = paper_scheduler.schedule_paper_bot(
+        ticker="BTC",
+        strategy="signal",
+        interval_minutes=5,
+        config={"paper_signal": {"id": "sig-1", "action": "buy", "amount_gbp": 25}},
+        now_ts=100,
+    )["bot"]
+    paper_scheduler.approve_paper_execution(created["id"], approval_phrase="PAPER ONLY", now_ts=200)
+    calls = []
+
+    def fake_buy(ticker, gbp_amount, **kwargs):
+        calls.append((ticker, gbp_amount, kwargs))
+        return {"ok": True, "ticker": ticker, "gross_gbp": gbp_amount, "trade_id": "paper_1"}
+
+    monkeypatch.setattr("openjarvis.markets.paper_broker.paper_buy", fake_buy)
+
+    first = paper_scheduler.run_due_paper_bots(now_ts=400)
+    second = paper_scheduler.run_due_paper_bots(now_ts=700)
+
+    assert first["results"][0]["ok"] is True
+    assert first["results"][0]["executed_paper"] is True
+    assert first["results"][0]["paper_result"]["trade_id"] == "paper_1"
+    assert calls == [("BTC", 25.0, {"stop": None, "tp1": None, "tp2": None})]
+    updated = paper_scheduler.list_paper_bots()["bots"][0]
+    assert updated["executed_signal_ids"] == ["sig-1"]
+    assert second["results"][0]["ok"] is True
+    assert second["results"][0]["executed_paper"] is False
+    assert "already executed" in second["results"][0]["note"]
+    assert calls == [("BTC", 25.0, {"stop": None, "tp1": None, "tp2": None})]
+
+
+def test_paper_execution_endpoint_and_tool_are_registered(monkeypatch, tmp_path):
+    monkeypatch.setenv("OPENJARVIS_PAPER_BOT_DIR", str(tmp_path))
+    from openjarvis.cli.brain_server import _markets_pro_paper_bot_approve_execution
+    from openjarvis.markets import paper_scheduler
+    from openjarvis.markets.markets_tools import (
+        TOOL_DISPATCH,
+        TOOL_SCHEMAS,
+        approve_paper_bot_execution,
+    )
+
+    created = paper_scheduler.schedule_paper_bot(ticker="BTC", strategy="signal", now_ts=100)["bot"]
+    endpoint = _markets_pro_paper_bot_approve_execution(
+        {"id": created["id"], "approval_phrase": "PAPER ONLY"}
+    )
+    payload = approve_paper_bot_execution(created["id"], "PAPER ONLY")
+
+    assert endpoint["ok"] is True
+    assert '"ok": true' in payload
+    assert TOOL_DISPATCH["approve_paper_bot_execution"] is approve_paper_bot_execution
+    assert any(schema["function"]["name"] == "approve_paper_bot_execution" for schema in TOOL_SCHEMAS)
 
 
 def test_run_paper_bot_tool_and_endpoint_are_registered(monkeypatch, tmp_path):

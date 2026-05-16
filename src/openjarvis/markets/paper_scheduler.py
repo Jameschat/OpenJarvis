@@ -16,6 +16,7 @@ from typing import Any
 
 
 _VALID_STRATEGIES = {"dca", "grid", "signal", "dca_sweep", "grid_sweep"}
+_PAPER_EXECUTION_PHRASE = "PAPER ONLY"
 
 
 def _now() -> int:
@@ -101,6 +102,8 @@ def schedule_paper_bot(
         "dry_run": not bool(execute_paper),
         "paper_only": True,
         "no_live_orders": True,
+        "paper_execution_approved_at": now if execute_paper else None,
+        "executed_signal_ids": [],
         "created_at": now,
         "updated_at": now,
         "last_checked_at": None,
@@ -130,6 +133,37 @@ def cancel_paper_bot(bot_id: str) -> dict[str, Any]:
         return {"ok": False, "error": "paper bot not found"}
     bot["status"] = "cancelled"
     bot["updated_at"] = _now()
+    _write(bot)
+    return {"ok": True, "bot": bot}
+
+
+def approve_paper_execution(
+    bot_id: str,
+    *,
+    approval_phrase: str,
+    now_ts: int | None = None,
+) -> dict[str, Any]:
+    """Enable paper-broker execution for a saved bot after an exact phrase.
+
+    This still cannot place live orders. The due runner only supports explicit
+    one-shot signal actions and records executed signal ids to prevent repeats.
+    """
+
+    try:
+        path = _path_for(bot_id)
+        bot = _read(path)
+    except Exception:
+        return {"ok": False, "error": "paper bot not found"}
+    if (approval_phrase or "").strip() != _PAPER_EXECUTION_PHRASE:
+        return {"ok": False, "error": f'type "{_PAPER_EXECUTION_PHRASE}" to enable paper execution'}
+    now = int(now_ts if now_ts is not None else _now())
+    bot["execute_paper"] = True
+    bot["dry_run"] = False
+    bot["paper_only"] = True
+    bot["no_live_orders"] = True
+    bot["paper_execution_approved_at"] = now
+    bot.setdefault("executed_signal_ids", [])
+    bot["updated_at"] = now
     _write(bot)
     return {"ok": True, "bot": bot}
 
@@ -191,80 +225,78 @@ def _note_for_result(result: dict[str, Any]) -> str:
     return "dry-run check: " + ", ".join(bits)
 
 
-def run_due_paper_bots(*, now_ts: int | None = None) -> dict[str, Any]:
-    """Run due scheduler checks in dry-run mode only."""
+def _paper_signal_result(bot: dict[str, Any]) -> dict[str, Any]:
+    from openjarvis.markets import paper_broker
 
-    now = int(now_ts if now_ts is not None else _now())
-    due = due_paper_bots(now_ts=now)["due"]
-    results = []
-    for bot in due:
-        if bot.get("execute_paper"):
-            result = {
-                "ok": False,
-                "bot_id": bot.get("id"),
-                "ticker": bot.get("ticker"),
-                "strategy": bot.get("strategy"),
-                "executed_paper": False,
-                "error": "scheduler supports dry-run checks only",
-            }
-            mark_paper_bot_checked(bot["id"], now_ts=now, note=result["error"])
-            results.append(result)
-            continue
-        backtest = _run_backtest(bot)
-        note = _note_for_result(backtest)
-        mark_paper_bot_checked(bot["id"], now_ts=now, note=note)
-        results.append(
-            {
-                "ok": bool(backtest.get("ok", False)),
-                "bot_id": bot.get("id"),
-                "ticker": bot.get("ticker"),
-                "strategy": bot.get("strategy"),
-                "executed_paper": False,
-                "backtest": backtest,
-                "note": note,
-            }
-        )
-    return {"ok": True, "now": now, "checked": len(results), "results": results}
-
-
-def _run_backtest(bot: dict[str, Any]) -> dict[str, Any]:
-    from openjarvis.markets import bot_lab
-
-    ticker = bot["ticker"]
     config = bot.get("config") if isinstance(bot.get("config"), dict) else {}
-    strategy = bot.get("strategy")
-    if strategy == "dca":
-        return bot_lab.backtest_dca_from_history(ticker, **config)
-    if strategy == "grid":
-        return bot_lab.backtest_grid_from_history(ticker, **config)
-    if strategy == "signal":
-        return bot_lab.backtest_signal_from_history(ticker, **config)
-    if strategy == "dca_sweep":
-        return bot_lab.sweep_dca_from_history(ticker, **config)
-    if strategy == "grid_sweep":
-        return bot_lab.sweep_grid_from_history(ticker, **config)
-    return {"ok": False, "error": f"unsupported strategy {strategy}"}
+    signal = config.get("paper_signal")
+    if not isinstance(signal, dict):
+        return {"ok": False, "error": "paper execution requires config.paper_signal"}
+    action = (signal.get("action") or "").strip().lower()
+    if action not in ("buy", "sell"):
+        return {"ok": False, "error": "paper_signal.action must be buy or sell"}
+    signal_id = str(signal.get("id") or "").strip()
+    if not signal_id:
+        return {"ok": False, "error": "paper_signal.id required"}
+    executed = [str(item) for item in (bot.get("executed_signal_ids") or [])]
+    if signal_id in executed:
+        return {
+            "ok": True,
+            "executed_paper": False,
+            "signal_id": signal_id,
+            "note": f"paper signal {signal_id} already executed",
+        }
+    if action == "buy":
+        amount = float(signal.get("amount_gbp") or config.get("default_order_gbp") or 100.0)
+        trade = paper_broker.paper_buy(
+            bot.get("ticker") or "",
+            amount,
+            stop=signal.get("stop"),
+            tp1=signal.get("tp1"),
+            tp2=signal.get("tp2"),
+        )
+    else:
+        trade = paper_broker.paper_sell(
+            bot.get("ticker") or "",
+            reason=str(signal.get("reason") or "paper_bot_signal"),
+        )
+    if not trade.get("ok"):
+        return {"ok": False, "executed_paper": False, "signal_id": signal_id, "paper_result": trade}
+    return {
+        "ok": True,
+        "executed_paper": True,
+        "signal_id": signal_id,
+        "paper_result": trade,
+        "note": f"paper {action} executed for signal {signal_id}",
+    }
 
 
-def _note_for_result(result: dict[str, Any]) -> str:
-    if not result.get("ok", False):
-        return str(result.get("error") or "dry-run check failed")
-    bits = [f"strategy={result.get('strategy', 'unknown')}"]
-    if "roi_pct" in result:
-        bits.append(f"roi={result.get('roi_pct')}%")
-    if "max_drawdown_pct" in result:
-        bits.append(f"drawdown={result.get('max_drawdown_pct')}%")
-    if "runs" in result:
-        bits.append(f"runs={result.get('runs')}")
-    return "dry-run check: " + ", ".join(bits)
+def _mark_paper_execution_checked(
+    bot: dict[str, Any],
+    *,
+    now: int,
+    result: dict[str, Any],
+) -> dict[str, Any]:
+    interval = int(bot.get("interval_minutes") or 60)
+    note = result.get("note") or result.get("error") or "paper execution check"
+    bot["last_checked_at"] = now
+    bot["last_note"] = note
+    bot["next_run_at"] = now + interval * 60
+    bot["updated_at"] = now
+    if result.get("executed_paper") and result.get("signal_id"):
+        executed = [str(item) for item in (bot.get("executed_signal_ids") or [])]
+        if result["signal_id"] not in executed:
+            executed.append(result["signal_id"])
+        bot["executed_signal_ids"] = executed
+    _write(bot)
+    return bot
 
 
 def run_due_paper_bots(*, now_ts: int | None = None) -> dict[str, Any]:
-    """Run due scheduler checks in dry-run mode only.
+    """Run due scheduler checks.
 
-    This evaluates saved strategies through Bot Lab backtests/sweeps and rolls
-    schedules forward. It deliberately refuses bots configured for execution so
-    a future paper-execution path requires a separate approval-gated change.
+    Dry-run bots evaluate backtests/sweeps. Execution-enabled bots remain
+    paper-broker only and only consume explicit signal actions.
     """
 
     now = int(now_ts if now_ts is not None else _now())
@@ -272,15 +304,22 @@ def run_due_paper_bots(*, now_ts: int | None = None) -> dict[str, Any]:
     results = []
     for bot in due:
         if bot.get("execute_paper"):
-            result = {
-                "ok": False,
+            if not bot.get("paper_execution_approved_at"):
+                result = {"ok": False, "executed_paper": False, "error": "paper execution not approved"}
+            elif bot.get("strategy") != "signal":
+                result = {
+                    "ok": False,
+                    "executed_paper": False,
+                    "error": "paper execution currently supports signal strategy only",
+                }
+            else:
+                result = _paper_signal_result(bot)
+            _mark_paper_execution_checked(bot, now=now, result=result)
+            result.update({
                 "bot_id": bot.get("id"),
                 "ticker": bot.get("ticker"),
                 "strategy": bot.get("strategy"),
-                "executed_paper": False,
-                "error": "scheduler supports dry-run checks only",
-            }
-            mark_paper_bot_checked(bot["id"], now_ts=now, note=result["error"])
+            })
             results.append(result)
             continue
         backtest = _run_backtest(bot)
