@@ -4,9 +4,6 @@ workers:
       port: 7730
       host: 127.0.0.1
       default_timeout: 180000
-      cors:
-        allowed_origins: ["http://localhost:7730", "http://127.0.0.1:7730"]
-        allowed_methods: [GET, POST, PUT, DELETE, OPTIONS]
   - name: iii-state
     config:
       adapter:
@@ -47,4 +44,4 @@ workers:
   - name: iii-exec
     config:
       exec:
-        - node C:/Users/User/AppData/Roaming/npm/node_modules/@agentmemory/agentmemory/dist/index.mjs
+        - npx --yes @agentmemory/agentmemory
