@@ -3178,6 +3178,20 @@ def start_brain_server(open_browser: bool = True) -> None:
     except Exception:
         logger.exception("graphify daily-rebuild failed to start")
 
+    # agentmemory episodic memory sidecar — warn if offline, never crash
+    try:
+        from openjarvis.tools.agentmemory_client import health as _am_health
+        _am_url = os.environ.get("AGENTMEMORY_URL", "http://localhost:7730")
+        if _am_health():
+            logger.info("agentmemory sidecar online at %s", _am_url)
+        else:
+            logger.warning(
+                "agentmemory sidecar offline — episodic memory unavailable. "
+                "Start jarvis.bat to enable (port 7730)."
+            )
+    except Exception as exc:
+        logger.warning("agentmemory health check failed: %s — continuing without episodic memory", exc)
+
     # Markets — daily briefing now fires via the vault scheduler reading
     # Brain/Scheduled/<date> - financial-researcher - daily markets
     # briefing.md (registered as a python-provider agent in agent_runner).
