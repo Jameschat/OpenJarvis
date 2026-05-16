@@ -1,0 +1,50 @@
+workers:
+  - name: iii-http
+    config:
+      port: 7730
+      host: 127.0.0.1
+      default_timeout: 180000
+      cors:
+        allowed_origins: ["http://localhost:7730", "http://127.0.0.1:7730"]
+        allowed_methods: [GET, POST, PUT, DELETE, OPTIONS]
+  - name: iii-state
+    config:
+      adapter:
+        name: kv
+        config:
+          store_method: file_based
+          file_path: ./data/state_store.db
+  - name: iii-queue
+    config:
+      adapter:
+        name: builtin
+  - name: iii-pubsub
+    config:
+      adapter:
+        name: local
+  - name: iii-cron
+    config:
+      adapter:
+        name: kv
+  - name: iii-stream
+    config:
+      port: 7731
+      host: 127.0.0.1
+      adapter:
+        name: kv
+        config:
+          store_method: file_based
+          file_path: ./data/stream_store
+  - name: iii-observability
+    config:
+      enabled: true
+      service_name: agentmemory
+      exporter: memory
+      sampling_ratio: 1.0
+      metrics_enabled: true
+      logs_enabled: true
+      logs_console_output: true
+  - name: iii-exec
+    config:
+      exec:
+        - node C:/Users/User/AppData/Roaming/npm/node_modules/@agentmemory/agentmemory/dist/index.mjs
