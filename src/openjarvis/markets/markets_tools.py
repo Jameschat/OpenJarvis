@@ -240,6 +240,11 @@ def list_paper_bot_schedules() -> str:
     return json.dumps(_paper_scheduler.list_paper_bots())
 
 
+def run_due_paper_bots() -> str:
+    """Run due paper-bot dry-run checks. No paper or live orders are placed."""
+    return json.dumps(_paper_scheduler.run_due_paper_bots())
+
+
 def backtest_dca_bot(
     ticker: str,
     initial_cash_gbp: float = 1000.0,
@@ -701,6 +706,17 @@ TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "run_due_paper_bots",
+            "description": (
+                "Run due paper-bot scheduler checks in dry-run mode only. "
+                "This evaluates backtests/sweeps and rolls schedules forward; it never places paper or live orders."
+            ),
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "backtest_grid_bot",
             "description": (
                 "Run a PAPER-ONLY fixed-range grid trading bot backtest on cached OHLCV history. "
@@ -888,6 +904,7 @@ TOOL_DISPATCH = {
     "paper_portfolio":  paper_portfolio,
     "schedule_paper_bot": schedule_paper_bot,
     "list_paper_bot_schedules": list_paper_bot_schedules,
+    "run_due_paper_bots": run_due_paper_bots,
     "backtest_dca_bot": backtest_dca_bot,
     "backtest_grid_bot": backtest_grid_bot,
     "backtest_signal_bot": backtest_signal_bot,
@@ -905,6 +922,6 @@ __all__ = [
     "stock_price", "crypto_price", "crypto_prices_page", "crypto_top_100", "crypto_top_1000",
     "watchlist_get", "watchlist_add", "watchlist_remove",
     "paper_buy", "paper_sell", "paper_portfolio",
-    "schedule_paper_bot", "list_paper_bot_schedules",
+    "schedule_paper_bot", "list_paper_bot_schedules", "run_due_paper_bots",
     "backtest_dca_bot", "backtest_grid_bot", "backtest_signal_bot", "sweep_dca_bot", "sweep_grid_bot", "analyze_chart",
 ]

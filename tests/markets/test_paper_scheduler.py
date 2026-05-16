@@ -112,3 +112,82 @@ def test_paper_bot_scheduler_tools_are_registered(monkeypatch, tmp_path):
     assert TOOL_DISPATCH["list_paper_bot_schedules"] is list_paper_bot_schedules
     assert any(schema["function"]["name"] == "schedule_paper_bot" for schema in TOOL_SCHEMAS)
     assert any(schema["function"]["name"] == "list_paper_bot_schedules" for schema in TOOL_SCHEMAS)
+
+
+def test_run_due_paper_bots_executes_dry_run_backtest_and_rolls_forward(monkeypatch, tmp_path):
+    monkeypatch.setenv("OPENJARVIS_PAPER_BOT_DIR", str(tmp_path))
+    from openjarvis.markets import paper_scheduler
+
+    created = paper_scheduler.schedule_paper_bot(
+        ticker="BTC",
+        strategy="dca",
+        interval_minutes=5,
+        config={"base_order_gbp": 100.0},
+        now_ts=100,
+    )["bot"]
+    calls = []
+
+    def fake_backtest(ticker, **kwargs):
+        calls.append((ticker, kwargs))
+        return {"ok": True, "strategy": "dca", "ticker": ticker, "roi_pct": 3.25, "max_drawdown_pct": 1.5}
+
+    monkeypatch.setattr("openjarvis.markets.bot_lab.backtest_dca_from_history", fake_backtest)
+
+    result = paper_scheduler.run_due_paper_bots(now_ts=400)
+
+    assert result["ok"] is True
+    assert result["checked"] == 1
+    assert result["results"][0]["bot_id"] == created["id"]
+    assert result["results"][0]["executed_paper"] is False
+    assert result["results"][0]["backtest"]["roi_pct"] == 3.25
+    assert calls == [("BTC", {"base_order_gbp": 100.0})]
+    updated = paper_scheduler.list_paper_bots()["bots"][0]
+    assert updated["last_checked_at"] == 400
+    assert updated["next_run_at"] == 700
+    assert "roi=3.25%" in updated["last_note"]
+
+
+def test_run_due_paper_bots_refuses_execution_enabled_bots(monkeypatch, tmp_path):
+    monkeypatch.setenv("OPENJARVIS_PAPER_BOT_DIR", str(tmp_path))
+    from openjarvis.markets import paper_scheduler
+
+    created = paper_scheduler.schedule_paper_bot(
+        ticker="BTC",
+        strategy="dca",
+        execute_paper=True,
+        confirm_paper_execution=True,
+        now_ts=100,
+    )["bot"]
+
+    result = paper_scheduler.run_due_paper_bots(now_ts=3700)
+
+    assert result["ok"] is True
+    assert result["checked"] == 1
+    assert result["results"][0]["bot_id"] == created["id"]
+    assert result["results"][0]["ok"] is False
+    assert "dry-run checks only" in result["results"][0]["error"]
+
+
+def test_run_paper_bot_tool_and_endpoint_are_registered(monkeypatch, tmp_path):
+    monkeypatch.setenv("OPENJARVIS_PAPER_BOT_DIR", str(tmp_path))
+    from openjarvis.cli.brain_server import _markets_pro_paper_bot_run_due
+    from openjarvis.markets import paper_scheduler
+    from openjarvis.markets.markets_tools import (
+        TOOL_DISPATCH,
+        TOOL_SCHEMAS,
+        run_due_paper_bots,
+    )
+
+    paper_scheduler.schedule_paper_bot(ticker="BTC", strategy="dca", now_ts=100)
+    monkeypatch.setattr(
+        "openjarvis.markets.bot_lab.backtest_dca_from_history",
+        lambda ticker, **kwargs: {"ok": True, "strategy": "dca", "ticker": ticker, "roi_pct": 1.0},
+    )
+
+    endpoint = _markets_pro_paper_bot_run_due({"now_ts": 3700})
+    payload = run_due_paper_bots()
+
+    assert endpoint["ok"] is True
+    assert '"ok": true' in payload
+    assert TOOL_DISPATCH["run_due_paper_bots"] is run_due_paper_bots
+    assert any(schema["function"]["name"] == "run_due_paper_bots" for schema in TOOL_SCHEMAS)

@@ -158,3 +158,73 @@ def mark_paper_bot_checked(bot_id: str, *, now_ts: int | None = None, note: str 
     _write(bot)
     return {"ok": True, "bot": bot}
 
+
+def _run_backtest(bot: dict[str, Any]) -> dict[str, Any]:
+    from openjarvis.markets import bot_lab
+
+    ticker = bot["ticker"]
+    config = bot.get("config") if isinstance(bot.get("config"), dict) else {}
+    strategy = bot.get("strategy")
+    if strategy == "dca":
+        return bot_lab.backtest_dca_from_history(ticker, **config)
+    if strategy == "grid":
+        return bot_lab.backtest_grid_from_history(ticker, **config)
+    if strategy == "signal":
+        return bot_lab.backtest_signal_from_history(ticker, **config)
+    if strategy == "dca_sweep":
+        return bot_lab.sweep_dca_from_history(ticker, **config)
+    if strategy == "grid_sweep":
+        return bot_lab.sweep_grid_from_history(ticker, **config)
+    return {"ok": False, "error": f"unsupported strategy {strategy}"}
+
+
+def _note_for_result(result: dict[str, Any]) -> str:
+    if not result.get("ok", False):
+        return str(result.get("error") or "dry-run check failed")
+    bits = [f"strategy={result.get('strategy', 'unknown')}"]
+    if "roi_pct" in result:
+        bits.append(f"roi={result.get('roi_pct')}%")
+    if "max_drawdown_pct" in result:
+        bits.append(f"drawdown={result.get('max_drawdown_pct')}%")
+    if "runs" in result:
+        bits.append(f"runs={result.get('runs')}")
+    return "dry-run check: " + ", ".join(bits)
+
+
+def run_due_paper_bots(*, now_ts: int | None = None) -> dict[str, Any]:
+    """Run due scheduler checks in dry-run mode only.
+
+    This evaluates saved strategies through Bot Lab backtests/sweeps and rolls
+    schedules forward. It deliberately refuses bots configured for execution so
+    a future paper-execution path requires a separate approval-gated change.
+    """
+
+    now = int(now_ts if now_ts is not None else _now())
+    due = due_paper_bots(now_ts=now)["due"]
+    results = []
+    for bot in due:
+        if bot.get("execute_paper"):
+            result = {
+                "ok": False,
+                "bot_id": bot.get("id"),
+                "ticker": bot.get("ticker"),
+                "strategy": bot.get("strategy"),
+                "executed_paper": False,
+                "error": "scheduler supports dry-run checks only",
+            }
+            mark_paper_bot_checked(bot["id"], now_ts=now, note=result["error"])
+            results.append(result)
+            continue
+        backtest = _run_backtest(bot)
+        note = _note_for_result(backtest)
+        mark_paper_bot_checked(bot["id"], now_ts=now, note=note)
+        results.append({
+            "ok": bool(backtest.get("ok", False)),
+            "bot_id": bot.get("id"),
+            "ticker": bot.get("ticker"),
+            "strategy": bot.get("strategy"),
+            "executed_paper": False,
+            "backtest": backtest,
+            "note": note,
+        })
+    return {"ok": True, "now": now, "checked": len(results), "results": results}

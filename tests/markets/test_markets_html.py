@@ -48,5 +48,7 @@ def test_bot_lab_ui_is_wired():
     assert "Paper Bot Scheduler" in html
     assert "/markets-pro/bot/schedule" in html
     assert "/markets-pro/bot/schedules" in html
+    assert "/markets-pro/bot/run-due" in html
     assert re.search(r"function\s+schedulePaperBot\s*\(", html)
     assert re.search(r"function\s+loadPaperBotSchedules\s*\(", html)
+    assert re.search(r"function\s+runDuePaperBots\s*\(", html)

@@ -1231,6 +1231,7 @@ h1.page-title {
       </label>
       <button class="btn primary-solid" style="align-self:end;" onclick="schedulePaperBot()">Save Dry-Run Schedule</button>
       <button class="btn" style="align-self:end;" onclick="loadPaperBotSchedules()">Refresh</button>
+      <button class="btn" style="align-self:end;" onclick="runDuePaperBots()">Run Due Checks</button>
     </div>
     <label style="display:grid; gap:6px; margin-top:12px; color:var(--txt-2); font-size:12px; font-weight:600;">Strategy config JSON
       <textarea id="paperbot-config" class="field" rows="5">{
@@ -2094,6 +2095,35 @@ async function cancelPaperBot(id) {
     await loadPaperBotSchedules();
   } catch (e) {
     const result = document.getElementById('paperbot-result');
+    result.innerHTML = '<div class="empty-sub" style="color:var(--neg);">' + escapeHtml(String(e.message || e)) + '</div>';
+  }
+}
+
+async function runDuePaperBots() {
+  const result = document.getElementById('paperbot-result');
+  if (result) result.innerHTML = '<div class="empty-sub">Running due dry-run checks...</div>';
+  try {
+    const r = await fetch('/markets-pro/bot/run-due', {
+      method: 'POST',
+      credentials: 'include',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({}),
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const data = await r.json();
+    const rows = (data.results || []).map(item => {
+      const status = item.ok ? 'OK' : 'Blocked';
+      const detail = item.note || item.error || '';
+      return '<tr><td>' + escapeHtml(item.ticker || '') + '</td><td>' + escapeHtml(item.strategy || '') +
+        '</td><td>' + escapeHtml(status) + '</td><td>' + escapeHtml(detail) + '</td></tr>';
+    }).join('');
+    result.innerHTML =
+      '<div class="bot-warning">Dry-run checks completed. No paper or live orders were placed.</div>' +
+      '<table class="tbl"><thead><tr><th>Coin</th><th>Strategy</th><th>Status</th><th>Result</th></tr></thead><tbody>' +
+      (rows || '<tr><td colspan="4" style="text-align:center; color:var(--txt-3); padding:18px;">No due schedules</td></tr>') +
+      '</tbody></table>';
+  } catch (e) {
+    console.error('[markets-pro] run due paper bots failed', e);
     result.innerHTML = '<div class="empty-sub" style="color:var(--neg);">' + escapeHtml(String(e.message || e)) + '</div>';
   }
 }

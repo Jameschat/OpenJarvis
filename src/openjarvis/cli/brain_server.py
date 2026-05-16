@@ -827,6 +827,12 @@ def _markets_pro_paper_bot_cancel(body: Dict[str, Any]) -> Dict[str, Any]:
     return paper_scheduler.cancel_paper_bot(str(body.get("id") or ""))
 
 
+def _markets_pro_paper_bot_run_due(body: Dict[str, Any]) -> Dict[str, Any]:
+    from openjarvis.markets import paper_scheduler
+
+    return paper_scheduler.run_due_paper_bots(now_ts=body.get("now_ts"))
+
+
 def _markets_pro_analyze(body: Dict[str, Any]) -> Dict[str, Any]:
     """Decode posted image + run chart_analyst + return inline result."""
     from openjarvis.markets import chart_analyst
@@ -2869,7 +2875,7 @@ class _Handler(SimpleHTTPRequestHandler):
         path_only = urlparse(self.path).path
         sub = path_only[len("/markets-pro/"):]
         try:
-            if sub not in ("analyze", "paper/buy", "paper/sell", "bot/backtest", "bot/schedule", "bot/cancel"):
+            if sub not in ("analyze", "paper/buy", "paper/sell", "bot/backtest", "bot/schedule", "bot/cancel", "bot/run-due"):
                 return self._json_response(404, {
                     "error": "unknown markets-pro endpoint"})
             n = int(self.headers.get("Content-Length", 0))
@@ -2891,6 +2897,8 @@ class _Handler(SimpleHTTPRequestHandler):
                 return self._json_response(200, _markets_pro_paper_bot_schedule(body))
             if sub == "bot/cancel":
                 return self._json_response(200, _markets_pro_paper_bot_cancel(body))
+            if sub == "bot/run-due":
+                return self._json_response(200, _markets_pro_paper_bot_run_due(body))
             return self._json_response(200, _markets_pro_analyze(body))
         except Exception:
             logger.exception("POST /markets-pro/%s failed", sub)
