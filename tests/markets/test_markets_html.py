@@ -58,6 +58,17 @@ def test_bot_lab_ui_is_wired():
     assert re.search(r"function\s+approvePaperBotExecution\s*\(", html)
 
 
+def test_bot_lab_fields_use_dark_glass_styling():
+    html = MARKETS_HTML.read_text(encoding="utf-8-sig")
+
+    assert ".field {" in html
+    assert "linear-gradient(180deg, rgba(20,64,104,0.45), rgba(9,28,52,0.78))" in html
+    assert "border-radius: 12px" in html
+    assert "select.field option" in html
+    assert "background: #0b2340" in html
+    assert ".bot-form .field" in html
+
+
 def test_markets_page_inline_javascript_has_valid_syntax(tmp_path):
     node = shutil.which("node")
     if not node:
