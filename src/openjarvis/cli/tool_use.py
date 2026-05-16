@@ -813,6 +813,37 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "mem_search",
+            "description": (
+                "Search episodic and semantic memory for past agent actions, decisions, "
+                "tool calls, and learned patterns across previous sessions. "
+                "Use when the operator asks 'did we already solve this?', "
+                "'how did we do X last time?', or needs context from prior work."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Natural-language search query.",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum results to return (default 5, max 20).",
+                        "default": 5,
+                    },
+                    "project": {
+                        "type": "string",
+                        "description": "Optional project filter (e.g. 'openjarvis').",
+                    },
+                },
+                "required": ["query"],
+            },
+        },
+    },
 ]
 
 
@@ -833,6 +864,31 @@ def _tool_recall_vault(query: str, limit: int = 5) -> str:
             rel = path.name
         out.append({"path": rel, "snippet": snippet[:300]})
     return json.dumps({"hits": out})
+
+
+def _tool_mem_search(query: str, limit: int = 5, project: str | None = None) -> str:
+    """Search agentmemory episodic/semantic store for past agent actions and decisions."""
+    try:
+        from openjarvis.tools.agentmemory_client import (
+            search as _am_search,
+            AgentMemoryUnavailable,
+        )
+        hits = _am_search(query, limit=int(limit), project=project or None)
+        return json.dumps({
+            "ok": True,
+            "hits": [
+                {
+                    "snippet": h.snippet,
+                    "score": h.score,
+                    "session_id": h.session_id,
+                    "tier": h.tier,
+                }
+                for h in hits
+            ],
+        })
+    except Exception as exc:
+        logger.warning("mem_search: agentmemory unavailable: %s", exc)
+        return json.dumps({"ok": False, "reason": "episodic memory offline"})
 
 
 def _tool_remember_fact(title: str, content: str, folder: str = "Knowledge") -> str:
@@ -1888,7 +1944,8 @@ _TOOL_DISPATCH = {
     "create_plan": _tool_create_plan,
     "get_plan": _tool_get_plan,
     "advance_plan": _tool_advance_plan,
-    "maps_locate": _tool_maps_locate,
+    "maps_locate":           _tool_maps_locate,
+    "mem_search":            _tool_mem_search,
 }
 
 # Markets subsystem tools (paper-trading shape, Day-1) — splice into
