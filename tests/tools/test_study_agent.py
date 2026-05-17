@@ -229,7 +229,7 @@ def test_write_study_note_creates_file_at_expected_path(vault_root):
     assert "type: study" in content
     assert "discipline: web-dev" in content
     assert "topic: semantic-html-landmarks" in content
-    assert "model: qwen3:32b" in content
+    assert "model: qwen3.6:27b" in content
     assert "self_grade: 4" in content   # parsed from "4/5 — solid"
     assert "## Key concepts" in content
 
