@@ -129,7 +129,7 @@ def remember(content: str, tags: list[str] | None = None) -> bool:
     if tags:
         body["tags"] = tags
     data = _post(_PATH_REMEMBER, body)
-    return bool(data.get("ok", False))
+    return bool(data.get("ok") or data.get("success") or data.get("memory"))
 
 
 def reflect(topic: str) -> str:

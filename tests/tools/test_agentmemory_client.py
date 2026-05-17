@@ -89,6 +89,12 @@ def test_remember_returns_true_on_ok():
     with patch("urllib.request.urlopen", return_value=_mock_response({"ok": True})):
         assert c.remember("some content", tags=["tag1"]) is True
 
+
+def test_remember_returns_true_on_success_response():
+    import openjarvis.tools.agentmemory_client as c
+    with patch("urllib.request.urlopen", return_value=_mock_response({"success": True, "memory": {"id": "mem-1"}})):
+        assert c.remember("some content", tags=["tag1"]) is True
+
 def test_remember_returns_false_on_not_ok():
     import openjarvis.tools.agentmemory_client as c
     with patch("urllib.request.urlopen", return_value=_mock_response({"ok": False})):
