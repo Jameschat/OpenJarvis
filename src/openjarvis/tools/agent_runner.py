@@ -425,6 +425,21 @@ DEFAULT_AGENTS: List[Dict[str, Any]] = [
         "provider": "python",
         "python_entry": "openjarvis.tools.capability_queue:run_as_agent_task",
     },
+    {
+        "id": "cognitive-coach",
+        "name": "cognitive-coach",
+        "role": (
+            "Memory-grounded thinking coach. Reviews vault, agentmemory, and "
+            "project signals to challenge assumptions, clarify decisions, and "
+            "turn vague goals into smaller reversible tests. It writes Brain "
+            "cognitive review notes, but never mutates systems or makes decisions "
+            "for the operator."
+        ),
+        "skills": ["memory", "thinking", "decisions", "reflection"],
+        "color": "#5ccfff",
+        "provider": "python",
+        "python_entry": "openjarvis.tools.cognitive_coach:run_as_agent_task",
+    },
     # ---- Local Qwen team (provider=qwen, LiteLLM -> Ollama) --------------
     # Local-first Qwen department. Safe authority boundary: Qwen agents can
     # write RESULT.md and, where explicitly enabled, files inside their own

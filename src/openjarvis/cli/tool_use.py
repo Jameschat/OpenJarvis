@@ -113,6 +113,12 @@ work ("how is X connected to Y in my notes", "what bridges A and B", \
 `graph_query` traverses outward, `graph_path` finds the shortest \
 chain, `graph_explain` lists every direct neighbour. Use recall_vault \
 for keyword search, the graph tools for structural relationships.
+- For THINKING / DECISION / PRESSURE-TEST requests ("help me think", \
+"force me to think better", "pressure test this", "what should I do", \
+"is this a good idea", "make a decision"), call `cognitive_check`. \
+Use it to challenge assumptions, pull memory signals, name risks, and \
+recommend the smallest reversible next action. Do not use it for simple \
+factual answers or routine device/control commands.
 - For MULTI-STEP project work (operator says "build a thing" that clearly needs 2+ agents working on a shared workspace), prefer the plan tools over a single big dispatch. If the objective has clear success/failure criteria, call `create_ideal_state` first with binary, state-based criteria (what must be true when done), then `create_plan` with each step optionally mapped via `criterion_ids`, then `dispatch_agent` for the first ready step (passing plan_step_id). On subsequent turns, call `get_plan` / `get_ideal_state` first; use `advance_plan` to dispatch the next ready step. For single-step requests, skip create_plan entirely - just dispatch_agent.
 - When the operator asks for a constraint (e.g. "use independent \
 sources only", "GitHub stars not vendor sites"), TREAT IT AS A HARD RULE. \
@@ -844,6 +850,41 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "cognitive_check",
+            "description": (
+                "Use Jarvis memory to pressure-test thinking, decisions, plans, "
+                "and assumptions. Pulls vault/agentmemory signals and returns a "
+                "better question, assumption checks, decision frame, and next action. "
+                "Use when the operator asks for clearer thinking, decision help, "
+                "pressure testing, or strategic planning."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "prompt": {
+                        "type": "string",
+                        "description": "The idea, decision, plan, or question to pressure-test.",
+                    },
+                    "mode": {
+                        "type": "string",
+                        "enum": ["coach", "decision", "pressure_test", "reflection", "plan"],
+                        "description": "Thinking mode to apply.",
+                        "default": "coach",
+                    },
+                    "stakes": {
+                        "type": "string",
+                        "enum": ["low", "medium", "high"],
+                        "description": "Risk level of the decision or plan.",
+                        "default": "medium",
+                    },
+                },
+                "required": ["prompt"],
+            },
+        },
+    },
 ]
 
 
@@ -889,6 +930,16 @@ def _tool_mem_search(query: str, limit: int = 5, project: str | None = None) -> 
     except Exception as exc:
         logger.warning("mem_search: agentmemory unavailable: %s", exc)
         return json.dumps({"ok": False, "reason": "episodic memory offline"})
+
+
+def _tool_cognitive_check(prompt: str, mode: str = "coach", stakes: str = "medium") -> str:
+    try:
+        from openjarvis.tools import cognitive_coach
+        result = cognitive_coach.cognitive_check(prompt=prompt, mode=mode, stakes=stakes)
+        return json.dumps(result)
+    except Exception as exc:
+        logger.exception("cognitive_check failed")
+        return json.dumps({"ok": False, "error": str(exc)})
 
 
 def _tool_remember_fact(title: str, content: str, folder: str = "Knowledge") -> str:
@@ -1946,6 +1997,7 @@ _TOOL_DISPATCH = {
     "advance_plan": _tool_advance_plan,
     "maps_locate":           _tool_maps_locate,
     "mem_search":            _tool_mem_search,
+    "cognitive_check":       _tool_cognitive_check,
 }
 
 # Markets subsystem tools (paper-trading shape, Day-1) — splice into
