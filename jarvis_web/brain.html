@@ -7713,6 +7713,26 @@ const elObBriefBtn  = document.getElementById('ob-briefing-btn');
 let _hbLastFetched  = null;            // YYYY-MM-DD or null
 let _hbAvailable    = [];              // [{date, filename}, ...]
 
+async function fetchHudJson(path, date) {
+  const primary = new URL(path, window.location.origin);
+  if (date) primary.searchParams.set('date', date);
+  try {
+    const r = await fetch(primary.toString(), { credentials: 'include' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return await r.json();
+  } catch (primaryError) {
+    const params = new URLSearchParams(window.location.search);
+    const host = params.get('host');
+    if (!host || host === window.location.host) throw primaryError;
+    const proto = window.location.protocol === 'https:' ? 'https' : 'http';
+    const fallback = new URL(`${proto}://${host}${path}`);
+    if (date) fallback.searchParams.set('date', date);
+    const r = await fetch(fallback.toString(), { credentials: 'include' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return await r.json();
+  }
+}
+
 // Tiny markdown -> HTML renderer. Covers the AI-pulse format the
 // agent emits: headings, bold, italic, links, lists, code, blockquote,
 // hr. Not a general md engine — just enough to read the daily brief
@@ -7815,13 +7835,7 @@ function _hbMd(src) {
 async function loadBriefing(date) {
   if (!elHbBody) return;
   try {
-    const params = new URLSearchParams(window.location.search);
-    const host = params.get('host') || window.location.host || 'localhost:7710';
-    const proto = window.location.protocol === 'https:' ? 'https' : 'http';
-    const url = `${proto}://${host}/briefing` + (date ? `?date=${encodeURIComponent(date)}` : '');
-    const r = await fetch(url, { credentials: 'include' });
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    const data = await r.json();
+    const data = await fetchHudJson('/briefing', date);
     _hbAvailable = data.available || [];
     // Populate date dropdown
     if (elHbDate) {
@@ -7887,13 +7901,7 @@ let _hdAvailable = [];
 async function loadDigest(date) {
   if (!elHdBody) return;
   try {
-    const params = new URLSearchParams(window.location.search);
-    const host = params.get('host') || window.location.host || 'localhost:7710';
-    const proto = window.location.protocol === 'https:' ? 'https' : 'http';
-    const url = `${proto}://${host}/digest` + (date ? `?date=${encodeURIComponent(date)}` : '');
-    const r = await fetch(url, { credentials: 'include' });
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    const data = await r.json();
+    const data = await fetchHudJson('/digest', date);
     _hdAvailable = data.available || [];
     if (elHdDate) {
       const cur = data.date || '';
