@@ -32,6 +32,75 @@ def _jarvis_web_path(filename: str) -> Path:
     return _WEB_DIR / filename
 
 
+def _codegraph_status(
+    repo_root: Path | None = None,
+    tool_path: Path | None = None,
+) -> dict[str, Any]:
+    """Return lightweight CodeGraph index status for the HUD.
+
+    This intentionally avoids starting the MCP server or refreshing the index;
+    the daily automation owns refresh work and the dashboard only reads state.
+    """
+    repo = Path(repo_root) if repo_root is not None else _WEB_DIR.parent
+    codegraph_dir = repo / ".codegraph"
+    db = codegraph_dir / "codegraph.db"
+    config = codegraph_dir / "config.json"
+    mcp_config = repo / ".mcp.json"
+    default_tool = (
+        Path.home()
+        / ".openjarvis"
+        / "tools"
+        / "codegraph-0.8.0"
+        / "node_modules"
+        / ".bin"
+        / ("codegraph.cmd" if os.name == "nt" else "codegraph")
+    )
+    tool = Path(tool_path) if tool_path is not None else default_tool
+
+    counts: dict[str, int | None] = {"files": None, "nodes": None, "edges": None}
+    if db.exists():
+        try:
+            import sqlite3
+            with sqlite3.connect(str(db)) as conn:
+                for table in ("files", "nodes", "edges"):
+                    counts[table] = int(conn.execute(f"select count(*) from {table}").fetchone()[0])
+        except Exception:
+            logger.debug("CodeGraph count read failed", exc_info=True)
+
+    mcp_configured = False
+    mcp_command = ""
+    if mcp_config.exists():
+        try:
+            data = json.loads(mcp_config.read_text(encoding="utf-8"))
+            server = (data.get("mcpServers") or {}).get("codegraph") or {}
+            mcp_command = str(server.get("command") or "")
+            args = [str(arg) for arg in (server.get("args") or [])]
+            mcp_configured = bool(mcp_command and "serve" in args and "--mcp" in args)
+        except Exception:
+            logger.debug("CodeGraph MCP config read failed", exc_info=True)
+
+    updated_at = db.stat().st_mtime if db.exists() else None
+    size_mb = round(db.stat().st_size / (1024 * 1024), 2) if db.exists() else 0.0
+    indexed = db.exists() and bool(counts["nodes"])
+    return {
+        "online": indexed and mcp_configured,
+        "installed": tool.exists(),
+        "indexed": indexed,
+        "mcp_configured": mcp_configured,
+        "files": counts["files"] or 0,
+        "nodes": counts["nodes"] or 0,
+        "edges": counts["edges"] or 0,
+        "size_mb": size_mb,
+        "updated_at": updated_at,
+        "repo_root": str(repo),
+        "index_dir": str(codegraph_dir),
+        "tool_path": str(tool),
+        "mcp_command": mcp_command,
+        "refresh": "live debounced during sessions plus daily 06:05 automation",
+        "mode": "project-local MCP, no-watch, read-only dashboard status",
+    }
+
+
 class VoiceTurnContext:
     """Shared backends + command processor supplied by the voice loop."""
 
@@ -1218,6 +1287,8 @@ class _Handler(SimpleHTTPRequestHandler):
                 self._json_response(200, {"events": recent_events()})
             except Exception:
                 self._json_response(200, {"events": []})
+        elif self.path == "/vault/summary":
+            self._handle_vault_summary()
         elif self.path == "/vault_graph":
             try:
                 from openjarvis.tools.obsidian_brain import parse_graph
@@ -1281,6 +1352,8 @@ class _Handler(SimpleHTTPRequestHandler):
             self._serve_graphify_file("GRAPH_REPORT.md", "text/markdown; charset=utf-8")
         elif self.path == "/graphify/status":
             self._handle_graphify_status()
+        elif self.path == "/codegraph/status":
+            self._json_response(200, _codegraph_status())
         elif self.path == "/music/status":
             self._handle_music_status()
         elif self.path in ("/", "/brain", "/brain.html"):

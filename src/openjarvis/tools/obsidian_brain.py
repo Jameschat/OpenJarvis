@@ -117,6 +117,16 @@ def _emit_event(op: str, label: str, kind: str = "knowledge", count: int = 1,
             graphify_bridge.note_vault_write()
         except Exception:
             pass
+        try:
+            from openjarvis.tools import graphify_trigger
+            graphify_trigger.maybe_refresh_after_task(cooldown_seconds=60.0)
+        except Exception:
+            logger.debug("graphify live refresh trigger failed", exc_info=True)
+        try:
+            from openjarvis.tools import codegraph_trigger
+            codegraph_trigger.maybe_sync_after_change(cooldown_seconds=120.0)
+        except Exception:
+            logger.debug("codegraph live sync trigger failed", exc_info=True)
     event = {
         "op": op,
         "label": label[:120],

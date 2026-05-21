@@ -1376,6 +1376,15 @@ class _Registry:
         # operator knows where the result landed. Suppressed for
         # scheduled tasks (priority>=30) and internal verifier loops.
         # Best-effort, non-fatal.
+        # CodeGraph live sync (2026-05-21) - agent tasks may edit source or
+        # generate project files. Debounced and async, so completion stays
+        # fast even when a department burst finishes.
+        try:
+            from openjarvis.tools import codegraph_trigger
+            codegraph_trigger.maybe_sync_after_change()
+        except Exception:
+            logger.debug("codegraph_trigger: trigger call failed (non-fatal)", exc_info=True)
+
         try:
             from openjarvis.tools import task_followup
             task_followup.notify_if_operator_task(t)

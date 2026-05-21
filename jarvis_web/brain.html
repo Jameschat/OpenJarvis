@@ -1411,6 +1411,17 @@ canvas { display: block; }
   color: #ffd76a;
   animation: pulse 2.4s ease-in-out infinite;
 }
+.mc-mute.mc-codegraph {
+  margin-left: 6px;
+  background: rgba(92,207,255,0.14);
+  border-color: rgba(92,207,255,0.48);
+  color: #b9efff;
+}
+.mc-mute.mc-codegraph:hover {
+  background: rgba(92,207,255,0.26);
+  border-color: rgba(92,207,255,0.78);
+  color: #e5fbff;
+}
 .mc-mute.mc-vault {
   margin-left: 6px;
   background: rgba(255,207,106,0.14);
@@ -3141,6 +3152,7 @@ canvas { display: block; }
     <span class="mc-dot" style="background:#5ee0a1"></span>
     SYSTEM · ACTIVITY
     <button id="graphify-btn" class="mc-mute mc-graphify" title="Open the graphify knowledge graph of your vault" style="display:none">◉ GRAPHIFY</button>
+    <button id="codegraph-btn" class="mc-mute mc-codegraph" title="CodeGraph source-code brain status" style="display:none">⌘ CODEGRAPH</button>
     <button id="vault-btn" class="mc-mute mc-vault" title="Vault stats" style="display:none">📓 VAULT</button>
     <button id="music-btn" class="mc-mute mc-music" title="Open ACE-Step music UI" style="display:none">♫ MUSIC</button>
     <button id="provider-btn" class="mc-mute mc-provider" title="Force a specific provider for every dispatched task. Cycles AUTO → CLAUDE → CODEX.">⇄ AUTO</button>
@@ -3488,7 +3500,10 @@ const NAMED_BRAINS = [
   { name: 'OBSIDIAN', rgb: '255,201,90',  x: -240, y:   20, z:    0 },
   { name: 'CHATGPT',  rgb: '94,224,161',  x:  240, y:   20, z:    0 },
   { name: 'GRAPHIFY', rgb: '180,255,140', x:    0, y: -160, z: -140 },
+  { name: 'CODEGRAPH', rgb: '92,207,255', x:    0, y:  140, z: -170 },
 ];
+const CODEGRAPH_BRAIN_IDX = NAMED_BRAINS.findIndex(b => b.name === 'CODEGRAPH');
+let codeGraphPulse = 0;
 const NEURAL_COMMUNITY_PALETTE = [
   '232,112,112', '180,120,255', '255,107,157', '107,164,255',
   '255,180,80',  '90,224,200',  '224,140,255', '255,140,140',
@@ -3675,6 +3690,19 @@ function animate() {
         n.fireLevel = Math.min(1, n.fireLevel + burst * 0.2);
       }
     }
+  }
+
+  // CodeGraph is a first-class source-code brain lobe. When the backend
+  // status poll confirms its project index is alive, this cyan lobe breathes
+  // and fires its own local neurons inside the main cortex.
+  if (codeGraphPulse > 0.01 && CODEGRAPH_BRAIN_IDX >= 0) {
+    const wave = 0.35 + (Math.sin(t * 5) * 0.5 + 0.5) * 0.45;
+    for (const n of neurons) {
+      if (n.communityIdx === CODEGRAPH_BRAIN_IDX && Math.random() < 0.18) {
+        n.fireLevel = Math.min(1, n.fireLevel + codeGraphPulse * wave);
+      }
+    }
+    codeGraphPulse *= 0.982;
   }
 
   // --- Update neurons ---
@@ -7123,7 +7151,14 @@ function updateRegionLabels() {
     const py = r.probe.sy + (dy / len) * off;
     r.el.style.left = px.toFixed(1) + 'px';
     r.el.style.top  = py.toFixed(1) + 'px';
-    r.el.style.opacity = behind ? '0.18' : '0.92';
+    const codeGraphBoost = r.centroid.name === 'CODEGRAPH' ? codeGraphPulse : 0;
+    r.el.style.opacity = behind ? '0.18' : String(Math.min(1, 0.92 + codeGraphBoost * 0.08));
+    r.el.style.transform = codeGraphBoost > 0.02
+      ? `translate(-50%, -50%) scale(${(1 + codeGraphBoost * 0.08).toFixed(3)})`
+      : 'translate(-50%, -50%)';
+    if (r.centroid.name === 'CODEGRAPH') {
+      r.el.style.boxShadow = `0 0 ${(8 + codeGraphBoost * 18).toFixed(1)}px rgba(${r.centroid.rgb},${(0.22 + codeGraphBoost * 0.38).toFixed(3)})`;
+    }
   }
 }
 
@@ -8494,6 +8529,58 @@ if (elGraphifyBtn) {
   });
   refreshGraphify();
   setInterval(refreshGraphify, 30000);
+}
+
+// --- CodeGraph source-code brain ---
+// Exposes the project-local CodeGraph MCP/index status in the same top HUD
+// strip as Graphify and Vault. Refreshing is handled by the daily automation;
+// this control only reads status and opens the JSON detail page.
+const elCodeGraphBtn = document.getElementById('codegraph-btn');
+async function refreshCodeGraph() {
+  if (!elCodeGraphBtn) return;
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const host = params.get('host') || window.location.host || 'localhost:7710';
+    const proto = window.location.protocol === 'https:' ? 'https' : 'http';
+    const r = await fetch(`${proto}://${host}/codegraph/status`, { credentials: 'include' });
+    if (!r.ok) return;
+    const d = await r.json();
+    if (d.installed || d.indexed || d.mcp_configured) {
+      elCodeGraphBtn.style.display = '';
+      const nodes = Number(d.nodes || 0).toLocaleString();
+      const files = Number(d.files || 0).toLocaleString();
+      let label = `⌘ CODEGRAPH · ${nodes}n`;
+      if (!d.online) label = `⌘ CODEGRAPH · CHECK`;
+      elCodeGraphBtn.textContent = label;
+      if (d.online) {
+        codeGraphPulse = Math.max(codeGraphPulse, 0.78);
+        spawnCortexSpark('92,207,255', 3);
+      }
+      const updated = d.updated_at
+        ? new Date(d.updated_at * 1000).toLocaleString()
+        : 'not indexed yet';
+      elCodeGraphBtn.title =
+        `CodeGraph source-code brain\n` +
+        `${files} files · ${nodes} nodes · ${Number(d.edges || 0).toLocaleString()} edges\n` +
+        `Index: ${d.indexed ? 'ready' : 'missing'} · MCP: ${d.mcp_configured ? 'wired' : 'not wired'} · tool: ${d.installed ? 'installed' : 'missing'}\n` +
+        `Updated: ${updated}\n` +
+        `${d.refresh || 'daily refresh configured'}\n` +
+        `Click: open status JSON.`;
+    } else {
+      elCodeGraphBtn.style.display = 'none';
+    }
+  } catch (_) { /* leave hidden */ }
+}
+if (elCodeGraphBtn) {
+  elCodeGraphBtn.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    const params = new URLSearchParams(window.location.search);
+    const host = params.get('host') || window.location.host || 'localhost:7710';
+    const proto = window.location.protocol === 'https:' ? 'https' : 'http';
+    window.open(`${proto}://${host}/codegraph/status`, '_blank', 'noopener');
+  });
+  refreshCodeGraph();
+  setInterval(refreshCodeGraph, 30000);
 }
 
 // --- Vault summary button (mirrors graphify-btn pattern) ---
