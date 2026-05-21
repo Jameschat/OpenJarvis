@@ -47,3 +47,16 @@ def test_fastlane_server_command_can_use_ngram_probe_without_draft_model():
     assert "--spec-type" in command
     assert "ngram-simple" in command
     assert "--spec-draft-n-max" in command
+
+
+def test_fastlane_server_command_can_use_qwen_mtp_checkpoint():
+    command = qwen_fast_lane.build_llama_server_command(
+        llama_server_path=Path("C:/llama/llama-server.exe"),
+        model_path=Path("D:/models/Qwen3.6-27B-MTP-Q4_K_M-Q8nextn.gguf"),
+        speculative_mode="draft-mtp",
+    )
+
+    assert "--model-draft" not in command
+    assert "--spec-type" in command
+    assert "draft-mtp" in command
+    assert "--spec-draft-n-max" in command

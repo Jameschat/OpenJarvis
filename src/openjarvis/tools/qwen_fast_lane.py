@@ -18,6 +18,7 @@ OLLAMA_QWEN_MODEL = "qwen3.6:27b"
 
 SpeculativeMode = Literal[
     "none",
+    "draft-mtp",
     "ngram-simple",
     "ngram-map-k",
     "ngram-map-k4v",
