@@ -8,6 +8,16 @@
                 "E:\\Claude\\OpenJarvis"
             ]
         },
+        "codegraph": {
+            "command": "C:\\Users\\User\\.openjarvis\\tools\\codegraph-0.8.0\\node_modules\\.bin\\codegraph.cmd",
+            "args": [
+                "serve",
+                "--mcp",
+                "--path",
+                "E:\\Claude\\OpenJarvis",
+                "--no-watch"
+            ]
+        },
         "agentmemory": {
             "type": "stdio",
             "command": "npx",
