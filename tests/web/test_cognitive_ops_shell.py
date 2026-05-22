@@ -23,7 +23,8 @@ def test_brain_html_contains_cognitive_operations_shell():
     assert "Run Backtest" in html
     assert "Create Paper Bot" in html
     assert "Start Mission" in html
-    assert "grid-template-rows: 66px minmax(0, 0.82fr) 210px 48px;" in html
+    assert "height: calc(100dvh - 16px);" in html
+    assert "grid-template-rows: 66px minmax(420px, 1fr) 210px 48px;" in html
     assert "function submitApprovalDecision(kind)" in html
     assert "no generic chat task sent" in html
     approval_fn = html[
