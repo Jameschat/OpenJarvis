@@ -31,7 +31,7 @@ def test_brain_html_contains_cognitive_operations_shell():
     assert "Open System Monitor" in html
     assert 'href="/vault/summary"' in html
     assert 'href="/codegraph"' in html
-    assert 'href="/jarvis-os/state"' in html
+    assert 'href="/jarvis-os"' in html
 
 
 def test_cognitive_shell_uses_existing_live_status_endpoints():
