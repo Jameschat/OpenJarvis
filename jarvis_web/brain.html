@@ -4897,7 +4897,7 @@ canvas { display: block; }
           <div class="activity-row"><span>feat(hud): show live codegraph brain</span><span>4h ago</span></div>
           <div class="activity-row"><span>fix(hud): prefer same-origin briefing fetch</span><span>6h ago</span></div>
         </div>
-        <a class="intel-link-row" href="/codegraph/status">Open CodeGraph <span>›</span></a>
+        <a class="intel-link-row" href="/codegraph">Open CodeGraph <span>›</span></a>
       </article>
       <article class="intel-card">
         <div class="intel-top">
@@ -10456,7 +10456,7 @@ if (elGraphifyBtn) {
 // --- CodeGraph source-code brain ---
 // Exposes the project-local CodeGraph MCP/index status in the same top HUD
 // strip as Graphify and Vault. Refreshing is handled by the daily automation;
-// this control only reads status and opens the JSON detail page.
+// this control only reads status and opens the visual CodeGraph dashboard.
 const elCodeGraphBtn = document.getElementById('codegraph-btn');
 async function refreshCodeGraph() {
   if (!elCodeGraphBtn) return;
@@ -10487,7 +10487,7 @@ async function refreshCodeGraph() {
         `Index: ${d.indexed ? 'ready' : 'missing'} · MCP: ${d.mcp_configured ? 'wired' : 'not wired'} · tool: ${d.installed ? 'installed' : 'missing'}\n` +
         `Updated: ${updated}\n` +
         `${d.refresh || 'daily refresh configured'}\n` +
-        `Click: open status JSON.`;
+        `Click: open CodeGraph dashboard.`;
     } else {
       elCodeGraphBtn.style.display = 'none';
     }
@@ -10499,7 +10499,7 @@ if (elCodeGraphBtn) {
     const params = new URLSearchParams(window.location.search);
     const host = params.get('host') || window.location.host || 'localhost:7710';
     const proto = window.location.protocol === 'https:' ? 'https' : 'http';
-    window.open(`${proto}://${host}/codegraph/status`, '_blank', 'noopener');
+    window.open(`${proto}://${host}/codegraph`, '_blank', 'noopener');
   });
   refreshCodeGraph();
   setInterval(refreshCodeGraph, 30000);

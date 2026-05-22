@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1.0">
+<title>J.A.R.V.I.S. · CodeGraph</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #030914;
+    --panel: rgba(4, 16, 31, 0.82);
+    --line: rgba(66, 223, 255, 0.32);
+    --cyan: #42dfff;
+    --green: #5ee0a1;
+    --text: #dff8ff;
+    --muted: rgba(190, 226, 244, 0.68);
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    min-height: 100%;
+    background:
+      radial-gradient(circle at 50% 42%, rgba(66, 223, 255, 0.18), transparent 30%),
+      radial-gradient(circle at 78% 22%, rgba(94, 224, 161, 0.10), transparent 22%),
+      linear-gradient(135deg, #020711, #031423 55%, #020711);
+    color: var(--text);
+    font-family: "Segoe UI", system-ui, sans-serif;
+    overflow-x: hidden;
+  }
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background-image:
+      radial-gradient(circle, rgba(66,223,255,0.58) 0 1px, transparent 1.6px),
+      linear-gradient(rgba(66,223,255,0.035) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(66,223,255,0.035) 1px, transparent 1px);
+    background-size: 90px 90px, 48px 48px, 48px 48px;
+    opacity: 0.34;
+  }
+  .shell {
+    position: relative;
+    min-height: 100vh;
+    padding: 14px;
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    gap: 12px;
+  }
+  .topbar, .panel, .footer {
+    border: 1px solid var(--line);
+    background: var(--panel);
+    box-shadow: inset 0 0 24px rgba(66, 223, 255, 0.055), 0 0 26px rgba(0, 0, 0, 0.3);
+    backdrop-filter: blur(10px);
+  }
+  .topbar {
+    min-height: 76px;
+    border-radius: 8px;
+    display: grid;
+    grid-template-columns: auto 1fr repeat(3, minmax(160px, 220px));
+    align-items: center;
+    gap: 12px;
+    padding: 10px 14px;
+  }
+  .orb {
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    border: 2px solid rgba(66, 223, 255, 0.62);
+    background:
+      conic-gradient(from 20deg, rgba(66,223,255,0.08), rgba(66,223,255,0.88), rgba(94,224,161,0.32), rgba(66,223,255,0.08)),
+      radial-gradient(circle, rgba(4,16,31,1) 0 38%, transparent 40%);
+    box-shadow: 0 0 22px rgba(66, 223, 255, 0.32);
+  }
+  h1 {
+    margin: 0;
+    font-size: 24px;
+    letter-spacing: 8px;
+    font-weight: 650;
+  }
+  .subtitle {
+    margin-top: 4px;
+    color: var(--muted);
+    font-size: 12px;
+    letter-spacing: 1.7px;
+  }
+  .stat {
+    min-height: 54px;
+    border-left: 1px solid rgba(66,223,255,0.18);
+    padding-left: 14px;
+  }
+  .label {
+    color: rgba(166,209,232,0.82);
+    font-size: 10px;
+    letter-spacing: 1.8px;
+    text-transform: uppercase;
+  }
+  .value {
+    margin-top: 6px;
+    color: var(--text);
+    font: 700 18px "Consolas", monospace;
+  }
+  .value.good { color: var(--green); }
+  .main {
+    display: grid;
+    grid-template-columns: 1fr 340px;
+    gap: 12px;
+    min-height: 0;
+  }
+  .panel {
+    border-radius: 8px;
+    padding: 12px;
+    min-height: 0;
+  }
+  .panel-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    color: #9defff;
+    font-size: 12px;
+    letter-spacing: 2.5px;
+    text-transform: uppercase;
+  }
+  .badge {
+    border: 1px solid rgba(94,224,161,0.45);
+    border-radius: 5px;
+    padding: 3px 8px;
+    color: var(--green);
+    background: rgba(94,224,161,0.11);
+    font-size: 10px;
+    letter-spacing: 1.2px;
+  }
+  .graph-wrap {
+    position: relative;
+    margin-top: 10px;
+    height: min(660px, calc(100vh - 190px));
+    min-height: 460px;
+    border: 1px solid rgba(66,223,255,0.18);
+    border-radius: 6px;
+    background: radial-gradient(circle at 50% 50%, rgba(66,223,255,0.16), transparent 32%), rgba(1, 9, 19, 0.54);
+    overflow: hidden;
+  }
+  #codegraph-canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
+  .center-node, .node {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    text-align: center;
+  }
+  .core {
+    width: 116px;
+    height: 116px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    border: 2px solid rgba(66,223,255,0.72);
+    background: radial-gradient(circle, rgba(66,223,255,0.38), rgba(2,16,32,0.96) 66%);
+    box-shadow: 0 0 42px rgba(66,223,255,0.42);
+    color: #bff7ff;
+    font-size: 34px;
+  }
+  .node .icon {
+    width: 70px;
+    height: 70px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    border: 2px solid var(--accent);
+    background: radial-gradient(circle, color-mix(in srgb, var(--accent) 18%, transparent), rgba(2,14,28,0.96) 65%);
+    box-shadow: 0 0 24px color-mix(in srgb, var(--accent) 38%, transparent);
+    color: var(--accent);
+    font-size: 25px;
+    margin: 0 auto 8px;
+  }
+  .node strong {
+    display: block;
+    color: #effbff;
+    font-size: 12px;
+    text-shadow: 0 0 8px rgba(0,0,0,0.8);
+  }
+  .node span, .center-node span {
+    display: block;
+    color: var(--muted);
+    font-size: 10px;
+    line-height: 1.35;
+  }
+  .center-node strong {
+    display: block;
+    margin-top: 8px;
+    font-size: 14px;
+    letter-spacing: 3px;
+  }
+  .side {
+    display: grid;
+    gap: 12px;
+    align-content: start;
+  }
+  .metric-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+    margin-top: 10px;
+  }
+  .metric, .detail {
+    border: 1px solid rgba(66,223,255,0.18);
+    border-radius: 6px;
+    padding: 10px;
+    background: rgba(2,13,26,0.52);
+  }
+  .metric strong {
+    display: block;
+    margin-top: 5px;
+    font: 700 22px "Consolas", monospace;
+  }
+  .detail {
+    margin-top: 8px;
+    color: var(--muted);
+    font: 11px/1.45 "Consolas", monospace;
+    overflow-wrap: anywhere;
+  }
+  .actions {
+    display: grid;
+    gap: 8px;
+    margin-top: 10px;
+  }
+  .action {
+    min-height: 32px;
+    border: 1px solid rgba(66,223,255,0.24);
+    border-radius: 6px;
+    color: var(--text);
+    background: rgba(8,24,42,0.68);
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 10px;
+    font-size: 10px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+  }
+  .action:hover {
+    color: var(--cyan);
+    border-color: rgba(66,223,255,0.58);
+  }
+  .footer {
+    border-radius: 8px;
+    min-height: 46px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 14px;
+    color: var(--muted);
+    font-size: 11px;
+    letter-spacing: 1.4px;
+  }
+  @media (max-width: 900px) {
+    .topbar { grid-template-columns: auto 1fr; }
+    .stat { border-left: 0; border-top: 1px solid rgba(66,223,255,0.18); padding: 10px 0 0; }
+    .main { grid-template-columns: 1fr; }
+    .graph-wrap { height: 540px; min-height: 540px; }
+    h1 { font-size: 16px; letter-spacing: 4px; }
+  }
+</style>
+</head>
+<body>
+<main class="shell">
+  <header class="topbar">
+    <div class="orb" aria-hidden="true"></div>
+    <div>
+      <h1>CODEGRAPH</h1>
+      <div class="subtitle">Project source-code brain · MCP index · Jarvis operations context</div>
+    </div>
+    <div class="stat"><div class="label">Status</div><div class="value good" id="status">Loading</div></div>
+    <div class="stat"><div class="label">Repository</div><div class="value" id="repo">OpenJarvis</div></div>
+    <div class="stat"><div class="label">Refresh</div><div class="value" id="refresh">Daily</div></div>
+  </header>
+
+  <section class="main">
+    <section class="panel">
+      <div class="panel-title">Source Intelligence Graph <span class="badge" id="badge">SYNCING</span></div>
+      <div class="graph-wrap" id="graph">
+        <canvas id="codegraph-canvas"></canvas>
+        <div class="center-node" style="left:50%;top:50%">
+          <div class="core">⌘</div>
+          <strong>CODEGRAPH</strong>
+          <span id="core-meta">Indexing project context</span>
+        </div>
+        <div class="node" style="--accent:#42dfff;left:50%;top:13%"><div class="icon">▧</div><strong>Files</strong><span id="node-files">-</span></div>
+        <div class="node" style="--accent:#5ee0a1;left:82%;top:31%"><div class="icon">◇</div><strong>Symbols</strong><span id="node-nodes">-</span></div>
+        <div class="node" style="--accent:#8a7cff;left:82%;top:69%"><div class="icon">↔</div><strong>Edges</strong><span id="node-edges">-</span></div>
+        <div class="node" style="--accent:#ffc95a;left:50%;top:87%"><div class="icon">◷</div><strong>Refresh</strong><span>Live + daily</span></div>
+        <div class="node" style="--accent:#5ecbff;left:18%;top:69%"><div class="icon">M</div><strong>MCP</strong><span id="node-mcp">-</span></div>
+        <div class="node" style="--accent:#b89cff;left:18%;top:31%"><div class="icon">DB</div><strong>Index</strong><span id="node-index">-</span></div>
+      </div>
+    </section>
+
+    <aside class="side">
+      <section class="panel">
+        <div class="panel-title">Index Health <span class="badge" id="health-badge">LIVE</span></div>
+        <div class="metric-grid">
+          <div class="metric"><div class="label">Files</div><strong id="files">-</strong></div>
+          <div class="metric"><div class="label">Nodes</div><strong id="nodes">-</strong></div>
+          <div class="metric"><div class="label">Edges</div><strong id="edges">-</strong></div>
+          <div class="metric"><div class="label">Size</div><strong id="size">-</strong></div>
+        </div>
+        <div class="detail" id="updated">Updated: checking...</div>
+      </section>
+      <section class="panel">
+        <div class="panel-title">Wiring</div>
+        <div class="detail" id="repo-root">Repo: checking...</div>
+        <div class="detail" id="index-dir">Index: checking...</div>
+        <div class="detail" id="tool-path">Tool: checking...</div>
+        <div class="actions">
+          <a class="action" href="/brain.html">Mission Control <span>›</span></a>
+          <a class="action" href="/codegraph/status">Raw Status API <span>›</span></a>
+          <a class="action" href="/graphify">Graphify Vault Brain <span>›</span></a>
+        </div>
+      </section>
+    </aside>
+  </section>
+
+  <footer class="footer">
+    <span>CodeGraph is a source-code brain, not a raw JSON page.</span>
+    <span id="mode">project-local MCP</span>
+  </footer>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const fmt = (value) => Number(value || 0).toLocaleString();
+
+function drawNetwork() {
+  const wrap = $('graph');
+  const canvas = $('codegraph-canvas');
+  const ctx = canvas.getContext('2d');
+  const rect = wrap.getBoundingClientRect();
+  const scale = window.devicePixelRatio || 1;
+  canvas.width = Math.max(1, Math.floor(rect.width * scale));
+  canvas.height = Math.max(1, Math.floor(rect.height * scale));
+  canvas.style.width = `${rect.width}px`;
+  canvas.style.height = `${rect.height}px`;
+  ctx.setTransform(scale, 0, 0, scale, 0, 0);
+  ctx.clearRect(0, 0, rect.width, rect.height);
+
+  const cx = rect.width / 2;
+  const cy = rect.height / 2;
+  const points = [
+    [cx, cy],
+    [rect.width * 0.5, rect.height * 0.13],
+    [rect.width * 0.82, rect.height * 0.31],
+    [rect.width * 0.82, rect.height * 0.69],
+    [rect.width * 0.5, rect.height * 0.87],
+    [rect.width * 0.18, rect.height * 0.69],
+    [rect.width * 0.18, rect.height * 0.31],
+  ];
+
+  ctx.lineWidth = 1;
+  for (let i = 1; i < points.length; i++) {
+    ctx.strokeStyle = i % 2 ? 'rgba(66,223,255,0.45)' : 'rgba(94,224,161,0.42)';
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(points[i][0], points[i][1]);
+    ctx.stroke();
+  }
+  for (let i = 1; i < points.length; i++) {
+    const next = i === points.length - 1 ? 1 : i + 1;
+    ctx.strokeStyle = 'rgba(66,223,255,0.22)';
+    ctx.beginPath();
+    ctx.moveTo(points[i][0], points[i][1]);
+    ctx.lineTo(points[next][0], points[next][1]);
+    ctx.stroke();
+  }
+  for (let i = 0; i < 100; i++) {
+    const x = (Math.sin(i * 73.13) * 0.5 + 0.5) * rect.width;
+    const y = (Math.cos(i * 37.91) * 0.5 + 0.5) * rect.height;
+    const r = i % 9 === 0 ? 2 : 1;
+    ctx.fillStyle = i % 7 === 0 ? 'rgba(94,224,161,0.78)' : 'rgba(66,223,255,0.62)';
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+async function loadStatus() {
+  try {
+    const r = await fetch('/codegraph/status', { credentials: 'include' });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const d = await r.json();
+    $('status').textContent = d.online ? 'Online' : 'Check';
+    $('badge').textContent = d.online ? 'LIVE' : 'CHECK';
+    $('health-badge').textContent = d.indexed ? 'INDEXED' : 'MISSING';
+    $('repo').textContent = (d.repo_root || 'OpenJarvis').split(/[\\/]/).pop();
+    $('refresh').textContent = d.refresh ? 'Live + Daily' : 'Daily';
+    $('files').textContent = fmt(d.files);
+    $('nodes').textContent = fmt(d.nodes);
+    $('edges').textContent = fmt(d.edges);
+    $('size').textContent = `${Number(d.size_mb || 0).toFixed(2)} MB`;
+    $('node-files').textContent = `${fmt(d.files)} files`;
+    $('node-nodes').textContent = `${fmt(d.nodes)} nodes`;
+    $('node-edges').textContent = `${fmt(d.edges)} edges`;
+    $('node-mcp').textContent = d.mcp_configured ? 'Configured' : 'Not wired';
+    $('node-index').textContent = d.indexed ? 'Ready' : 'Missing';
+    $('core-meta').textContent = d.online ? 'Project context live' : 'Status needs attention';
+    $('mode').textContent = d.mode || 'project-local MCP';
+    $('repo-root').textContent = `Repo: ${d.repo_root || 'unknown'}`;
+    $('index-dir').textContent = `Index: ${d.index_dir || 'unknown'}`;
+    $('tool-path').textContent = `Tool: ${d.tool_path || 'unknown'}`;
+    const updated = d.updated_at ? new Date(d.updated_at * 1000).toLocaleString() : 'not indexed yet';
+    $('updated').textContent = `Updated: ${updated}`;
+  } catch (e) {
+    $('status').textContent = 'Offline';
+    $('badge').textContent = 'ERROR';
+    $('updated').textContent = `Status failed: ${e.message || e}`;
+  }
+}
+
+window.addEventListener('resize', drawNetwork);
+drawNetwork();
+loadStatus();
+setInterval(loadStatus, 30000);
+</script>
+</body>
+</html>

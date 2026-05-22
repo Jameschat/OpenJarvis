@@ -1354,6 +1354,9 @@ class _Handler(SimpleHTTPRequestHandler):
             self._handle_graphify_status()
         elif self.path == "/codegraph/status":
             self._json_response(200, _codegraph_status())
+        elif self.path in ("/codegraph", "/codegraph/"):
+            self.path = "/codegraph.html"
+            super().do_GET()
         elif self.path == "/music/status":
             self._handle_music_status()
         elif self.path in ("/", "/brain", "/brain.html"):

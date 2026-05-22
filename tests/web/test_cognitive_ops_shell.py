@@ -30,7 +30,7 @@ def test_brain_html_contains_cognitive_operations_shell():
     assert "Open Markets" in html
     assert "Open System Monitor" in html
     assert 'href="/vault/summary"' in html
-    assert 'href="/codegraph/status"' in html
+    assert 'href="/codegraph"' in html
     assert 'href="/jarvis-os/state"' in html
 
 

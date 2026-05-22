@@ -16,6 +16,7 @@ def test_brain_html_renders_codegraph_as_named_cortex_lobe():
     assert "let codeGraphPulse = 0" in html
     assert "n.communityIdx === CODEGRAPH_BRAIN_IDX" in html
     assert 'id="codegraph-btn"' in html
+    assert "/codegraph" in html
     assert "/codegraph/status" in html
 
 
@@ -69,3 +70,15 @@ def test_brain_server_exposes_codegraph_status_endpoint():
 
     assert 'elif self.path == "/codegraph/status":' in source
     assert "_codegraph_status()" in source
+
+
+def test_brain_server_exposes_codegraph_visual_page():
+    source = (ROOT / "src" / "openjarvis" / "cli" / "brain_server.py").read_text(
+        encoding="utf-8"
+    )
+    html = (ROOT / "jarvis_web" / "codegraph.html").read_text(encoding="utf-8")
+
+    assert 'self.path in ("/codegraph", "/codegraph/")' in source
+    assert 'self.path = "/codegraph.html"' in source
+    assert "CODEGRAPH" in html
+    assert "fetch('/codegraph/status'" in html
