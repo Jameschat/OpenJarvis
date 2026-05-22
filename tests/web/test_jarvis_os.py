@@ -52,6 +52,29 @@ def test_jarvis_os_state_shape_is_local_qwen_first():
     }
     assert isinstance(state["actions"], list)
     assert "New Mission" in state["actions"]
+    assert "system" in state
+    assert "gpu" in state["system"]
+
+
+def test_jarvis_os_system_health_uses_nvidia_smi(monkeypatch):
+    from openjarvis.cli.brain_server import _system_health_snapshot
+
+    class Completed:
+        stdout = "NVIDIA GeForce RTX 4090, 35, 12525, 24564, 19.80\n"
+
+    def fake_run(args, **kwargs):
+        assert "nvidia-smi" in args[0]
+        return Completed()
+
+    monkeypatch.setattr("subprocess.run", fake_run)
+    health = _system_health_snapshot()
+
+    assert health["gpu"]["name"] == "NVIDIA GeForce RTX 4090"
+    assert health["gpu"]["util_percent"] == 35
+    assert health["gpu"]["memory_used_mb"] == 12525
+    assert health["gpu"]["memory_total_mb"] == 24564
+    assert health["gpu"]["power_w"] == 19.8
+    assert health["gpu"]["memory_percent"] == 51
 
 
 def test_brain_server_exposes_jarvis_os_state_endpoint():
@@ -132,5 +155,21 @@ def test_jarvis_os_page_wires_interactive_shell_controls():
         "function startMission()",
         "fetch('/chat'",
         "credentials: 'include'",
+    ):
+        assert marker in html
+
+
+def test_cognitive_operations_gpu_panel_is_live_wired():
+    html = (ROOT / "jarvis_web" / "brain.html").read_text(encoding="utf-8")
+
+    for marker in (
+        'id="cog-top-gpu-value"',
+        'id="cog-top-gpu-util"',
+        'id="cog-top-gpu-bar"',
+        'id="cog-gpu-util"',
+        'id="cog-vram-copy"',
+        'id="cog-vram-meter"',
+        "state.system || {}",
+        "renderCognitiveSystemHealth",
     ):
         assert marker in html

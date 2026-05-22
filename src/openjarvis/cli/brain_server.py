@@ -10,6 +10,7 @@ import logging
 import os
 import re
 import socket
+import subprocess
 import threading
 import time
 import webbrowser
@@ -914,6 +915,111 @@ def _markets_pro_paper_bot_approve_execution(body: Dict[str, Any]) -> Dict[str, 
     )
 
 
+def _round_gb(mb: int | float | None) -> float | None:
+    if mb is None:
+        return None
+    return round(float(mb) / 1024.0, 1)
+
+
+def _system_health_snapshot() -> Dict[str, Any]:
+    """Return a lightweight live hardware snapshot for the HUD."""
+    health: Dict[str, Any] = {
+        "gpu": {
+            "online": False,
+            "name": "",
+            "util_percent": None,
+            "memory_used_mb": None,
+            "memory_total_mb": None,
+            "memory_percent": None,
+            "power_w": None,
+        },
+        "cpu_percent": None,
+        "ram_used_gb": None,
+        "ram_total_gb": None,
+        "ram_percent": None,
+    }
+    try:
+        result = subprocess.run(
+            [
+                "nvidia-smi",
+                "--query-gpu=name,utilization.gpu,memory.used,memory.total,power.draw",
+                "--format=csv,noheader,nounits",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=2,
+            check=False,
+        )
+        line = (result.stdout or "").splitlines()[0].strip()
+        parts = [part.strip() for part in line.split(",")]
+        if len(parts) >= 5:
+            used = int(float(parts[2]))
+            total = int(float(parts[3]))
+            if total > 0 and used > total:
+                used = total
+            health["gpu"].update(
+                {
+                    "online": True,
+                    "name": parts[0],
+                    "util_percent": int(float(parts[1])),
+                    "memory_used_mb": used,
+                    "memory_total_mb": total,
+                    "memory_used_gb": _round_gb(used),
+                    "memory_total_gb": _round_gb(total),
+                    "memory_percent": round((used / total) * 100) if total else None,
+                    "power_w": round(float(parts[4]), 1),
+                }
+            )
+    except Exception:
+        logger.debug("nvidia-smi health snapshot unavailable", exc_info=True)
+
+    try:
+        import psutil
+
+        memory = psutil.virtual_memory()
+        health.update(
+            {
+                "cpu_percent": round(float(psutil.cpu_percent(interval=None))),
+                "ram_used_gb": round((memory.total - memory.available) / (1024 ** 3), 1),
+                "ram_total_gb": round(memory.total / (1024 ** 3), 1),
+                "ram_percent": round(float(memory.percent)),
+            }
+        )
+    except Exception:
+        logger.debug("psutil health snapshot unavailable", exc_info=True)
+        if os.name == "nt":
+            try:
+                import ctypes
+
+                class MEMORYSTATUSEX(ctypes.Structure):
+                    _fields_ = [
+                        ("dwLength", ctypes.c_ulong),
+                        ("dwMemoryLoad", ctypes.c_ulong),
+                        ("ullTotalPhys", ctypes.c_ulonglong),
+                        ("ullAvailPhys", ctypes.c_ulonglong),
+                        ("ullTotalPageFile", ctypes.c_ulonglong),
+                        ("ullAvailPageFile", ctypes.c_ulonglong),
+                        ("ullTotalVirtual", ctypes.c_ulonglong),
+                        ("ullAvailVirtual", ctypes.c_ulonglong),
+                        ("sullAvailExtendedVirtual", ctypes.c_ulonglong),
+                    ]
+
+                status = MEMORYSTATUSEX()
+                status.dwLength = ctypes.sizeof(MEMORYSTATUSEX)
+                ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status))
+                used = status.ullTotalPhys - status.ullAvailPhys
+                health.update(
+                    {
+                        "ram_used_gb": round(used / (1024 ** 3), 1),
+                        "ram_total_gb": round(status.ullTotalPhys / (1024 ** 3), 1),
+                        "ram_percent": int(status.dwMemoryLoad),
+                    }
+                )
+            except Exception:
+                logger.debug("windows memory snapshot unavailable", exc_info=True)
+    return health
+
+
 def _markets_pro_analyze(body: Dict[str, Any]) -> Dict[str, Any]:
     """Decode posted image + run chart_analyst + return inline result."""
     from openjarvis.markets import chart_analyst
@@ -982,12 +1088,27 @@ def _jarvis_os_state() -> Dict[str, Any]:
     itself as "pending" rather than triggering heavy work on page load.
     """
     now = time.strftime("%H:%M")
+    health = _system_health_snapshot()
+    gpu = health.get("gpu") or {}
     widgets: Dict[str, Any] = {
         "missions": {"label": "Active missions", "value": 0, "status": "pending"},
         "agents": {"label": "Agent queue", "value": 0, "status": "pending"},
         "plugins": {"label": "Plugin learning queue", "value": "Ready", "status": "ready"},
         "markets": {"label": "Market pulse", "value": "Idle", "status": "pending"},
-        "gpu": {"label": "GPU / local load", "value": "Local", "status": "pending"},
+        "gpu": {
+            "label": "GPU / local load",
+            "value": (
+                f"{gpu.get('util_percent')}%"
+                if gpu.get("util_percent") is not None
+                else "Unavailable"
+            ),
+            "status": "ready" if gpu.get("online") else "pending",
+            "sub": (
+                f"{gpu.get('name')} / {gpu.get('memory_used_gb')} of {gpu.get('memory_total_gb')} GB VRAM"
+                if gpu.get("online")
+                else "nvidia-smi unavailable"
+            ),
+        },
         "schedule": {"label": "Scheduled work", "value": 0, "status": "pending"},
         "inbox": {"label": "Approvals / escalations", "value": 0, "status": "ready"},
         "memory": {"label": "Brain memory", "value": "Loaded", "status": "ready"},
@@ -1022,6 +1143,7 @@ def _jarvis_os_state() -> Dict[str, Any]:
             "mode": "local-first",
             "escalation": "Claude/Codex standby",
         },
+        "system": health,
         "widgets": widgets,
         "actions": [
             "New Mission",

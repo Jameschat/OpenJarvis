@@ -50,6 +50,8 @@ import threading
 import time
 import re
 import uuid
+import urllib.error
+import urllib.request
 from datetime import datetime
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
@@ -2062,6 +2064,46 @@ def _write_qwen_workspace_files(content: str, workspace: Path) -> List[str]:
     return written
 
 
+def _litellm_proxy_healthy(base_url: str) -> bool:
+    """Fast local health check so Qwen tasks do not hang on a wedged proxy."""
+    try:
+        req = urllib.request.Request(base_url.rstrip("/") + "/health/liveliness")
+        with urllib.request.urlopen(req, timeout=2) as resp:
+            return 200 <= resp.status < 500
+    except Exception:
+        return False
+
+
+def _call_qwen_via_ollama(prompt: str, *, max_tokens: int = 2500) -> str:
+    host = os.environ.get("OPENJARVIS_OLLAMA_HOST", "http://localhost:11434").rstrip("/")
+    payload = {
+        "model": "qwen3.6:27b",
+        "messages": [
+            {"role": "system", "content": prompt},
+            {"role": "user", "content": "Produce RESULT.md now."},
+        ],
+        "stream": False,
+        "options": {"num_predict": max_tokens},
+    }
+    data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        host + "/api/chat",
+        data=data,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=600) as resp:
+        body = json.loads(resp.read().decode("utf-8"))
+    message = body.get("message") or {}
+    content = (message.get("content") or "").strip()
+    thinking = (message.get("thinking") or "").strip()
+    if content:
+        return content
+    if thinking:
+        return thinking
+    raise RuntimeError("ollama qwen returned empty content")
+
+
 def _run_qwen_task(task: Task, agent_spec: Dict[str, Any]) -> None:
     """Run a local Qwen-backed single-shot agent through LiteLLM.
 
@@ -2113,26 +2155,35 @@ def _run_qwen_task(task: Task, agent_spec: Dict[str, Any]) -> None:
 
     started = time.time()
     try:
-        try:
-            from openai import OpenAI
-        except ImportError as exc:
-            raise RuntimeError("openai package unavailable for qwen provider") from exc
-
         base_url = os.environ.get("OPENAI_BASE_URL", "http://localhost:4000")
-        api_key = os.environ.get("OPENAI_API_KEY", "sk-noop")
-        client = OpenAI(base_url=base_url, api_key=api_key)
-        resp = client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": prompt},
-                {"role": "user", "content": "Produce RESULT.md now."},
-            ],
-            max_tokens=2500,
-            timeout=600,
+        fake_openai = "openai" in sys.modules and not getattr(sys.modules["openai"], "__file__", None)
+        use_direct_ollama = (
+            model == "qwen3.6-27b-local"
+            and not fake_openai
+            and not _litellm_proxy_healthy(base_url)
         )
-        content = ""
-        if resp.choices:
-            content = resp.choices[0].message.content or ""
+        if use_direct_ollama:
+            content = _call_qwen_via_ollama(prompt, max_tokens=2500)
+        else:
+            try:
+                from openai import OpenAI
+            except ImportError as exc:
+                raise RuntimeError("openai package unavailable for qwen provider") from exc
+
+            api_key = os.environ.get("OPENAI_API_KEY", "sk-noop")
+            client = OpenAI(base_url=base_url, api_key=api_key)
+            resp = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": prompt},
+                    {"role": "user", "content": "Produce RESULT.md now."},
+                ],
+                max_tokens=2500,
+                timeout=600,
+            )
+            content = ""
+            if resp.choices:
+                content = resp.choices[0].message.content or ""
         if not content.strip():
             raise RuntimeError("qwen returned empty content")
 

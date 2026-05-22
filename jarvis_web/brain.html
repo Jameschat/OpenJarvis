@@ -3539,7 +3539,7 @@ canvas { display: block; }
   }
   .cog-stat-bar i {
     display: block;
-    width: 87%;
+    width: var(--level, 0%);
     height: 100%;
     background: linear-gradient(90deg, #56e9a4, #26cdfa);
   }
@@ -4611,13 +4611,14 @@ canvas { display: block; }
       <div class="cog-stat-split">
         <div>
           <div class="cog-top-label">Model</div>
-          <div class="cog-top-value">qwen3.6:27b</div>
+          <div class="cog-top-value" id="cog-top-model-value">qwen3.6:27b</div>
+          <div hidden id="cog-top-model-sub">Local-first</div>
           <div class="cog-top-sub cog-online">● Local-first</div>
         </div>
         <div>
           <div class="cog-top-label">GPU</div>
-          <div class="cog-top-value">RTX 4090 <span class="cog-online">87%</span></div>
-          <div class="cog-stat-bar"><i></i></div>
+          <div class="cog-top-value"><span id="cog-top-gpu-value">RTX 4090</span> <span class="cog-online" id="cog-top-gpu-util">--%</span></div>
+          <div class="cog-stat-bar" id="cog-top-gpu-bar"><i></i></div>
         </div>
       </div>
     </div>
@@ -4978,15 +4979,15 @@ canvas { display: block; }
           <span class="intel-badge" id="cog-model-badge">Live</span>
         </div>
         <div class="gpu-health-grid">
-          <div class="intel-subpanel"><div class="intel-field-label">Model</div><div class="intel-field-value good" id="cog-model-copy" data-cog-static="true">qwen3.6:27b<br>Local-first</div></div>
-          <div class="gpu-gauge"><strong>87%</strong></div>
-          <div class="intel-subpanel"><div class="intel-field-label">VRAM</div><div class="intel-field-value">18.7 / 24 GB</div><div class="health-meter" style="--level:78%"><i></i></div></div>
+          <div class="intel-subpanel"><div class="intel-field-label">Model</div><div class="intel-field-value good" id="cog-model-copy">qwen3.6:27b / Local-first</div></div>
+          <div class="gpu-gauge"><strong id="cog-gpu-util">--%</strong></div>
+          <div class="intel-subpanel"><div class="intel-field-label">VRAM</div><div class="intel-field-value" id="cog-vram-copy">-- / -- GB</div><div class="health-meter" id="cog-vram-meter" style="--level:0%"><i></i></div></div>
         </div>
         <div class="health-strip">
           <div><div class="intel-field-label">Context</div><div class="intel-field-value">32K / 23K</div></div>
-          <div><div class="intel-field-label">CPU</div><div class="intel-field-value">23%</div></div>
-          <div><div class="intel-field-label">RAM</div><div class="intel-field-value">31.2 / 64 GB</div></div>
-          <div><div class="intel-field-label">Disk I/O</div><div class="intel-field-value">120 MB/s</div></div>
+          <div><div class="intel-field-label">CPU</div><div class="intel-field-value" id="cog-cpu-copy">--%</div></div>
+          <div><div class="intel-field-label">RAM</div><div class="intel-field-value" id="cog-ram-copy">-- / -- GB</div></div>
+          <div><div class="intel-field-label">GPU Power</div><div class="intel-field-value" id="cog-gpu-power-copy">-- W</div></div>
         </div>
         <a class="intel-link-row" href="/jarvis-os">Open System Monitor <span>›</span></a>
       </article>
@@ -10697,6 +10698,37 @@ function cogSetText(id, value) {
   if (el && el.dataset && el.dataset.cogStatic === 'true') return;
   if (el) el.textContent = value;
 }
+function cogSetLevel(id, value) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const pct = Math.max(0, Math.min(100, Number(value) || 0));
+  el.style.setProperty('--level', pct + '%');
+}
+function renderCognitiveSystemHealth(state) {
+  const model = state.model || {};
+  const system = state.system || {};
+  const gpu = system.gpu || {};
+  const gpuName = gpu.name || 'GPU unavailable';
+  const gpuUtil = gpu.util_percent == null ? '--' : String(gpu.util_percent);
+  const gpuMemoryPct = gpu.memory_percent == null ? 0 : gpu.memory_percent;
+  cogSetText('cog-top-model-value', model.primary || 'qwen3.6:27b');
+  cogSetText('cog-top-model-sub', model.mode ? '● ' + model.mode : '● Local-first');
+  cogSetText('cog-top-gpu-value', gpuName.replace('NVIDIA GeForce ', ''));
+  cogSetText('cog-top-gpu-util', gpuUtil + '%');
+  cogSetLevel('cog-top-gpu-bar', gpu.util_percent);
+  cogSetText('cog-model-badge', model.mode || 'local');
+  cogSetText('cog-model-copy', `${model.primary || 'qwen3.6:27b'} / ${model.alias || 'qwen3.6-27b-local'} / ${model.escalation || 'Claude/Codex standby'}`);
+  cogSetText('cog-gpu-util', gpuUtil + '%');
+  cogSetText('cog-vram-copy', gpu.memory_used_gb == null || gpu.memory_total_gb == null
+    ? '-- / -- GB'
+    : `${gpu.memory_used_gb} / ${gpu.memory_total_gb} GB`);
+  cogSetLevel('cog-vram-meter', gpuMemoryPct);
+  cogSetText('cog-cpu-copy', system.cpu_percent == null ? '--%' : system.cpu_percent + '%');
+  cogSetText('cog-ram-copy', system.ram_used_gb == null || system.ram_total_gb == null
+    ? '-- / -- GB'
+    : `${system.ram_used_gb} / ${system.ram_total_gb} GB`);
+  cogSetText('cog-gpu-power-copy', gpu.power_w == null ? '-- W' : gpu.power_w + ' W');
+}
 async function cogFetchJson(path) {
   const params = new URLSearchParams(window.location.search);
   const host = params.get('host') || window.location.host || 'localhost:7710';
@@ -10714,11 +10746,9 @@ async function refreshCognitiveOps() {
     const missions = widgets.missions || {};
     const agents = widgets.agents || {};
     const schedule = widgets.schedule || {};
-    const model = state.model || {};
     cogSetText('cog-directive-count', `${missions.value || 0} missions / ${schedule.value || 0} scheduled`);
-    cogSetText('cog-model-badge', model.mode || 'local');
-    cogSetText('cog-model-copy', `${model.primary || 'qwen3.6:27b'} via ${model.alias || 'qwen3.6-27b-local'}; ${model.escalation || 'Claude/Codex standby'}.`);
     cogSetText('cog-center-sub', `${agents.value || 0} agents / ${missions.value || 0} active missions / ${schedule.value || 0} scheduled jobs`);
+    renderCognitiveSystemHealth(state);
   } catch (_) {
     cogSetText('cog-directive-count', 'offline');
   }

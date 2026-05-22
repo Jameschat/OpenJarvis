@@ -83,6 +83,47 @@ def test_qwen_provider_runtime_path_exists():
     assert "RESULT.md" in qwen_source
     assert "OpenAI(base_url=base_url" in qwen_source
     assert 'model = (agent_spec.get("model") or "qwen3.6-27b-local")' in qwen_source
+    assert "_call_qwen_via_ollama" in qwen_source
+
+
+def test_qwen_provider_bypasses_stalled_litellm_for_direct_ollama(monkeypatch, tmp_path):
+    from openjarvis.tools import agent_runner
+    from openjarvis.tools.agent_runner import Task
+
+    class DummyRegistry:
+        def __init__(self):
+            self.finished = []
+
+        def mark_running(self, task_id, workspace):
+            pass
+
+        def mark_finished(self, task_id, exit_code, error=None):
+            self.finished.append((task_id, exit_code, error))
+
+    dummy_reg = DummyRegistry()
+    monkeypatch.setattr(agent_runner, "RUNS_DIR", tmp_path)
+    monkeypatch.setattr(agent_runner, "_reg", dummy_reg)
+    monkeypatch.setattr(agent_runner, "_build_brain_context", lambda: "")
+    monkeypatch.setattr(agent_runner, "_write_agent_task_note", lambda *args, **kwargs: None)
+    monkeypatch.setattr(agent_runner, "_litellm_proxy_healthy", lambda base_url: False)
+    monkeypatch.setattr(agent_runner, "_call_qwen_via_ollama", lambda prompt, **kwargs: "Direct Ollama result.")
+    monkeypatch.setenv("OPENAI_BASE_URL", "http://localhost:4000")
+
+    task = Task(
+        id="task-qwen-direct",
+        title="Qwen direct test",
+        agent_id="qwen-researcher",
+        prompt="Use local model.",
+    )
+
+    agent_runner._run_qwen_task(
+        task,
+        {"id": "qwen-researcher", "role": "Research locally.", "model": "qwen3.6-27b-local"},
+    )
+
+    result = tmp_path / "task-qwen-direct" / "RESULT.md"
+    assert "Direct Ollama result." in result.read_text(encoding="utf-8")
+    assert dummy_reg.finished == [("task-qwen-direct", 0, None)]
 
 
 def test_qwen_provider_writes_result_markdown(monkeypatch, tmp_path):
