@@ -3284,6 +3284,19 @@ canvas { display: block; }
   background: rgba(255,120,80,0.14);
   border: 1px solid rgba(255,170,100,0.42);
 }
+.approval-status {
+  grid-column: 1 / -1;
+  min-height: 24px;
+  padding: 6px 9px;
+  border: 1px solid rgba(94,224,255,0.16);
+  border-radius: 6px;
+  background: rgba(3,13,26,0.38);
+  color: rgba(190,226,244,0.78);
+  font-size: 10px;
+  line-height: 1.35;
+}
+.approval-status.good { color: #5ee0a1; border-color: rgba(94,224,161,0.32); }
+.approval-status.warn { color: #ffd15e; border-color: rgba(255,209,94,0.32); }
 @media (max-width: 1280px) {
   #cognitive-shell {
     grid-template-columns: 260px 1fr 260px;
@@ -3366,6 +3379,7 @@ canvas { display: block; }
     height: 100%;
     align-self: stretch;
     grid-template-columns: 1.1fr 0.78fr 0.65fr 1fr auto;
+    grid-template-rows: 1fr auto;
     padding: 10px 14px;
     min-height: 0;
     overflow: hidden;
@@ -4985,6 +4999,7 @@ canvas { display: block; }
       <button id="cog-approve" type="button">Approve</button>
       <button id="cog-disprove" type="button">Disprove</button>
     </div>
+    <div class="approval-status" id="cog-approval-status">No pending approval has been executed yet.</div>
   </section>
 
   <section class="cog-panel cog-agents" aria-label="Agents console">
@@ -10697,32 +10712,34 @@ async function refreshCognitiveOps() {
     cogSetText('cog-graph-badge', 'Offline');
   }
 }
-function primeApprovalText(kind) {
-  const input = document.getElementById('composer-input');
-  if (!input) return false;
-  input.value = kind === 'approve'
-    ? 'Approved: continue with the recommended Jarvis action and keep it non-destructive unless I explicitly approve escalation.'
-    : 'Disprove this recommendation: explain what is weak, risky, or missing before taking action.';
-  input.dispatchEvent(new Event('input', { bubbles: true }));
-  input.focus();
-  return true;
-}
 function submitApprovalDecision(kind) {
-  const primed = primeApprovalText(kind);
   const title = document.getElementById('cog-approval-title');
   const copy = document.getElementById('cog-approval-copy');
+  const status = document.getElementById('cog-approval-status');
+  const isApprove = kind === 'approve';
   if (title) {
-    title.textContent = kind === 'approve'
-      ? 'Approval sent to Jarvis'
-      : 'Disproof request sent to Jarvis';
+    title.textContent = isApprove
+      ? 'Recommendation approved'
+      : 'Recommendation rejected for review';
   }
   if (copy) {
-    copy.textContent = kind === 'approve'
-      ? 'Jarvis is continuing with the recommended non-destructive action. Escalations still require explicit approval.'
-      : 'Jarvis is reviewing the weak points, risks, and missing evidence before taking action.';
+    copy.textContent = isApprove
+      ? 'This console marked the visible recommendation as approved. No external, destructive, spending, or live-trading action was executed from this generic approval.'
+      : 'This console marked the visible recommendation as rejected. Jarvis should pressure-test the weak points before proceeding.';
   }
-  if (primed && typeof sendChat === 'function') {
-    sendChat();
+  if (status) {
+    status.textContent = isApprove
+      ? 'Approved locally. Next step: use a specific command such as "create the paper bot", "run the backtest", or "start the queued mission" so Jarvis has a concrete action to execute.'
+      : 'Rejected locally. Next step: ask Jarvis to explain the risk, missing evidence, or alternative before continuing.';
+    status.classList.toggle('good', isApprove);
+    status.classList.toggle('warn', !isApprove);
+  }
+  try {
+    logEvent('hud', isApprove
+      ? ' decision approved locally; no generic chat task sent'
+      : ' decision rejected locally; no generic chat task sent');
+  } catch (_) {
+    /* logEvent is optional in static checks */
   }
 }
 const cogApprove = document.getElementById('cog-approve');

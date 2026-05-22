@@ -16,9 +16,10 @@ def test_brain_html_contains_cognitive_operations_shell():
     assert "Decision Console" in html
     assert 'id="cog-approve"' in html
     assert 'id="cog-disprove"' in html
+    assert 'id="cog-approval-status"' in html
     assert "function submitApprovalDecision(kind)" in html
-    assert "sendChat();" in html
-    assert "Approval sent to Jarvis" in html
+    assert "no generic chat task sent" in html
+    assert "sendChat();" not in html[html.index("function submitApprovalDecision(kind)") : html.index("function setCogPage(page)")]
     assert "cog-side-rail" in html
     assert "cog-top" in html
     assert "cog-bottom-nav" in html
