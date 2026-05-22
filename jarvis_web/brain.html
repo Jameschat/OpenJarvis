@@ -10689,17 +10689,36 @@ async function refreshCognitiveOps() {
 }
 function primeApprovalText(kind) {
   const input = document.getElementById('composer-input');
-  if (!input) return;
+  if (!input) return false;
   input.value = kind === 'approve'
     ? 'Approved: continue with the recommended Jarvis action and keep it non-destructive unless I explicitly approve escalation.'
     : 'Disprove this recommendation: explain what is weak, risky, or missing before taking action.';
   input.dispatchEvent(new Event('input', { bubbles: true }));
   input.focus();
+  return true;
+}
+function submitApprovalDecision(kind) {
+  const primed = primeApprovalText(kind);
+  const title = document.getElementById('cog-approval-title');
+  const copy = document.getElementById('cog-approval-copy');
+  if (title) {
+    title.textContent = kind === 'approve'
+      ? 'Approval sent to Jarvis'
+      : 'Disproof request sent to Jarvis';
+  }
+  if (copy) {
+    copy.textContent = kind === 'approve'
+      ? 'Jarvis is continuing with the recommended non-destructive action. Escalations still require explicit approval.'
+      : 'Jarvis is reviewing the weak points, risks, and missing evidence before taking action.';
+  }
+  if (primed && typeof sendChat === 'function') {
+    sendChat();
+  }
 }
 const cogApprove = document.getElementById('cog-approve');
 const cogDisprove = document.getElementById('cog-disprove');
-if (cogApprove) cogApprove.addEventListener('click', () => primeApprovalText('approve'));
-if (cogDisprove) cogDisprove.addEventListener('click', () => primeApprovalText('disprove'));
+if (cogApprove) cogApprove.addEventListener('click', () => submitApprovalDecision('approve'));
+if (cogDisprove) cogDisprove.addEventListener('click', () => submitApprovalDecision('disprove'));
 function setCogPage(page) {
   const shell = document.getElementById('cognitive-shell');
   if (!shell) return;
