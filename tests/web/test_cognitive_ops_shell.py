@@ -22,6 +22,8 @@ def test_brain_html_contains_cognitive_operations_shell():
     assert "cog-side-rail" in html
     assert "cog-top" in html
     assert "cog-bottom-nav" in html
+    assert ".rail-btn,\n.cog-mobile-tabs button,\n.cog-bottom-nav a,\n.cog-bottom-nav button" in html
+    assert "pointer-events: auto;" in html
     assert "cog-mobile-tabs" in html
     assert "starfield" in html
     assert "Cognitive Coach" in html
