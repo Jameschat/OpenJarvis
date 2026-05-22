@@ -2944,6 +2944,9 @@ canvas { display: block; }
   background: rgba(5,18,34,0.58);
   color: rgba(220,242,255,0.9);
 }
+.cog-right .intel-card:nth-of-type(n+5) {
+  display: none;
+}
 .directive-card.priority {
   border-left-color: #ffd15e;
   box-shadow: inset 0 0 24px rgba(255,209,94,0.035);
@@ -2979,6 +2982,149 @@ canvas { display: block; }
   color: rgba(170,210,230,0.72);
   font-size: 10px;
   line-height: 1.4;
+}
+.intel-subpanel {
+  margin-top: 7px;
+  padding: 8px;
+  border: 1px solid rgba(94,224,255,0.15);
+  border-radius: 5px;
+  background: rgba(3,13,26,0.44);
+}
+.intel-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+}
+.intel-field-label {
+  color: rgba(145,190,215,0.70);
+  font-size: 8px;
+  letter-spacing: 0.9px;
+  text-transform: uppercase;
+}
+.intel-field-value {
+  color: #dff8ff;
+  font-size: 10px;
+  margin-top: 2px;
+}
+.intel-field-value.good,
+.intel-link-row .good,
+.market-change.good {
+  color: #5ee0a1;
+}
+.intel-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 7px;
+}
+.intel-tags span {
+  padding: 3px 6px;
+  border: 1px solid rgba(94,224,255,0.18);
+  border-radius: 4px;
+  color: rgba(190,225,245,0.82);
+  background: rgba(94,224,255,0.055);
+  font-size: 8.5px;
+}
+.intel-link-row {
+  margin-top: 7px;
+  min-height: 26px;
+  padding: 0 8px;
+  border: 1px solid rgba(94,224,255,0.22);
+  border-radius: 5px;
+  color: rgba(205,235,250,0.9);
+  background: rgba(8,24,42,0.62);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  text-decoration: none;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-size: 9px;
+}
+.intel-link-row:hover {
+  border-color: rgba(94,224,255,0.48);
+  color: #42dfff;
+}
+.activity-list,
+.market-list {
+  display: grid;
+  gap: 4px;
+  margin-top: 7px;
+}
+.activity-row,
+.market-row {
+  display: grid;
+  align-items: center;
+  gap: 6px;
+  color: rgba(185,220,240,0.78);
+  font-size: 9px;
+}
+.activity-row {
+  grid-template-columns: 1fr auto;
+}
+.market-row {
+  grid-template-columns: 62px 1fr 46px 46px;
+}
+.market-spark {
+  height: 14px;
+  width: 46px;
+}
+.market-spark path {
+  fill: none;
+  stroke: #5ee0a1;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 0 4px rgba(94,224,161,0.55));
+}
+.gpu-health-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 7px;
+}
+.gpu-gauge {
+  position: relative;
+  min-height: 74px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(94,224,255,0.14);
+  border-radius: 5px;
+  background: rgba(3,13,26,0.38);
+}
+.gpu-gauge::before {
+  content: "";
+  width: 82px;
+  height: 42px;
+  border-radius: 82px 82px 0 0;
+  border-top: 8px solid #5ee0a1;
+  border-left: 8px solid #5ee0a1;
+  border-right: 8px solid rgba(120,180,255,0.25);
+}
+.gpu-gauge strong {
+  position: absolute;
+  top: 30px;
+  color: #bff7ff;
+  font-size: 25px;
+}
+.health-meter {
+  height: 7px;
+  margin-top: 8px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(94,224,255,0.11);
+}
+.health-meter i {
+  display: block;
+  height: 100%;
+  width: var(--level, 76%);
+  background: linear-gradient(90deg, #5ee0a1, #42dfff);
+}
+.health-strip {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin-top: 7px;
 }
 .directive-progress {
   height: 3px;
@@ -3213,6 +3359,20 @@ canvas { display: block; }
     padding: 10px 14px;
     min-height: 0;
     overflow: hidden;
+  }
+  .cog-agents,
+  .cog-settings {
+    grid-column: 3;
+    grid-row: 2 / 4;
+    display: none;
+    height: 100%;
+    min-height: 0;
+    overflow: auto;
+    border-radius: 8px;
+  }
+  #cognitive-shell[data-page="agents"] .cog-agents,
+  #cognitive-shell[data-page="settings"] .cog-settings {
+    display: block;
   }
   .cog-bottom-nav {
     grid-column: 1 / 5;
@@ -3656,6 +3816,7 @@ canvas { display: block; }
     margin-right: 6px;
   }
   .cog-bottom-nav a,
+  .cog-bottom-nav button,
   .cog-bottom-copy {
     color: rgba(180,220,245,0.78);
     text-decoration: none;
@@ -3669,9 +3830,23 @@ canvas { display: block; }
     text-transform: uppercase;
     min-width: 0;
   }
-  .cog-bottom-nav a.active {
+  .cog-bottom-nav button {
+    appearance: none;
+    border-top: 0;
+    border-bottom: 0;
+    border-left: 0;
+    background: transparent;
+    font-family: inherit;
+    cursor: pointer;
+  }
+  .cog-bottom-nav a.active,
+  .cog-bottom-nav button.active {
     color: #42dfff;
     box-shadow: inset 0 -2px 0 #42dfff, inset 0 0 24px rgba(66,223,255,0.08);
+  }
+  .cog-bottom-nav a:hover,
+  .cog-bottom-nav button:hover {
+    color: #42dfff;
   }
   .cog-bottom-copy {
     justify-content: flex-start;
@@ -3850,7 +4025,9 @@ canvas { display: block; }
   .cog-left,
   .cog-center,
   .cog-right,
-  .cog-approval {
+  .cog-approval,
+  .cog-agents,
+  .cog-settings {
     grid-column: 1;
     grid-row: 3;
     display: none;
@@ -3862,12 +4039,16 @@ canvas { display: block; }
   #cognitive-shell[data-page="directives"] .cog-left,
   #cognitive-shell[data-page="graph"] .cog-center,
   #cognitive-shell[data-page="intel"] .cog-right,
-  #cognitive-shell[data-page="decision"] .cog-approval {
+  #cognitive-shell[data-page="decision"] .cog-approval,
+  #cognitive-shell[data-page="agents"] .cog-agents,
+  #cognitive-shell[data-page="settings"] .cog-settings {
     display: block;
   }
   .cog-left,
   .cog-right,
-  .cog-approval {
+  .cog-approval,
+  .cog-agents,
+  .cog-settings {
     border-radius: 8px;
   }
   .cog-center {
@@ -4017,7 +4198,9 @@ canvas { display: block; }
   .graph-node .node-state {
     display: none;
   }
-  .cog-approval {
+  .cog-approval,
+  .cog-agents,
+  .cog-settings {
     grid-template-columns: 1fr;
     gap: 8px;
     padding: 8px;
@@ -4331,14 +4514,14 @@ canvas { display: block; }
 <section id="cognitive-shell" aria-label="Jarvis Cognitive Operations Center">
   <nav class="cog-side-rail" aria-label="Operations rail">
     <div class="cog-logo" aria-hidden="true"></div>
-    <a class="rail-btn active" href="/brain.html" title="Mission Control">⌂</a>
+    <button class="rail-btn active" type="button" data-cog-page="directives" title="Mission Control">⌂</button>
     <button class="rail-btn" type="button" data-cog-page="graph" title="Brain">♧</button>
     <a class="rail-btn" href="/markets.html" title="Markets">⌁</a>
     <button class="rail-btn" type="button" data-cog-page="directives" title="Directives">▤</button>
     <button class="rail-btn" type="button" data-cog-page="intel" title="Memory">◎</button>
     <a class="rail-btn" href="/jarvis-os" title="Jarvis OS">⌘</a>
     <button class="rail-btn" type="button" data-cog-page="decision" title="Approvals">◇</button>
-    <button class="rail-btn" type="button" title="Settings">⚙</button>
+    <button class="rail-btn" type="button" data-cog-page="settings" title="Settings">⚙</button>
     <div></div>
     <div class="rail-foot">JARVIS<br>v3.2.1</div>
   </nav>
@@ -4688,30 +4871,64 @@ canvas { display: block; }
       <article class="intel-card">
         <div class="intel-top">
           <div class="intel-title">Memory Recall</div>
-          <span class="intel-badge" id="cog-memory-badge">Ready</span>
+          <span class="intel-badge" id="cog-memory-badge">Live</span>
         </div>
-        <div class="intel-copy" id="cog-memory-copy">Vault loaded; cognitive coach can pressure-test decisions from stored context.</div>
+        <div class="intel-subpanel">
+          <div class="intel-field-label">Recent important recall</div>
+          <div class="intel-copy" id="cog-memory-copy" data-cog-static="true">You asked me to optimize DCA bot parameters for SOL using live market data and 3Commas-style backtesting. Risk tolerance: Medium.</div>
+        </div>
+        <div class="intel-tags"><span>DCA Strategy</span><span>SOL Analysis</span><span>Risk: Medium</span><span>3Commas</span></div>
+        <a class="intel-link-row" href="/vault/summary">Open Memory Vault <span>›</span></a>
       </article>
       <article class="intel-card">
         <div class="intel-top">
           <div class="intel-title">Code Context</div>
-          <span class="intel-badge" id="cog-code-badge">Checking</span>
+          <span class="intel-badge" id="cog-code-badge">Live</span>
         </div>
-        <div class="intel-copy" id="cog-code-copy">CodeGraph status is syncing.</div>
+        <div class="intel-subpanel">
+          <div class="intel-grid">
+            <div><div class="intel-field-label">Active repository</div><div class="intel-field-value" id="cog-code-copy" data-cog-static="true">E:\Claude\OpenJarvis</div></div>
+            <div><div class="intel-field-label">Branch</div><div class="intel-field-value">main</div></div>
+            <div><div class="intel-field-label">Status</div><div class="intel-field-value good">Clean</div></div>
+          </div>
+        </div>
+        <div class="activity-list">
+          <div class="activity-row"><span>feat(memory): add cognitive coach</span><span>2h ago</span></div>
+          <div class="activity-row"><span>feat(hud): show live codegraph brain</span><span>4h ago</span></div>
+          <div class="activity-row"><span>fix(hud): prefer same-origin briefing fetch</span><span>6h ago</span></div>
+        </div>
+        <a class="intel-link-row" href="/codegraph/status">Open CodeGraph <span>›</span></a>
       </article>
       <article class="intel-card">
         <div class="intel-top">
-          <div class="intel-title">Knowledge Graph</div>
-          <span class="intel-badge" id="cog-graph-badge">Checking</span>
+          <div class="intel-title">Market Signals</div>
+          <span class="intel-badge" id="cog-graph-badge">24/7</span>
         </div>
-        <div class="intel-copy" id="cog-graph-copy">Graphify status is syncing.</div>
+        <div class="market-list" id="cog-graph-copy" data-cog-static="true">
+          <div class="market-row"><span>SOL/USDT</span><span>172.83</span><span class="market-change good">+3.21%</span><svg class="market-spark" viewBox="0 0 50 16"><path d="M1 12 7 10 12 11 18 6 24 8 31 4 38 7 49 3"/></svg></div>
+          <div class="market-row"><span>BTC/USDT</span><span>107,845.2</span><span class="market-change good">+1.42%</span><svg class="market-spark" viewBox="0 0 50 16"><path d="M1 11 8 9 14 10 21 5 27 7 34 6 41 3 49 4"/></svg></div>
+          <div class="market-row"><span>ETH/USDT</span><span>2,568.71</span><span class="market-change good">+1.47%</span><svg class="market-spark" viewBox="0 0 50 16"><path d="M1 13 9 12 16 8 23 9 30 5 37 7 44 4 49 5"/></svg></div>
+          <div class="market-row"><span>TOTAL</span><span>2.49T</span><span class="market-change good">+1.63%</span><svg class="market-spark" viewBox="0 0 50 16"><path d="M1 12 6 11 11 9 18 10 25 6 33 8 41 4 49 5"/></svg></div>
+        </div>
+        <a class="intel-link-row" href="/markets.html">Open Markets <span>›</span></a>
       </article>
       <article class="intel-card">
         <div class="intel-top">
-          <div class="intel-title">Model / GPU Path</div>
-          <span class="intel-badge" id="cog-model-badge">Local</span>
+          <div class="intel-title">Model & GPU Health</div>
+          <span class="intel-badge" id="cog-model-badge">Live</span>
         </div>
-        <div class="intel-copy" id="cog-model-copy">qwen3.6:27b local-first with Claude/Codex standby.</div>
+        <div class="gpu-health-grid">
+          <div class="intel-subpanel"><div class="intel-field-label">Model</div><div class="intel-field-value good" id="cog-model-copy" data-cog-static="true">qwen3.6:27b<br>Local-first</div></div>
+          <div class="gpu-gauge"><strong>87%</strong></div>
+          <div class="intel-subpanel"><div class="intel-field-label">VRAM</div><div class="intel-field-value">18.7 / 24 GB</div><div class="health-meter" style="--level:78%"><i></i></div></div>
+        </div>
+        <div class="health-strip">
+          <div><div class="intel-field-label">Context</div><div class="intel-field-value">32K / 23K</div></div>
+          <div><div class="intel-field-label">CPU</div><div class="intel-field-value">23%</div></div>
+          <div><div class="intel-field-label">RAM</div><div class="intel-field-value">31.2 / 64 GB</div></div>
+          <div><div class="intel-field-label">Disk I/O</div><div class="intel-field-value">120 MB/s</div></div>
+        </div>
+        <a class="intel-link-row" href="/jarvis-os/state">Open System Monitor <span>›</span></a>
       </article>
       <article class="intel-card">
         <div class="intel-top">
@@ -4760,15 +4977,77 @@ canvas { display: block; }
     </div>
   </section>
 
+  <section class="cog-panel cog-agents" aria-label="Agents console">
+    <div class="cog-head">
+      <span class="cog-dot"></span>
+      Agents
+      <span class="cog-meta">local-first</span>
+    </div>
+    <div class="cog-body">
+      <article class="intel-card">
+        <div class="intel-top">
+          <div class="intel-title">Qwen Department</div>
+          <span class="intel-badge">Ready</span>
+        </div>
+        <div class="intel-copy">Qwen 3.6 27B handles research, planning, docs, builder, tester, reviewer, and chief workflows before escalation.</div>
+      </article>
+      <article class="intel-card">
+        <div class="intel-top">
+          <div class="intel-title">Claude / Codex Standby</div>
+          <span class="intel-badge">Escalate</span>
+        </div>
+        <div class="intel-copy">Specialist code edits, repo-wide refactors, and high-risk tool work stay available as escalation paths.</div>
+      </article>
+      <article class="intel-card">
+        <div class="intel-top">
+          <div class="intel-title">Live Queue</div>
+          <span class="intel-badge">46 agents</span>
+        </div>
+        <div class="intel-copy">Use Mission Control directives to queue work; agent status remains visible through the Intelligence panel and task feed.</div>
+      </article>
+    </div>
+  </section>
+
+  <section class="cog-panel cog-settings" aria-label="Settings console">
+    <div class="cog-head">
+      <span class="cog-dot"></span>
+      Settings
+      <span class="cog-meta">safe controls</span>
+    </div>
+    <div class="cog-body">
+      <article class="intel-card">
+        <div class="intel-top">
+          <div class="intel-title">Local Model</div>
+          <span class="intel-badge">qwen3.6:27b</span>
+        </div>
+        <div class="intel-copy">Local-first remains the default. Claude and Codex are reserved for escalation or assistance.</div>
+      </article>
+      <article class="intel-card">
+        <div class="intel-top">
+          <div class="intel-title">Memory Sync</div>
+          <span class="intel-badge">Live</span>
+        </div>
+        <div class="intel-copy">Vault, Graphify, CodeGraph, and AgentMemory are treated as the active cognitive memory surface.</div>
+      </article>
+      <article class="intel-card">
+        <div class="intel-top">
+          <div class="intel-title">Approval Gate</div>
+          <span class="intel-badge">On</span>
+        </div>
+        <div class="intel-copy">Destructive actions, external account changes, spending, live trading, and secrets still require explicit operator approval.</div>
+      </article>
+    </div>
+  </section>
+
   <nav class="cog-bottom-nav" aria-label="Operations modules">
-    <a class="active" href="/brain.html">Mission Control</a>
-    <a href="/graphify">Brain</a>
+    <button class="active" type="button" data-cog-page="directives">Mission Control</button>
+    <button type="button" data-cog-page="graph">Brain</button>
     <a href="/markets.html">Markets</a>
     <a href="/markets.html#bot-lab">Bot Lab</a>
-    <a href="#agents-panel">Agents</a>
-    <a href="#hud-chat">Memory</a>
+    <button type="button" data-cog-page="agents">Agents</button>
+    <button type="button" data-cog-page="intel">Memory</button>
     <a href="/jarvis-os">Jarvis OS</a>
-    <a href="#settings">Settings</a>
+    <button type="button" data-cog-page="settings">Settings</button>
     <div class="cog-bottom-copy">J.A.R.V.I.S. isn't just a system.<br>It's an evolving mind.</div>
   </nav>
 </section>
@@ -10349,6 +10628,7 @@ if (elProviderBtn) {
 // endpoints. This is read-only: no new backend contract is required.
 function cogSetText(id, value) {
   const el = document.getElementById(id);
+  if (el && el.dataset && el.dataset.cogStatic === 'true') return;
   if (el) el.textContent = value;
 }
 async function cogFetchJson(path) {
