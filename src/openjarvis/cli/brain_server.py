@@ -874,6 +874,81 @@ def _markets_pro_bot_backtest(body: Dict[str, Any]) -> Dict[str, Any]:
         return {"ok": False, "error": str(exc), "ticker": ticker, "strategy": strategy}
 
 
+_DIRECT_DCA_RE = re.compile(
+    r"\b(?P<ticker>[A-Z]{2,10})(?:/USDT|/USD|/GBP)?\b.*\bDCA\b.*\bbacktest\b"
+    r"|\bDCA\b.*\b(?P<ticker_after>[A-Z]{2,10})(?:/USDT|/USD|/GBP)?\b.*\bbacktest\b",
+    re.I | re.S,
+)
+
+
+def _try_direct_markets_chat(text: str) -> str | None:
+    """Handle known Bot Lab commands without waiting on the general LLM path."""
+    candidate = (text or "").strip()
+    if not candidate:
+        return None
+    lowered = candidate.lower()
+    if "backtest" not in lowered or "dca" not in lowered:
+        return None
+    match = _DIRECT_DCA_RE.search(candidate)
+    ticker = ""
+    if match:
+        ticker = (match.group("ticker") or match.group("ticker_after") or "").upper()
+    if ticker in {"RUN", "LIVE", "DATA", "USING", "CURRENT", "BOT", "LAB"}:
+        ticker = ""
+    if not ticker and "sol" in lowered:
+        ticker = "SOL"
+    if not ticker:
+        return None
+    body = {
+        "ticker": ticker,
+        "strategy": "dca",
+        "initial_cash_gbp": 1000,
+        "base_order_gbp": 100,
+        "safety_order_gbp": 100,
+        "max_safety_orders": 3,
+        "safety_order_deviation_pct": 3,
+        "take_profit_pct": 2,
+        "fee_rate": 0.001,
+        "slippage_pct": 0.05,
+        "limit": 500,
+    }
+    result = _markets_pro_bot_backtest(body)
+    if not result.get("ok"):
+        return f"Bot Lab DCA backtest failed for {ticker}: {result.get('error') or 'unknown error'}"
+    return _format_dca_backtest_chat_result(result)
+
+
+def _fmt_ts(ts: Any) -> str:
+    try:
+        return time.strftime("%Y-%m-%d", time.gmtime(float(ts)))
+    except Exception:
+        return "unknown"
+
+
+def _format_dca_backtest_chat_result(result: Dict[str, Any]) -> str:
+    initial = float(result.get("initial_cash_gbp") or 0.0)
+    ending = float(result.get("ending_equity_gbp") or 0.0)
+    net_profit = ending - initial
+    ticker = result.get("ticker") or "SOL"
+    return (
+        f"Paper-only {ticker} DCA backtest complete. "
+        f"Net profit: GBP {net_profit:.2f} ({float(result.get('roi_pct') or 0.0):.2f}% ROI). "
+        f"Realised P/L: GBP {float(result.get('realized_pnl_gbp') or 0.0):.2f}; "
+        f"unrealised P/L: GBP {float(result.get('unrealized_pnl_gbp') or 0.0):.2f}. "
+        f"Max drawdown: {float(result.get('max_drawdown_pct') or 0.0):.2f}%; "
+        f"floating drawdown: {float(result.get('max_floating_drawdown_pct') or 0.0):.2f}%. "
+        f"Win rate: {float(result.get('win_rate_pct') or 0.0):.1f}% across "
+        f"{int(result.get('closed_deals') or 0)} closed deals, with "
+        f"{int(result.get('open_deals') or 0)} open deal and "
+        f"GBP {float(result.get('capital_locked_gbp') or 0.0):.2f} still locked. "
+        f"History: {int(result.get('bars') or 0)} live CoinGecko OHLCV bars, "
+        f"{_fmt_ts(result.get('first_ts'))} to {_fmt_ts(result.get('last_ts'))}. "
+        "Assumptions: current Bot Lab defaults, GBP 1000 starting cash, GBP 100 base order, "
+        "GBP 100 safety order, 3 safety orders, 3% deviation, 2% take profit, no stop loss, "
+        "0.05% slippage, 0.1% fee. No live order was placed."
+    )
+
+
 def _markets_pro_paper_bot_schedule(body: Dict[str, Any]) -> Dict[str, Any]:
     from openjarvis.markets import paper_scheduler
 
@@ -1818,6 +1893,28 @@ class _Handler(SimpleHTTPRequestHandler):
             if text:
                 prompt_parts.append(text)
             effective = "\n\n".join(prompt_parts).strip() or "(empty message)"
+            direct_response = _try_direct_markets_chat(effective)
+            if direct_response is not None:
+                _brain_state.update(state="idle")
+                turn_text = text + (
+                    f"\n\n[+ {len(saved)} file{'s' if len(saved)!=1 else ''}: "
+                    + ", ".join(s["name"] for s in saved) + "]" if saved else ""
+                )
+                try:
+                    from openjarvis.tools.obsidian_brain import log_voice_turn
+                    log_voice_turn(turn_text, direct_response)
+                except Exception:
+                    logger.debug("daily journal capture failed", exc_info=True)
+                try:
+                    _chat_history.append_pair(turn_text, direct_response)
+                except Exception:
+                    logger.debug("chat history append failed", exc_info=True)
+                return self._json_response(200, {
+                    "transcript": text,
+                    "response": direct_response,
+                    "audio_b64": "",
+                    "attachments": saved,
+                })
 
             # --- Pipeline ---
             _brain_state.update(state="thinking")
@@ -1928,6 +2025,14 @@ class _Handler(SimpleHTTPRequestHandler):
             if not text:
                 self._json_response(400, {"error": "'text' field is required."})
                 return
+            direct_response = _try_direct_markets_chat(text)
+            if direct_response is not None:
+                _brain_state.update(state="idle")
+                return self._json_response(200, {
+                    "transcript": text,
+                    "response": direct_response,
+                    "audio_b64": "",
+                })
 
             _brain_state.update(state="thinking")
             try:
@@ -2598,6 +2703,24 @@ class _Handler(SimpleHTTPRequestHandler):
                 return
 
             # --- 2. Process command (no wake word needed — user pressed the button) ---
+            direct_response = _try_direct_markets_chat(transcript)
+            if direct_response is not None:
+                _brain_state.update(state="idle")
+                try:
+                    from openjarvis.tools.obsidian_brain import log_voice_turn
+                    log_voice_turn(transcript, direct_response)
+                except Exception:
+                    logger.debug("daily journal capture failed", exc_info=True)
+                try:
+                    _chat_history.append_pair(transcript, direct_response)
+                except Exception:
+                    logger.debug("chat history append failed", exc_info=True)
+                return self._json_response(200, {
+                    "transcript": transcript,
+                    "response": direct_response,
+                    "audio_b64": "",
+                })
+
             # Voice ack: "On it, sir." plays immediately. Without this,
             # the operator stares at 5-30s of silence while the LLM
             # tool chain runs and assumes nothing happened.

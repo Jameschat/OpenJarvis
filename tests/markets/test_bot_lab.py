@@ -215,6 +215,47 @@ def test_markets_pro_bot_backtest_endpoint_helper(monkeypatch):
     assert result["closed_deals"] == 1
 
 
+def test_direct_chat_sol_dca_backtest_returns_result_without_llm(monkeypatch):
+    from openjarvis.cli import brain_server
+
+    def fake_backtest(body):
+        assert body["ticker"] == "SOL"
+        assert body["strategy"] == "dca"
+        assert body["limit"] == 500
+        return {
+            "ok": True,
+            "ticker": "SOL",
+            "bars": 92,
+            "first_ts": 1747699200,
+            "last_ts": 1779148800,
+            "initial_cash_gbp": 1000,
+            "ending_equity_gbp": 911.98,
+            "realized_pnl_gbp": 55.45,
+            "unrealized_pnl_gbp": -143.44,
+            "roi_pct": -8.8,
+            "closed_deals": 17,
+            "open_deals": 1,
+            "win_rate_pct": 100.0,
+            "max_drawdown_pct": 15.84,
+            "max_floating_drawdown_pct": 41.78,
+            "capital_locked_gbp": 400,
+        }
+
+    monkeypatch.setattr(brain_server, "_markets_pro_bot_backtest", fake_backtest)
+
+    response = brain_server._try_direct_markets_chat(
+        "Run a live-data SOL DCA backtest using the current Bot Lab settings. "
+        "Keep it paper-only and report profit, drawdown, win rate, and assumptions."
+    )
+
+    assert response is not None
+    assert "Paper-only SOL DCA backtest complete" in response
+    assert "Net profit: GBP -88.02" in response
+    assert "Win rate: 100.0%" in response
+    assert "Max drawdown: 15.84%" in response
+    assert "No live order was placed" in response
+
+
 def test_markets_pro_bot_backtest_endpoint_helper_routes_grid(monkeypatch):
     from openjarvis.cli.brain_server import _markets_pro_bot_backtest
 
