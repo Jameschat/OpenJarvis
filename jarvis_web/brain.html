@@ -3297,6 +3297,31 @@ canvas { display: block; }
 }
 .approval-status.good { color: #5ee0a1; border-color: rgba(94,224,161,0.32); }
 .approval-status.warn { color: #ffd15e; border-color: rgba(255,209,94,0.32); }
+.approval-command-row {
+  grid-column: 1 / -1;
+  display: none;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.approval-command-row.show {
+  display: grid;
+}
+.approval-command-row button {
+  min-height: 30px;
+  border: 1px solid rgba(94,224,255,0.22);
+  border-radius: 7px;
+  color: rgba(220,245,255,0.9);
+  background: rgba(8,24,42,0.72);
+  font-family: inherit;
+  font-size: 9.5px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.approval-command-row button:hover {
+  border-color: rgba(94,224,255,0.55);
+  color: #42dfff;
+}
 @media (max-width: 1280px) {
   #cognitive-shell {
     grid-template-columns: 260px 1fr 260px;
@@ -4229,6 +4254,9 @@ canvas { display: block; }
     gap: 8px;
     padding: 8px;
   }
+  .approval-command-row {
+    grid-template-columns: 1fr;
+  }
   .insight-card,
   .confidence-card,
   .next-action-card {
@@ -5000,6 +5028,11 @@ canvas { display: block; }
       <button id="cog-disprove" type="button">Disprove</button>
     </div>
     <div class="approval-status" id="cog-approval-status">No pending approval has been executed yet.</div>
+    <div class="approval-command-row" id="cog-approval-commands" aria-label="Approved action commands">
+      <button type="button" data-approval-command="Run a live-data SOL DCA backtest using the current Bot Lab settings. Keep it paper-only and report profit, drawdown, win rate, and assumptions.">Run Backtest</button>
+      <button type="button" data-approval-command="Create a 3Commas-compatible SOL DCA paper bot configuration from the approved recommendation. Do not connect exchanges or place live orders.">Create Paper Bot</button>
+      <button type="button" data-approval-command="Start the queued Jarvis mission for this approved recommendation and show progress in Mission Control. Keep external/destructive actions gated.">Start Mission</button>
+    </div>
   </section>
 
   <section class="cog-panel cog-agents" aria-label="Agents console">
@@ -10716,6 +10749,7 @@ function submitApprovalDecision(kind) {
   const title = document.getElementById('cog-approval-title');
   const copy = document.getElementById('cog-approval-copy');
   const status = document.getElementById('cog-approval-status');
+  const commands = document.getElementById('cog-approval-commands');
   const isApprove = kind === 'approve';
   if (title) {
     title.textContent = isApprove
@@ -10729,10 +10763,13 @@ function submitApprovalDecision(kind) {
   }
   if (status) {
     status.textContent = isApprove
-      ? 'Approved locally. Next step: use a specific command such as "create the paper bot", "run the backtest", or "start the queued mission" so Jarvis has a concrete action to execute.'
-      : 'Rejected locally. Next step: ask Jarvis to explain the risk, missing evidence, or alternative before continuing.';
+      ? 'Approved locally. Choose one of the action buttons below so Jarvis has a concrete command to execute.'
+      : 'Rejected locally. Choose Disprove only when you want Jarvis to pause and pressure-test the recommendation before continuing.';
     status.classList.toggle('good', isApprove);
     status.classList.toggle('warn', !isApprove);
+  }
+  if (commands) {
+    commands.classList.toggle('show', isApprove);
   }
   try {
     logEvent('hud', isApprove
@@ -10746,6 +10783,26 @@ const cogApprove = document.getElementById('cog-approve');
 const cogDisprove = document.getElementById('cog-disprove');
 if (cogApprove) cogApprove.addEventListener('click', () => submitApprovalDecision('approve'));
 if (cogDisprove) cogDisprove.addEventListener('click', () => submitApprovalDecision('disprove'));
+function submitApprovalCommand(command) {
+  const input = document.getElementById('composer-input');
+  const status = document.getElementById('cog-approval-status');
+  if (!input || !command) return;
+  input.value = command;
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+  if (status) {
+    status.textContent = 'Command sent to Jarvis: ' + command;
+    status.classList.add('good');
+    status.classList.remove('warn');
+  }
+  if (typeof sendChat === 'function') {
+    sendChat();
+  } else {
+    input.focus();
+  }
+}
+document.querySelectorAll('[data-approval-command]').forEach((btn) => {
+  btn.addEventListener('click', () => submitApprovalCommand(btn.dataset.approvalCommand || ''));
+});
 function setCogPage(page) {
   const shell = document.getElementById('cognitive-shell');
   if (!shell) return;

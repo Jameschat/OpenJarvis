@@ -17,9 +17,26 @@ def test_brain_html_contains_cognitive_operations_shell():
     assert 'id="cog-approve"' in html
     assert 'id="cog-disprove"' in html
     assert 'id="cog-approval-status"' in html
+    assert 'id="cog-approval-commands"' in html
+    assert 'data-approval-command=' in html
+    assert "function submitApprovalCommand(command)" in html
+    assert "Run Backtest" in html
+    assert "Create Paper Bot" in html
+    assert "Start Mission" in html
     assert "function submitApprovalDecision(kind)" in html
     assert "no generic chat task sent" in html
-    assert "sendChat();" not in html[html.index("function submitApprovalDecision(kind)") : html.index("function setCogPage(page)")]
+    approval_fn = html[
+        html.index("function submitApprovalDecision(kind)") : html.index(
+            "const cogApprove"
+        )
+    ]
+    command_fn = html[
+        html.index("function submitApprovalCommand(command)") : html.index(
+            "document.querySelectorAll('[data-approval-command]')"
+        )
+    ]
+    assert "sendChat();" not in approval_fn
+    assert "sendChat();" in command_fn
     assert "cog-side-rail" in html
     assert "cog-top" in html
     assert "cog-bottom-nav" in html
