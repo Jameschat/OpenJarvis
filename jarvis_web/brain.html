@@ -2886,6 +2886,12 @@ canvas { display: block; }
   min-height: 0;
   overflow: hidden;
 }
+.cog-side-rail,
+.cog-top,
+.cog-mobile-tabs,
+.cog-bottom-nav {
+  display: none;
+}
 .cog-left {
   grid-column: 1;
   grid-row: 1;
@@ -3133,6 +3139,10 @@ canvas { display: block; }
   .cog-center-badge { min-width: min(460px, 82%); }
 }
 @media (min-width: 981px) and (min-height: 721px) {
+  #ops-banner,
+  #composer-wrap,
+  #agents-toggle,
+  #menu-toggle,
   #hud-stats,
   #hud-agg,
   #hud-schedule,
@@ -3146,8 +3156,891 @@ canvas { display: block; }
     top: 70px;
     width: min(560px, 46vw);
   }
+  #region-labels { display: none !important; }
+  #cognitive-shell {
+    inset: 8px 8px 8px 8px;
+    grid-template-columns: 58px minmax(330px, 25vw) minmax(560px, 1fr) minmax(350px, 25vw);
+    grid-template-rows: 66px minmax(0, 1fr) 150px 48px;
+    gap: 8px;
+  }
+  .cog-top {
+    grid-column: 2 / 5;
+    grid-row: 1;
+    display: grid;
+    grid-template-columns: minmax(430px, 2fr) minmax(210px, 0.82fr) minmax(210px, 0.82fr) minmax(290px, 1.18fr) minmax(260px, 1fr);
+    gap: 8px;
+  }
+  .cog-side-rail {
+    grid-column: 1;
+    grid-row: 1 / 5;
+    display: grid;
+    grid-template-rows: 58px repeat(8, 44px) 1fr 54px;
+    justify-items: center;
+    align-items: center;
+    padding: 6px 5px;
+    border-radius: 8px;
+  }
+  .cog-left {
+    grid-column: 2;
+    grid-row: 2 / 4;
+    max-height: none;
+    height: 100%;
+  }
+  .cog-center {
+    grid-column: 3;
+    grid-row: 2;
+    border: 1px solid rgba(94,224,255,0.24);
+    border-radius: 8px;
+    background:
+      radial-gradient(circle at 50% 46%, rgba(32,210,240,0.16), transparent 19%),
+      linear-gradient(180deg, rgba(5,18,34,0.58), rgba(3,10,20,0.42));
+    overflow: hidden;
+    max-width: calc(100vw - 16px);
+  }
+  .cog-right {
+    grid-column: 4;
+    grid-row: 2 / 4;
+    max-height: none;
+    height: 100%;
+  }
+  .cog-approval {
+    grid-column: 3;
+    grid-row: 3;
+    width: 100%;
+    height: 100%;
+    align-self: stretch;
+    grid-template-columns: 1.1fr 0.78fr 0.65fr 1fr auto;
+    padding: 10px 14px;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .cog-bottom-nav {
+    grid-column: 1 / 5;
+    grid-row: 4;
+    display: grid;
+    grid-template-columns: repeat(8, minmax(120px, 1fr)) 1.8fr;
+    gap: 0;
+    overflow: hidden;
+    border-radius: 8px;
+  }
+  .cog-panel,
+  .cog-approval,
+  .cog-center,
+  .cog-top-card,
+  .cog-side-rail,
+  .cog-bottom-nav {
+    background:
+      linear-gradient(180deg, rgba(8,24,42,0.86), rgba(4,14,26,0.78)),
+      repeating-linear-gradient(0deg, rgba(94,224,255,0.028) 0 1px, transparent 1px 5px);
+    border: 1px solid rgba(23,180,220,0.42);
+    box-shadow: inset 0 1px 0 rgba(180,245,255,0.10), 0 0 20px rgba(0,210,255,0.075);
+  }
+  .cog-top-card {
+    pointer-events: auto;
+    border-radius: 7px;
+    padding: 10px 14px;
+    display: grid;
+    gap: 4px;
+    align-content: center;
+    min-width: 0;
+  }
+  .cog-brand-card {
+    grid-template-columns: 56px 1fr;
+    column-gap: 12px;
+    align-items: center;
+  }
+  .cog-logo {
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    border: 2px solid rgba(88,224,255,0.55);
+    background:
+      radial-gradient(circle at center, rgba(88,224,255,0.25) 0 18%, transparent 19%),
+      conic-gradient(from 0deg, rgba(88,224,255,0.9) 0 18deg, transparent 18deg 38deg, rgba(180,245,255,0.85) 38deg 56deg, transparent 56deg 76deg);
+    box-shadow: 0 0 18px rgba(88,224,255,0.42), inset 0 0 14px rgba(88,224,255,0.18);
+  }
+  .cog-brand-title {
+    color: #dff8ff;
+    font-size: 18px;
+    letter-spacing: 3.2px;
+    text-transform: uppercase;
+    text-shadow: 0 0 14px rgba(88,224,255,0.62);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .cog-brand-sub,
+  .cog-top-sub {
+    color: rgba(170,215,235,0.74);
+    font-size: 10px;
+    letter-spacing: 0.8px;
+  }
+  .cog-top-label {
+    color: rgba(175,210,235,0.72);
+    font-size: 10px;
+    letter-spacing: 1.6px;
+    text-transform: uppercase;
+  }
+  .cog-top-value {
+    color: #e8fbff;
+    font-size: 13px;
+    letter-spacing: 1px;
+  }
+  .cog-online { color: #48f09b; text-shadow: 0 0 8px rgba(72,240,155,0.45); }
+  .cog-blue { color: #36cfff; text-shadow: 0 0 8px rgba(54,207,255,0.45); }
+  .cog-sparkline {
+    height: 28px;
+    width: 100%;
+    display: block;
+    margin-top: 2px;
+    overflow: visible;
+  }
+  .cog-sparkline path {
+    fill: none;
+    stroke: #32e985;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    filter: drop-shadow(0 0 5px rgba(50,233,133,0.65));
+  }
+  .cog-sparkline .spark-fill {
+    fill: rgba(50,233,133,0.10);
+    stroke: none;
+    filter: none;
+  }
+  .cog-stat-split {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+  }
+  .cog-stat-bar {
+    height: 4px;
+    margin-top: 5px;
+    background: rgba(94,224,255,0.10);
+    border-radius: 999px;
+    overflow: hidden;
+  }
+  .cog-stat-bar i {
+    display: block;
+    width: 87%;
+    height: 100%;
+    background: linear-gradient(90deg, #56e9a4, #26cdfa);
+  }
+  .rail-btn {
+    width: 38px;
+    height: 38px;
+    border: 1px solid rgba(94,224,255,0.22);
+    border-radius: 8px;
+    background: rgba(7,22,38,0.55);
+    color: rgba(190,230,250,0.84);
+    display: grid;
+    place-items: center;
+    font-size: 18px;
+    text-decoration: none;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
+  }
+  .rail-btn.active {
+    color: #dff8ff;
+    border-color: rgba(54,207,255,0.75);
+    background: rgba(15,105,150,0.38);
+    box-shadow: 0 0 16px rgba(54,207,255,0.28);
+  }
+  .rail-foot {
+    color: rgba(120,220,255,0.9);
+    font-size: 9px;
+    letter-spacing: 1px;
+    text-align: center;
+    line-height: 1.3;
+  }
+  .cog-head {
+    padding: 8px 11px;
+    min-height: 34px;
+  }
+  .cog-body {
+    padding: 8px;
+    gap: 8px;
+  }
+  .directive-card {
+    padding: 9px 10px;
+  }
+  .directive-title,
+  .intel-title {
+    font-size: 12px;
+  }
+  .directive-card:nth-child(5),
+  .directive-card:nth-child(6) {
+    display: block;
+  }
+  .cog-center-badge {
+    top: 8px;
+    min-width: 0;
+    width: auto;
+    left: 12px;
+    transform: none;
+    padding: 7px 11px;
+    text-align: left;
+    border-radius: 5px;
+  }
+  .cog-center-title {
+    font-size: 10px;
+    letter-spacing: 1.8px;
+  }
+  .cog-center-sub { display: none; }
+  .cog-node-ring {
+    inset: 44px 34px 32px;
+    border-radius: 4px;
+    border-color: rgba(94,224,255,0.16);
+    background:
+      radial-gradient(circle at 50% 49%, rgba(67,231,255,0.30), transparent 22%),
+      radial-gradient(circle at 50% 49%, rgba(21,150,210,0.16), transparent 46%),
+      radial-gradient(circle at 18% 24%, rgba(78,224,255,0.18), transparent 22%),
+      radial-gradient(circle at 78% 34%, rgba(94,240,160,0.14), transparent 24%),
+      linear-gradient(180deg, rgba(4,14,28,0.72), rgba(2,8,18,0.80));
+    background-size: auto;
+  }
+  .cog-graph-links {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    pointer-events: none;
+    opacity: 1;
+  }
+  .cog-graph-links path {
+    fill: none;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    filter: drop-shadow(0 0 7px rgba(54,220,255,0.85));
+  }
+  .cog-graph-links .link-primary {
+    stroke: rgba(55,224,255,0.78);
+    stroke-width: 0.16;
+  }
+  .cog-graph-links .link-knowledge {
+    stroke: rgba(72,240,155,0.62);
+    stroke-width: 0.14;
+  }
+  .cog-graph-links .link-action {
+    stroke: rgba(255,209,94,0.62);
+    stroke-width: 0.14;
+  }
+  .cog-graph-links .link-feedback {
+    stroke: rgba(160,130,255,0.58);
+    stroke-width: 0.14;
+  }
+  .cog-graph-links .link-dim {
+    stroke: rgba(76,190,230,0.34);
+    stroke-width: 0.11;
+  }
+  .cog-graph-links circle {
+    fill: rgba(105,235,255,0.95);
+    filter: drop-shadow(0 0 7px rgba(105,235,255,0.90));
+  }
+  .cog-node-ring::before,
+  .cog-node-ring::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    border: 0;
+    border-radius: 0;
+  }
+  .cog-node-ring::before {
+    background:
+      radial-gradient(circle at 11% 16%, rgba(78,224,255,0.85) 0 1px, transparent 1.6px),
+      radial-gradient(circle at 16% 32%, rgba(78,224,255,0.45) 0 1px, transparent 1.6px),
+      radial-gradient(circle at 20% 47%, rgba(78,224,255,0.70) 0 1px, transparent 1.6px),
+      radial-gradient(circle at 24% 68%, rgba(255,209,94,0.55) 0 1px, transparent 1.6px),
+      radial-gradient(circle at 31% 24%, rgba(78,224,255,0.52) 0 1px, transparent 1.6px),
+      radial-gradient(circle at 36% 58%, rgba(94,240,160,0.75) 0 1.1px, transparent 1.8px),
+      radial-gradient(circle at 41% 76%, rgba(78,224,255,0.72) 0 1px, transparent 1.6px),
+      radial-gradient(circle at 47% 29%, rgba(94,240,160,0.65) 0 1px, transparent 1.6px),
+      radial-gradient(circle at 50% 48%, rgba(125,244,255,0.95) 0 1.5px, transparent 2.1px),
+      radial-gradient(circle at 53% 66%, rgba(78,224,255,0.62) 0 1px, transparent 1.6px),
+      radial-gradient(circle at 60% 20%, rgba(255,209,94,0.62) 0 1px, transparent 1.6px),
+      radial-gradient(circle at 65% 55%, rgba(78,224,255,0.85) 0 1px, transparent 1.6px),
+      radial-gradient(circle at 72% 38%, rgba(94,240,160,0.65) 0 1px, transparent 1.6px),
+      radial-gradient(circle at 80% 72%, rgba(160,130,255,0.65) 0 1px, transparent 1.6px),
+      radial-gradient(circle at 88% 28%, rgba(78,224,255,0.75) 0 1px, transparent 1.6px);
+    background-size: auto;
+    background-position: 0 0;
+    filter: drop-shadow(0 0 7px rgba(78,224,255,0.7));
+    opacity: 0.95;
+  }
+  .cog-node-ring::after {
+    background:
+      radial-gradient(circle at 8% 20%, rgba(78,224,255,0.42) 0 0.7px, transparent 1.2px),
+      radial-gradient(circle at 16% 74%, rgba(78,224,255,0.28) 0 0.7px, transparent 1.2px),
+      radial-gradient(circle at 28% 31%, rgba(94,240,160,0.38) 0 0.7px, transparent 1.2px),
+      radial-gradient(circle at 41% 64%, rgba(78,224,255,0.34) 0 0.7px, transparent 1.2px),
+      radial-gradient(circle at 57% 28%, rgba(78,224,255,0.42) 0 0.7px, transparent 1.2px),
+      radial-gradient(circle at 70% 68%, rgba(160,130,255,0.34) 0 0.7px, transparent 1.2px),
+      radial-gradient(circle at 86% 22%, rgba(78,224,255,0.36) 0 0.7px, transparent 1.2px),
+      radial-gradient(circle at 93% 78%, rgba(94,240,160,0.30) 0 0.7px, transparent 1.2px);
+    background-size: 100% 100%;
+    opacity: 0.9;
+  }
+  .cog-hub {
+    position: absolute;
+    left: 50%;
+    top: 48%;
+    transform: translate(-50%, -50%);
+    width: 92px;
+    height: 92px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    place-items: center;
+    color: #dffaff;
+    background: radial-gradient(circle at center, rgba(44,230,255,0.60), rgba(3,25,42,0.90) 54%, rgba(2,10,20,0.92));
+    border: 2px solid rgba(94,224,255,0.72);
+    box-shadow: 0 0 38px rgba(94,224,255,0.55), inset 0 0 22px rgba(255,255,255,0.10);
+    z-index: 2;
+  }
+  .cog-hub svg {
+    width: 50px;
+    height: 50px;
+    stroke: #c8fbff;
+    fill: rgba(34,210,240,0.18);
+    filter: drop-shadow(0 0 12px rgba(94,224,255,0.85));
+  }
+  .cog-hub span {
+    position: absolute;
+    top: 96px;
+    color: #e8fbff;
+    font-size: 12px;
+    letter-spacing: 1.4px;
+  }
+  .graph-node {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    min-width: 104px;
+    text-align: center;
+    color: rgba(220,245,255,0.95);
+    text-shadow: 0 0 10px rgba(94,224,255,0.35);
+    z-index: 2;
+  }
+  .graph-node .node-orb {
+    width: 62px;
+    height: 62px;
+    margin: 0 auto 4px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    overflow: hidden;
+    background:
+      radial-gradient(circle at 50% 45%, rgba(94,224,255,0.14), transparent 58%),
+      rgba(4,18,32,0.88);
+    border: 2px solid rgba(94,224,255,0.52);
+    box-shadow: 0 0 22px rgba(94,224,255,0.25), inset 0 0 16px rgba(94,224,255,0.09);
+  }
+  .graph-node .node-orb::before {
+    content: "";
+    position: absolute;
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    border: 1px solid rgba(200,250,255,0.10);
+    box-shadow: inset 0 0 12px rgba(255,255,255,0.05);
+  }
+  .node-icon {
+    width: 30px;
+    height: 30px;
+    display: block;
+    flex: 0 0 30px;
+    stroke: #8ff4ff;
+    fill: none;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    filter: drop-shadow(0 0 9px rgba(94,224,255,0.70));
+    position: relative;
+    z-index: 1;
+  }
+  .node-icon * {
+    vector-effect: non-scaling-stroke;
+  }
+  .graph-node.green .node-icon { stroke: #68f0a8; filter: drop-shadow(0 0 9px rgba(104,240,168,0.70)); }
+  .graph-node.amber .node-icon { stroke: #ffd36d; filter: drop-shadow(0 0 9px rgba(255,211,109,0.70)); }
+  .graph-node.purple .node-icon { stroke: #a890ff; filter: drop-shadow(0 0 9px rgba(168,144,255,0.72)); }
+  .graph-node.green .node-orb { border-color: rgba(72,240,155,0.62); box-shadow: 0 0 22px rgba(72,240,155,0.26); }
+  .graph-node.amber .node-orb { border-color: rgba(255,209,94,0.68); box-shadow: 0 0 22px rgba(255,209,94,0.24); }
+  .graph-node.purple .node-orb { border-color: rgba(160,130,255,0.70); box-shadow: 0 0 22px rgba(160,130,255,0.25); }
+  .graph-node .node-title {
+    font-size: 12px;
+    letter-spacing: 0.4px;
+  }
+  .graph-node .node-sub {
+    color: rgba(150,220,240,0.72);
+    font-size: 9px;
+    margin-top: 2px;
+  }
+  .graph-node .node-state {
+    color: #58e99f;
+    font-size: 9px;
+    margin-top: 2px;
+  }
+  .cog-node-label {
+    border: none;
+    background: transparent;
+    color: rgba(70,220,255,0.42);
+    font-size: 0;
+  }
+  .cog-node-label::before {
+    width: 7px;
+    height: 7px;
+    margin: 0;
+  }
+  .insight-card,
+  .confidence-card,
+  .next-action-card {
+    border: 1px solid rgba(94,224,255,0.22);
+    background: rgba(5,18,34,0.56);
+    border-radius: 4px;
+    padding: 10px;
+    min-width: 0;
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .approval-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    align-self: center;
+  }
+  .confidence-score {
+    color: #5ee0a1;
+    font-size: 31px;
+    line-height: 1;
+    margin-top: 10px;
+    text-align: center;
+  }
+  .approval-title {
+    font-size: 12px;
+    line-height: 1.16;
+  }
+  .approval-copy,
+  .next-list {
+    font-size: 9px;
+    line-height: 1.22;
+  }
+  .next-list { gap: 3px; }
+  .next-list span {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .confidence-ring {
+    width: 80px;
+    height: 46px;
+    margin: 4px auto 0;
+    border-top: 8px solid #5ee0a1;
+    border-left: 8px solid rgba(120,180,255,0.55);
+    border-right: 8px solid rgba(120,180,255,0.55);
+    border-radius: 90px 90px 0 0;
+  }
+  .next-list {
+    margin-top: 8px;
+    display: grid;
+    gap: 4px;
+    color: rgba(190,230,245,0.82);
+    font-size: 10px;
+  }
+  .next-list span::before {
+    content: "✓";
+    color: #5ee0a1;
+    margin-right: 6px;
+  }
+  .cog-bottom-nav a,
+  .cog-bottom-copy {
+    color: rgba(180,220,245,0.78);
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    border-right: 1px solid rgba(94,224,255,0.14);
+    font-size: 10px;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    min-width: 0;
+  }
+  .cog-bottom-nav a.active {
+    color: #42dfff;
+    box-shadow: inset 0 -2px 0 #42dfff, inset 0 0 24px rgba(66,223,255,0.08);
+  }
+  .cog-bottom-copy {
+    justify-content: flex-start;
+    padding-left: 18px;
+    text-transform: none;
+    letter-spacing: 0.8px;
+    font-size: 10px;
+    line-height: 1.25;
+  }
 }
-@media (max-width: 980px), (max-height: 720px) {
+@media (max-width: 980px) {
+  html,
+  body {
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+  #ops-banner,
+  #hud-stats,
+  #hud-agg,
+  #hud-schedule,
+  #hud-projects,
+  #hud-legend,
+  #hud-live,
+  #hud-log,
+  #agent-layer,
+  #conversation {
+    display: none !important;
+  }
+  #cognitive-shell {
+    inset: calc(env(safe-area-inset-top, 0px) + 8px) 8px calc(env(safe-area-inset-bottom, 0px) + 86px) 8px;
+    width: calc(100vw - 16px);
+    max-width: calc(100vw - 16px);
+    box-sizing: border-box;
+    z-index: 6;
+    display: grid;
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 78px minmax(0, 1fr);
+    gap: 8px;
+    overflow: hidden;
+  }
+  #composer-wrap {
+    box-sizing: border-box;
+    left: 8px !important;
+    right: 8px !important;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 8px) !important;
+    width: auto !important;
+    max-width: calc(100vw - 16px);
+    transform: none !important;
+  }
+  #composer,
+  #composer-input {
+    box-sizing: border-box;
+    min-width: 0;
+  }
+  #composer {
+    width: calc(100% - 36px);
+    margin-right: auto;
+    display: grid;
+    grid-template-columns: 34px minmax(0, 1fr) 34px;
+    align-items: end;
+    gap: 8px;
+    padding: 8px;
+  }
+  #composer-input {
+    width: 100% !important;
+    flex: none !important;
+  }
+  #composer button {
+    width: 34px;
+    height: 34px;
+  }
+  #send-btn {
+    display: none !important;
+  }
+  #agents-toggle,
+  #menu-toggle,
+  #talk-btn {
+    display: none !important;
+  }
+  .cog-side-rail,
+  .cog-bottom-nav {
+    display: none;
+  }
+  .cog-top {
+    grid-column: 1;
+    grid-row: 1;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+  .cog-top-card {
+    pointer-events: auto;
+    border-radius: 8px;
+    padding: 9px 11px;
+    background:
+      linear-gradient(180deg, rgba(8,24,42,0.90), rgba(4,14,26,0.84)),
+      repeating-linear-gradient(0deg, rgba(94,224,255,0.028) 0 1px, transparent 1px 5px);
+    border: 1px solid rgba(23,180,220,0.42);
+    min-width: 0;
+  }
+  .cog-top-card:not(.cog-brand-card) {
+    display: none;
+  }
+  .cog-brand-card {
+    display: grid;
+    grid-template-columns: 42px 1fr;
+    gap: 10px;
+    align-items: center;
+    min-width: 0;
+  }
+  .cog-brand-card > div {
+    min-width: 0;
+  }
+  .cog-logo {
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    border: 2px solid rgba(88,224,255,0.55);
+    background:
+      radial-gradient(circle at center, rgba(88,224,255,0.25) 0 18%, transparent 19%),
+      conic-gradient(from 0deg, rgba(88,224,255,0.9) 0 18deg, transparent 18deg 38deg, rgba(180,245,255,0.85) 38deg 56deg, transparent 56deg 76deg);
+    box-shadow: 0 0 18px rgba(88,224,255,0.34), inset 0 0 14px rgba(88,224,255,0.18);
+  }
+  .cog-brand-title {
+    color: #dff8ff;
+    font-size: 12px;
+    letter-spacing: 1.6px;
+    text-transform: uppercase;
+    text-shadow: 0 0 14px rgba(88,224,255,0.62);
+    white-space: normal;
+    line-height: 1.2;
+    overflow-wrap: anywhere;
+  }
+  .cog-brand-sub {
+    color: rgba(170,215,235,0.74);
+    font-size: 10px;
+    letter-spacing: 0.5px;
+    margin-top: 3px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .cog-mobile-tabs {
+    grid-column: 1;
+    grid-row: 2;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: repeat(2, 36px);
+    gap: 6px;
+    pointer-events: auto;
+    min-width: 0;
+    width: 100%;
+    overflow: hidden;
+  }
+  .cog-mobile-tabs button {
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    border-radius: 7px;
+    border: 1px solid rgba(94,224,255,0.24);
+    background: rgba(7,22,38,0.72);
+    color: rgba(185,225,245,0.78);
+    font-family: 'Consolas','SF Mono','Menlo',monospace;
+    font-size: 9px;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+    padding: 0;
+  }
+  .cog-mobile-tabs button.active {
+    color: #dff8ff;
+    border-color: rgba(54,207,255,0.78);
+    background: rgba(15,105,150,0.38);
+    box-shadow: 0 0 14px rgba(54,207,255,0.20);
+  }
+  .cog-left,
+  .cog-center,
+  .cog-right,
+  .cog-approval {
+    grid-column: 1;
+    grid-row: 3;
+    display: none;
+    max-height: none;
+    height: 100%;
+    overflow: auto;
+    min-width: 0;
+  }
+  #cognitive-shell[data-page="directives"] .cog-left,
+  #cognitive-shell[data-page="graph"] .cog-center,
+  #cognitive-shell[data-page="intel"] .cog-right,
+  #cognitive-shell[data-page="decision"] .cog-approval {
+    display: block;
+  }
+  .cog-left,
+  .cog-right,
+  .cog-approval {
+    border-radius: 8px;
+  }
+  .cog-center {
+    position: relative;
+    border: 1px solid rgba(94,224,255,0.24);
+    border-radius: 8px;
+    background:
+      radial-gradient(circle at 50% 46%, rgba(32,210,240,0.16), transparent 22%),
+      linear-gradient(180deg, rgba(5,18,34,0.72), rgba(3,10,20,0.60));
+    min-height: 100%;
+  }
+  .cog-center-badge {
+    left: 10px;
+    right: 10px;
+    top: 10px;
+    transform: none;
+    min-width: 0;
+    padding: 8px 10px;
+    text-align: left;
+  }
+  .cog-center-title {
+    font-size: 11px;
+    letter-spacing: 2px;
+  }
+  .cog-center-sub {
+    font-size: 9px;
+    letter-spacing: 0.8px;
+  }
+  .cog-node-ring {
+    inset: 76px 10px 10px;
+    border-radius: 6px;
+    background:
+      radial-gradient(circle at 50% 48%, rgba(67,231,255,0.24), transparent 30%),
+      radial-gradient(circle at 38% 35%, rgba(94,240,160,0.18), transparent 30%),
+      linear-gradient(rgba(94,224,255,0.050) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(94,224,255,0.050) 1px, transparent 1px);
+    background-size: auto, auto, 28px 28px, 28px 28px;
+  }
+  .cog-node-ring::before,
+  .cog-node-ring::after,
+  .cog-node-label {
+    display: none;
+  }
+  .cog-graph-links {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    pointer-events: none;
+    opacity: 0.92;
+  }
+  .cog-graph-links path {
+    fill: none;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    filter: drop-shadow(0 0 6px rgba(54,220,255,0.85));
+  }
+  .cog-graph-links .link-primary {
+    stroke: rgba(55,224,255,0.80);
+    stroke-width: 0.30;
+  }
+  .cog-graph-links .link-knowledge {
+    stroke: rgba(72,240,155,0.66);
+    stroke-width: 0.28;
+  }
+  .cog-graph-links .link-action {
+    stroke: rgba(255,209,94,0.66);
+    stroke-width: 0.28;
+  }
+  .cog-graph-links .link-feedback {
+    stroke: rgba(160,130,255,0.64);
+    stroke-width: 0.28;
+  }
+  .cog-graph-links circle {
+    fill: rgba(105,235,255,0.95);
+    filter: drop-shadow(0 0 7px rgba(105,235,255,0.90));
+  }
+  .cog-graph-links .star {
+    fill: rgba(78,224,255,0.68);
+    filter: drop-shadow(0 0 5px rgba(78,224,255,0.62));
+  }
+  .cog-graph-links .star.green { fill: rgba(94,240,160,0.42); }
+  .cog-graph-links .star.purple { fill: rgba(160,130,255,0.40); }
+  .cog-graph-links .star.gold { fill: rgba(255,209,94,0.42); }
+  .cog-hub {
+    position: absolute;
+    left: 50%;
+    top: 48%;
+    transform: translate(-50%, -50%);
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    color: #dffaff;
+    background: radial-gradient(circle at center, rgba(44,230,255,0.60), rgba(3,25,42,0.90) 54%, rgba(2,10,20,0.92));
+    border: 2px solid rgba(94,224,255,0.72);
+    box-shadow: 0 0 34px rgba(94,224,255,0.50), inset 0 0 22px rgba(255,255,255,0.10);
+    font-size: 26px;
+    z-index: 2;
+  }
+  .cog-hub span {
+    position: absolute;
+    top: 76px;
+    color: #e8fbff;
+    font-size: 10px;
+    letter-spacing: 1px;
+  }
+  .node-icon {
+    width: 24px;
+    height: 24px;
+    stroke: #8ff4ff;
+    fill: none;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    filter: drop-shadow(0 0 7px rgba(94,224,255,0.70));
+  }
+  .graph-node.green .node-icon { stroke: #68f0a8; }
+  .graph-node.amber .node-icon { stroke: #ffd36d; }
+  .graph-node.purple .node-icon { stroke: #a890ff; }
+  .graph-node {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    min-width: 86px;
+    text-align: center;
+    color: rgba(220,245,255,0.95);
+  }
+  .graph-node .node-orb {
+    width: 46px;
+    height: 46px;
+    margin: 0 auto 4px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    font-size: 18px;
+    background: rgba(4,18,32,0.88);
+    border: 2px solid rgba(94,224,255,0.52);
+    box-shadow: 0 0 16px rgba(94,224,255,0.25), inset 0 0 12px rgba(94,224,255,0.09);
+  }
+  .graph-node .node-title {
+    font-size: 9px;
+    line-height: 1.1;
+  }
+  .graph-node .node-sub,
+  .graph-node .node-state {
+    display: none;
+  }
+  .cog-approval {
+    grid-template-columns: 1fr;
+    gap: 8px;
+    padding: 8px;
+  }
+  .insight-card,
+  .confidence-card,
+  .next-action-card {
+    border: 1px solid rgba(94,224,255,0.22);
+    background: rgba(5,18,34,0.62);
+    border-radius: 7px;
+    padding: 10px;
+  }
+  .approval-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .approval-actions button {
+    width: 100%;
+    min-width: 0;
+  }
+}
+@media (max-height: 720px) and (min-width: 981px) {
   #cognitive-shell { display: none; }
 }
 </style>
@@ -3436,6 +4329,69 @@ canvas { display: block; }
      workspace: active directives, live intelligence, and approval decisions
      wrapped around the existing neural canvas. -->
 <section id="cognitive-shell" aria-label="Jarvis Cognitive Operations Center">
+  <nav class="cog-side-rail" aria-label="Operations rail">
+    <div class="cog-logo" aria-hidden="true"></div>
+    <a class="rail-btn active" href="/brain.html" title="Mission Control">⌂</a>
+    <button class="rail-btn" type="button" data-cog-page="graph" title="Brain">♧</button>
+    <a class="rail-btn" href="/markets.html" title="Markets">⌁</a>
+    <button class="rail-btn" type="button" data-cog-page="directives" title="Directives">▤</button>
+    <button class="rail-btn" type="button" data-cog-page="intel" title="Memory">◎</button>
+    <a class="rail-btn" href="/jarvis-os" title="Jarvis OS">⌘</a>
+    <button class="rail-btn" type="button" data-cog-page="decision" title="Approvals">◇</button>
+    <button class="rail-btn" type="button" title="Settings">⚙</button>
+    <div></div>
+    <div class="rail-foot">JARVIS<br>v3.2.1</div>
+  </nav>
+
+  <header class="cog-top" aria-label="Operations status">
+    <div class="cog-top-card cog-brand-card">
+      <div class="cog-logo" aria-hidden="true"></div>
+      <div>
+        <div class="cog-brand-title">J.A.R.V.I.S. Operations Center</div>
+        <div class="cog-brand-sub">Cognitive Command · Local-First Intelligence · Always Learning</div>
+      </div>
+    </div>
+    <div class="cog-top-card">
+      <div class="cog-top-label">System Status</div>
+      <div class="cog-top-value cog-online">● Online</div>
+      <svg class="cog-sparkline" viewBox="0 0 160 32" preserveAspectRatio="none" aria-hidden="true">
+        <path class="spark-fill" d="M0 24 L8 23 L16 24 L24 18 L32 20 L40 14 L48 22 L56 18 L64 20 L72 8 L80 18 L88 14 L96 23 L104 15 L112 18 L120 12 L128 20 L136 15 L144 17 L152 13 L160 14 L160 32 L0 32 Z"></path>
+        <path d="M0 24 L8 23 L16 24 L24 18 L32 20 L40 14 L48 22 L56 18 L64 20 L72 8 L80 18 L88 14 L96 23 L104 15 L112 18 L120 12 L128 20 L136 15 L144 17 L152 13 L160 14"></path>
+      </svg>
+    </div>
+    <div class="cog-top-card">
+      <div class="cog-top-label">Mission Mode</div>
+      <div class="cog-top-value cog-blue">● Autonomous Assist</div>
+      <div class="cog-top-sub">Operator approved actions only</div>
+    </div>
+    <div class="cog-top-card">
+      <div class="cog-stat-split">
+        <div>
+          <div class="cog-top-label">Model</div>
+          <div class="cog-top-value">qwen3.6:27b</div>
+          <div class="cog-top-sub cog-online">● Local-first</div>
+        </div>
+        <div>
+          <div class="cog-top-label">GPU</div>
+          <div class="cog-top-value">RTX 4090 <span class="cog-online">87%</span></div>
+          <div class="cog-stat-bar"><i></i></div>
+        </div>
+      </div>
+    </div>
+    <div class="cog-top-card">
+      <div class="cog-top-label">UTC Time</div>
+      <div class="cog-top-value" id="cog-time">--:--:--</div>
+      <div class="cog-top-sub">Europe/London</div>
+    </div>
+  </header>
+
+  <div class="cog-mobile-tabs" aria-label="Mobile Operations pages">
+    <button class="active" type="button" data-cog-page="directives">Directives</button>
+    <button type="button" data-cog-page="graph">Graph</button>
+    <button type="button" data-cog-page="intel">Intel</button>
+    <button type="button" data-cog-page="decision">Decision</button>
+  </div>
+
   <aside class="cog-panel cog-left" aria-label="Active directives">
     <div class="cog-head">
       <span class="cog-dot"></span>
@@ -3475,6 +4431,22 @@ canvas { display: block; }
         <div class="directive-copy">Backtests and signal checks remain paper-only until explicitly approved.</div>
         <div class="directive-progress" style="--progress:48%"><i></i></div>
       </article>
+      <article class="directive-card">
+        <div class="directive-top">
+          <div class="directive-title">Obsidian Note: AI Pulse 2026-05-22</div>
+          <span class="directive-badge">Done</span>
+        </div>
+        <div class="directive-copy">Latest briefing items are available to Jarvis memory and learning review.</div>
+        <div class="directive-progress" style="--progress:100%"><i></i></div>
+      </article>
+      <article class="directive-card priority">
+        <div class="directive-top">
+          <div class="directive-title">Backtest: DCA Bot - SOL Live Data</div>
+          <span class="directive-badge">Queued</span>
+        </div>
+        <div class="directive-copy">Use fresh market history, not stale local cache.</div>
+        <div class="directive-progress" style="--progress:10%"><i></i></div>
+      </article>
     </div>
   </aside>
 
@@ -3484,6 +4456,218 @@ canvas { display: block; }
       <div class="cog-center-sub" id="cog-center-sub">Vault / Graphify / CodeGraph / AgentMemory / Qwen</div>
     </div>
     <div class="cog-node-ring">
+      <svg class="cog-graph-links" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+        <g class="starfield">
+          <circle class="star" cx="7" cy="9" r="0.16"></circle><circle class="star" cx="11" cy="23" r="0.18"></circle>
+          <circle class="star green" cx="14" cy="37" r="0.20"></circle><circle class="star" cx="9" cy="65" r="0.14"></circle>
+          <circle class="star purple" cx="15" cy="82" r="0.15"></circle><circle class="star" cx="19" cy="13" r="0.14"></circle>
+          <circle class="star" cx="23" cy="22" r="0.16"></circle><circle class="star gold" cx="27" cy="34" r="0.15"></circle>
+          <circle class="star" cx="21" cy="44" r="0.20"></circle><circle class="star green" cx="29" cy="52" r="0.16"></circle>
+          <circle class="star" cx="24" cy="62" r="0.18"></circle><circle class="star" cx="31" cy="76" r="0.14"></circle>
+          <circle class="star purple" cx="36" cy="17" r="0.14"></circle><circle class="star" cx="38" cy="27" r="0.18"></circle>
+          <circle class="star" cx="34" cy="39" r="0.14"></circle><circle class="star green" cx="40" cy="46" r="0.16"></circle>
+          <circle class="star" cx="35" cy="58" r="0.18"></circle><circle class="star gold" cx="42" cy="66" r="0.14"></circle>
+          <circle class="star" cx="39" cy="81" r="0.16"></circle><circle class="star" cx="47" cy="11" r="0.15"></circle>
+          <circle class="star green" cx="45" cy="21" r="0.16"></circle><circle class="star" cx="52" cy="29" r="0.18"></circle>
+          <circle class="star purple" cx="47" cy="39" r="0.15"></circle><circle class="star" cx="54" cy="44" r="0.14"></circle>
+          <circle class="star" cx="46" cy="55" r="0.20"></circle><circle class="star green" cx="53" cy="64" r="0.16"></circle>
+          <circle class="star" cx="48" cy="75" r="0.14"></circle><circle class="star gold" cx="55" cy="84" r="0.16"></circle>
+          <circle class="star" cx="61" cy="12" r="0.18"></circle><circle class="star purple" cx="65" cy="23" r="0.16"></circle>
+          <circle class="star" cx="59" cy="35" r="0.14"></circle><circle class="star green" cx="67" cy="43" r="0.20"></circle>
+          <circle class="star" cx="61" cy="51" r="0.16"></circle><circle class="star" cx="69" cy="61" r="0.14"></circle>
+          <circle class="star gold" cx="62" cy="71" r="0.18"></circle><circle class="star" cx="67" cy="84" r="0.16"></circle>
+          <circle class="star green" cx="75" cy="14" r="0.14"></circle><circle class="star" cx="81" cy="24" r="0.18"></circle>
+          <circle class="star" cx="73" cy="36" r="0.16"></circle><circle class="star purple" cx="85" cy="42" r="0.14"></circle>
+          <circle class="star green" cx="77" cy="52" r="0.20"></circle><circle class="star" cx="86" cy="63" r="0.15"></circle>
+          <circle class="star gold" cx="78" cy="73" r="0.16"></circle><circle class="star" cx="90" cy="83" r="0.14"></circle>
+          <circle class="star" cx="92" cy="13" r="0.15"></circle><circle class="star green" cx="94" cy="31" r="0.16"></circle>
+          <circle class="star" cx="91" cy="54" r="0.18"></circle><circle class="star purple" cx="96" cy="72" r="0.14"></circle>
+        </g>
+        <path class="link-dim" d="M18 28 50 14 79 29 80 54 68 74 61 86 49 85 28 85 20 70 12 50 18 28"></path>
+        <path class="link-dim" d="M18 28 80 54 28 85 79 29 20 70 61 86 12 50 68 74"></path>
+        <path class="link-dim" d="M50 14 12 50 49 85 80 54 18 28 68 74 79 29 28 85"></path>
+        <path class="link-primary" d="M50 48 50 14"></path>
+        <path class="link-primary" d="M50 48 18 28"></path>
+        <path class="link-primary" d="M50 48 79 29"></path>
+        <path class="link-knowledge" d="M50 48 12 50"></path>
+        <path class="link-knowledge" d="M50 48 80 54"></path>
+        <path class="link-action" d="M50 48 20 70"></path>
+        <path class="link-action" d="M50 48 28 85"></path>
+        <path class="link-primary" d="M50 48 68 74"></path>
+        <path class="link-feedback" d="M50 48 61 86"></path>
+        <path class="link-feedback" d="M50 48 49 85"></path>
+        <path class="link-knowledge" d="M18 28 50 14"></path>
+        <path class="link-primary" d="M18 28 79 29"></path>
+        <path class="link-feedback" d="M50 14 79 29"></path>
+        <path class="link-knowledge" d="M18 28 12 50"></path>
+        <path class="link-knowledge" d="M12 50 20 70"></path>
+        <path class="link-action" d="M20 70 28 85"></path>
+        <path class="link-action" d="M28 85 49 85"></path>
+        <path class="link-feedback" d="M49 85 61 86"></path>
+        <path class="link-feedback" d="M61 86 68 74"></path>
+        <path class="link-primary" d="M68 74 80 54"></path>
+        <path class="link-primary" d="M80 54 79 29"></path>
+        <path class="link-knowledge" d="M20 70 80 54"></path>
+        <path class="link-knowledge" d="M18 28 68 74"></path>
+        <path class="link-primary" d="M12 50 79 29"></path>
+        <path class="link-feedback" d="M50 14 61 86"></path>
+        <path class="link-action" d="M28 85 80 54"></path>
+        <path class="link-dim" d="M24 38 37 32 46 27 58 30 71 40 74 56 64 67 52 73 38 69 27 59 24 38"></path>
+        <path class="link-dim" d="M31 24 39 42 58 29 70 52 42 57 60 76 33 74 47 33 73 34 26 63"></path>
+        <path class="link-dim" d="M24 37 50 48 73 56 52 73 27 59 58 30 42 66 72 39 33 45"></path>
+        <path class="link-dim" d="M36 31 50 48 64 67 38 69 47 39 66 46 35 58 61 51 43 25"></path>
+        <path class="link-dim" d="M18 28 24 37 33 45 50 48 66 46 80 54"></path>
+        <path class="link-dim" d="M12 50 27 59 42 66 49 85 61 86 68 74 80 54"></path>
+        <path class="link-dim" d="M50 14 43 25 47 39 50 48 46 55 42 66 28 85"></path>
+        <path class="link-dim" d="M79 29 72 39 66 46 61 51 52 73 61 86"></path>
+        <path class="link-dim" d="M18 28 38 69 79 29 35 58 68 74 36 31"></path>
+        <path class="link-dim" d="M12 50 58 30 80 54 33 45 20 70 66 46"></path>
+        <circle cx="24" cy="37" r="0.50"></circle>
+        <circle cx="36" cy="31" r="0.50"></circle>
+        <circle cx="43" cy="25" r="0.58"></circle>
+        <circle cx="58" cy="30" r="0.50"></circle>
+        <circle cx="72" cy="39" r="0.60"></circle>
+        <circle cx="73" cy="56" r="0.50"></circle>
+        <circle cx="64" cy="67" r="0.50"></circle>
+        <circle cx="52" cy="73" r="0.58"></circle>
+        <circle cx="38" cy="69" r="0.50"></circle>
+        <circle cx="27" cy="59" r="0.58"></circle>
+        <circle cx="33" cy="45" r="0.44"></circle>
+        <circle cx="66" cy="46" r="0.44"></circle>
+        <circle cx="47" cy="39" r="0.44"></circle>
+        <circle cx="46" cy="55" r="0.50"></circle>
+        <circle cx="42" cy="66" r="0.44"></circle>
+        <circle cx="61" cy="51" r="0.44"></circle>
+        <circle cx="70" cy="52" r="0.44"></circle>
+        <circle cx="31" cy="24" r="0.38"></circle>
+        <circle cx="73" cy="34" r="0.38"></circle>
+        <circle cx="26" cy="63" r="0.38"></circle>
+      </svg>
+      <div class="cog-hub">
+        <svg viewBox="0 0 64 64" aria-hidden="true">
+          <path d="M32 9 51 21 44 48 32 57 20 48 13 21Z"/>
+          <path d="M22 23h20L32 45Z"/>
+          <path d="M22 23 32 13l10 10M22 23l10 22 10-22"/>
+        </svg>
+        <span>J.A.R.V.I.S.</span>
+      </div>
+      <div class="graph-node purple" style="left:50%;top:14%">
+        <div class="node-orb">
+          <svg class="node-icon" viewBox="0 0 40 40" aria-hidden="true">
+            <path d="M20 4 31 10v20l-11 6-11-6V10Z"/>
+            <path d="M20 8v24M11 12l9 6 9-6M11 28l9-6 9 6"/>
+          </svg>
+        </div>
+        <div class="node-title">Obsidian Vault</div>
+        <div class="node-sub">4,440 notes</div>
+        <div class="node-state">Updated</div>
+      </div>
+      <div class="graph-node" style="left:18%;top:28%">
+        <div class="node-orb">
+          <svg class="node-icon" viewBox="0 0 40 40" aria-hidden="true">
+            <circle cx="20" cy="20" r="3"/>
+            <circle cx="11" cy="13" r="2.6"/>
+            <circle cx="29" cy="13" r="2.6"/>
+            <circle cx="11" cy="28" r="2.6"/>
+            <circle cx="29" cy="28" r="2.6"/>
+            <path d="M13 15l4 3M27 15l-4 3M13 27l4-5M27 27l-4-5M14 13h12M14 28h12"/>
+          </svg>
+        </div>
+        <div class="node-title">Graphify</div>
+        <div class="node-sub">Knowledge graph</div>
+        <div class="node-state">Synced</div>
+      </div>
+      <div class="graph-node green" style="left:79%;top:29%">
+        <div class="node-orb">
+          <svg class="node-icon" viewBox="0 0 40 40" aria-hidden="true">
+            <path d="m16 12-8 8 8 8M24 12l8 8-8 8M22 9l-4 22"/>
+          </svg>
+        </div>
+        <div class="node-title">CodeGraph</div>
+        <div class="node-sub">Source brain</div>
+        <div class="node-state">Watching</div>
+      </div>
+      <div class="graph-node amber" style="left:12%;top:50%">
+        <div class="node-orb">
+          <svg class="node-icon" viewBox="0 0 40 40" aria-hidden="true">
+            <path d="M20 9c-3.7 0-6.5 2.7-6.5 6.5V19h13v-3.5C26.5 11.7 23.7 9 20 9Z"/>
+            <path d="M14 19c-3.5 1-5.5 3.8-5.5 7.5h23c0-3.7-2-6.5-5.5-7.5M15 27v4M25 27v4M20 19v10"/>
+          </svg>
+        </div>
+        <div class="node-title">AgentMemory</div>
+        <div class="node-sub">Long + short term</div>
+        <div class="node-state">Active</div>
+      </div>
+      <div class="graph-node green" style="left:80%;top:54%">
+        <div class="node-orb">
+          <svg class="node-icon" viewBox="0 0 40 40" aria-hidden="true">
+            <circle cx="20" cy="20" r="7"/>
+            <circle cx="20" cy="20" r="12"/>
+            <path d="M20 8v4M20 28v4M8 20h4M28 20h4"/>
+          </svg>
+        </div>
+        <div class="node-title">Qwen 3.6 27B</div>
+        <div class="node-sub">Local model</div>
+        <div class="node-state">Ready</div>
+      </div>
+      <div class="graph-node green" style="left:20%;top:70%">
+        <div class="node-orb">
+          <svg class="node-icon" viewBox="0 0 40 40" aria-hidden="true">
+            <path d="M11 29V18M20 29V11M29 29V21"/>
+            <path d="M8 29h24M9 18h4M18 11h4M27 21h4"/>
+          </svg>
+        </div>
+        <div class="node-title">Markets</div>
+        <div class="node-sub">Live data</div>
+        <div class="node-state">24/7</div>
+      </div>
+      <div class="graph-node amber" style="left:49%;top:85%">
+        <div class="node-orb">
+          <svg class="node-icon" viewBox="0 0 40 40" aria-hidden="true">
+            <path d="M28 13a10.5 10.5 0 0 0-18 7M11 11v7H4"/>
+            <path d="M12 27a10.5 10.5 0 0 0 18-7M29 29v-7h7"/>
+          </svg>
+        </div>
+        <div class="node-title">Learning Loop</div>
+        <div class="node-sub">Continuous</div>
+        <div class="node-state">Improving</div>
+      </div>
+      <div class="graph-node" style="left:68%;top:74%">
+        <div class="node-orb">
+          <svg class="node-icon" viewBox="0 0 40 40" aria-hidden="true">
+            <rect x="11" y="12" width="18" height="16" rx="4"/>
+            <path d="M16 12V8M24 12V8M16 28v4M24 28v4M8 17h3M8 23h3M29 17h3M29 23h3"/>
+            <circle cx="16" cy="19" r="1.5"/><circle cx="24" cy="19" r="1.5"/>
+            <path d="M16 25h8"/>
+          </svg>
+        </div>
+        <div class="node-title">Agents</div>
+        <div class="node-sub">46 agents</div>
+        <div class="node-state">18 active</div>
+      </div>
+      <div class="graph-node amber" style="left:28%;top:85%">
+        <div class="node-orb">
+          <svg class="node-icon" viewBox="0 0 40 40" aria-hidden="true">
+            <path d="M20 7 30 12v8c0 7-4.6 11-10 14-5.4-3-10-7-10-14v-8Z"/>
+            <path d="m14.5 20 3.7 3.7 7.8-9.2"/>
+          </svg>
+        </div>
+        <div class="node-title">Approvals</div>
+        <div class="node-sub">3 pending</div>
+        <div class="node-state">Requires decision</div>
+      </div>
+      <div class="graph-node purple" style="left:61%;top:86%">
+        <div class="node-orb">
+          <svg class="node-icon" viewBox="0 0 40 40" aria-hidden="true">
+            <path d="M15 30c-3.7-2-5.5-5.5-5.5-10 0-5.5 3.8-10 8.4-10 1.9 0 3.4.7 4.4 2"/>
+            <path d="M25 30c3.7-2 5.5-5.5 5.5-10 0-5.5-3.8-10-8.4-10-1.9 0-3.4.7-4.4 2"/>
+            <path d="M20 10v20M14.5 17h11M14 24h12"/>
+          </svg>
+        </div>
+        <div class="node-title">Cognitive Coach</div>
+        <div class="node-sub">Active</div>
+        <div class="node-state">Guiding</div>
+      </div>
       <span class="cog-node-label live" style="left:50%;top:50%">AgentMemory</span>
       <span class="cog-node-label live" style="left:18%;top:34%">Obsidian Vault</span>
       <span class="cog-node-label" style="left:28%;top:68%">Graphify</span>
@@ -3529,20 +4713,64 @@ canvas { display: block; }
         </div>
         <div class="intel-copy" id="cog-model-copy">qwen3.6:27b local-first with Claude/Codex standby.</div>
       </article>
+      <article class="intel-card">
+        <div class="intel-top">
+          <div class="intel-title">Market Signals</div>
+          <span class="intel-badge">24/7</span>
+        </div>
+        <div class="intel-copy">SOL/USDT +3.21% · BTC/USDT +1.42% · paper-only bot tests active.</div>
+      </article>
+      <article class="intel-card">
+        <div class="intel-top">
+          <div class="intel-title">Model & GPU Health</div>
+          <span class="intel-badge">Live</span>
+        </div>
+        <div class="intel-copy">qwen3.6:27b local-first · context 32K · RTX 4090 ready.</div>
+      </article>
     </div>
   </aside>
 
   <section class="cog-approval" aria-label="Approval console">
-    <div>
+    <div class="insight-card">
       <div class="approval-kicker">Decision Console</div>
       <div class="approval-title" id="cog-approval-title">Awaiting operator instruction</div>
       <div class="approval-copy" id="cog-approval-copy">Jarvis can research, synthesize, and queue work; destructive or external actions still require approval.</div>
+    </div>
+    <div class="insight-card">
+      <div class="approval-kicker">Key Insight</div>
+      <div class="approval-copy">Dynamic deviation plus live-history backtests can improve DCA quality while keeping risk bounded.</div>
+    </div>
+    <div class="confidence-card">
+      <div class="approval-kicker">Confidence Score</div>
+      <div class="confidence-ring"></div>
+      <div class="confidence-score">89%</div>
+    </div>
+    <div class="next-action-card">
+      <div class="approval-kicker">Next Action</div>
+      <div class="next-list">
+        <span>Create 3Commas-compatible bot</span>
+        <span>Configure safety orders</span>
+        <span>Deploy to paper trading</span>
+        <span>Monitor and optimize</span>
+      </div>
     </div>
     <div class="approval-actions">
       <button id="cog-approve" type="button">Approve</button>
       <button id="cog-disprove" type="button">Disprove</button>
     </div>
   </section>
+
+  <nav class="cog-bottom-nav" aria-label="Operations modules">
+    <a class="active" href="/brain.html">Mission Control</a>
+    <a href="/graphify">Brain</a>
+    <a href="/markets.html">Markets</a>
+    <a href="/markets.html#bot-lab">Bot Lab</a>
+    <a href="#agents-panel">Agents</a>
+    <a href="#hud-chat">Memory</a>
+    <a href="/jarvis-os">Jarvis OS</a>
+    <a href="#settings">Settings</a>
+    <div class="cog-bottom-copy">J.A.R.V.I.S. isn't just a system.<br>It's an evolving mind.</div>
+  </nav>
 </section>
 
 <!-- Top-right aggregate HUD -->
@@ -9192,6 +10420,31 @@ const cogApprove = document.getElementById('cog-approve');
 const cogDisprove = document.getElementById('cog-disprove');
 if (cogApprove) cogApprove.addEventListener('click', () => primeApprovalText('approve'));
 if (cogDisprove) cogDisprove.addEventListener('click', () => primeApprovalText('disprove'));
+function setCogPage(page) {
+  const shell = document.getElementById('cognitive-shell');
+  if (!shell) return;
+  shell.dataset.page = page || 'directives';
+  document.querySelectorAll('[data-cog-page]').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.cogPage === shell.dataset.page);
+  });
+}
+document.querySelectorAll('[data-cog-page]').forEach((btn) => {
+  btn.addEventListener('click', (ev) => {
+    ev.preventDefault();
+    setCogPage(btn.dataset.cogPage);
+  });
+});
+setCogPage('directives');
+function refreshCogClock() {
+  const el = document.getElementById('cog-time');
+  if (!el) return;
+  const now = new Date();
+  const date = now.toISOString().slice(0, 10);
+  const time = now.toLocaleTimeString('en-GB', { hour12: false });
+  el.textContent = `${date} ${time}`;
+}
+refreshCogClock();
+setInterval(refreshCogClock, 1000);
 refreshCognitiveOps();
 setInterval(refreshCognitiveOps, 30000);
 

@@ -16,6 +16,13 @@ def test_brain_html_contains_cognitive_operations_shell():
     assert "Decision Console" in html
     assert 'id="cog-approve"' in html
     assert 'id="cog-disprove"' in html
+    assert "cog-side-rail" in html
+    assert "cog-top" in html
+    assert "cog-bottom-nav" in html
+    assert "cog-mobile-tabs" in html
+    assert "starfield" in html
+    assert "Cognitive Coach" in html
+    assert "Approvals" in html
 
 
 def test_cognitive_shell_uses_existing_live_status_endpoints():
@@ -26,3 +33,4 @@ def test_cognitive_shell_uses_existing_live_status_endpoints():
     assert "cogFetchJson('/vault/summary')" in html
     assert "cogFetchJson('/codegraph/status')" in html
     assert "cogFetchJson('/graphify/status')" in html
+    assert "setCogPage('directives')" in html
