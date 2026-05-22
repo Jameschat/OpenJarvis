@@ -1289,6 +1289,9 @@ class _Handler(SimpleHTTPRequestHandler):
                 self._json_response(200, {"events": []})
         elif self.path == "/vault/summary":
             self._handle_vault_summary()
+        elif self.path in ("/memory-vault", "/memory-vault/"):
+            self.path = "/memory-vault.html"
+            super().do_GET()
         elif self.path == "/vault_graph":
             try:
                 from openjarvis.tools.obsidian_brain import parse_graph

@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1.0">
+<title>J.A.R.V.I.S. · Memory Vault</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #020812;
+    --panel: rgba(5, 18, 34, 0.82);
+    --line: rgba(66, 223, 255, 0.32);
+    --cyan: #42dfff;
+    --green: #5ee0a1;
+    --gold: #ffd15e;
+    --text: #dff8ff;
+    --muted: rgba(190, 226, 244, 0.68);
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    min-height: 100%;
+    background:
+      radial-gradient(circle at 48% 38%, rgba(66,223,255,0.18), transparent 28%),
+      radial-gradient(circle at 74% 70%, rgba(255,209,94,0.10), transparent 22%),
+      linear-gradient(135deg, #020711, #041523 62%, #020711);
+    color: var(--text);
+    font-family: "Segoe UI", system-ui, sans-serif;
+  }
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background-image:
+      radial-gradient(circle, rgba(66,223,255,0.48) 0 1px, transparent 1.6px),
+      linear-gradient(rgba(66,223,255,0.035) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(66,223,255,0.035) 1px, transparent 1px);
+    background-size: 92px 92px, 48px 48px, 48px 48px;
+    opacity: 0.32;
+  }
+  .shell {
+    position: relative;
+    min-height: 100vh;
+    padding: 14px;
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    gap: 12px;
+  }
+  .topbar, .panel, .footer {
+    border: 1px solid var(--line);
+    background: var(--panel);
+    box-shadow: inset 0 0 24px rgba(66,223,255,0.055), 0 0 26px rgba(0,0,0,0.3);
+    backdrop-filter: blur(10px);
+  }
+  .topbar {
+    min-height: 76px;
+    border-radius: 8px;
+    display: grid;
+    grid-template-columns: auto 1fr repeat(3, minmax(160px, 220px));
+    align-items: center;
+    gap: 12px;
+    padding: 10px 14px;
+  }
+  .orb {
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    border: 2px solid rgba(180,120,255,0.62);
+    background:
+      radial-gradient(circle, rgba(180,120,255,0.35) 0 34%, transparent 36%),
+      conic-gradient(from 12deg, rgba(180,120,255,0.12), rgba(66,223,255,0.85), rgba(255,209,94,0.48), rgba(180,120,255,0.12));
+    box-shadow: 0 0 22px rgba(180,120,255,0.32);
+  }
+  h1 {
+    margin: 0;
+    font-size: 24px;
+    letter-spacing: 8px;
+    font-weight: 650;
+  }
+  .subtitle {
+    margin-top: 4px;
+    color: var(--muted);
+    font-size: 12px;
+    letter-spacing: 1.7px;
+  }
+  .stat {
+    min-height: 54px;
+    border-left: 1px solid rgba(66,223,255,0.18);
+    padding-left: 14px;
+  }
+  .label {
+    color: rgba(166,209,232,0.82);
+    font-size: 10px;
+    letter-spacing: 1.8px;
+    text-transform: uppercase;
+  }
+  .value {
+    margin-top: 6px;
+    color: var(--text);
+    font: 700 18px "Consolas", monospace;
+  }
+  .value.good { color: var(--green); }
+  .main {
+    display: grid;
+    grid-template-columns: 1fr 380px;
+    gap: 12px;
+    min-height: 0;
+  }
+  .panel {
+    border-radius: 8px;
+    padding: 12px;
+    min-height: 0;
+  }
+  .panel-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    color: #9defff;
+    font-size: 12px;
+    letter-spacing: 2.5px;
+    text-transform: uppercase;
+  }
+  .badge {
+    border: 1px solid rgba(94,224,161,0.45);
+    border-radius: 5px;
+    padding: 3px 8px;
+    color: var(--green);
+    background: rgba(94,224,161,0.11);
+    font-size: 10px;
+    letter-spacing: 1.2px;
+  }
+  .vault-map {
+    position: relative;
+    margin-top: 10px;
+    min-height: min(660px, calc(100vh - 190px));
+    border: 1px solid rgba(66,223,255,0.18);
+    border-radius: 6px;
+    background: radial-gradient(circle at 50% 50%, rgba(180,120,255,0.14), transparent 32%), rgba(1,9,19,0.54);
+    overflow: hidden;
+  }
+  .vault-map::before {
+    content: "";
+    position: absolute;
+    inset: 10%;
+    border: 1px solid rgba(66,223,255,0.14);
+    border-radius: 50%;
+    box-shadow: inset 0 0 90px rgba(66,223,255,0.035);
+  }
+  .core, .node {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    text-align: center;
+  }
+  .core-icon, .node-icon {
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    margin: 0 auto 8px;
+  }
+  .core-icon {
+    width: 120px;
+    height: 120px;
+    border: 2px solid rgba(66,223,255,0.78);
+    background: radial-gradient(circle, rgba(66,223,255,0.34), rgba(3,14,28,0.96) 65%);
+    box-shadow: 0 0 44px rgba(66,223,255,0.42);
+    font-size: 38px;
+  }
+  .node-icon {
+    width: 72px;
+    height: 72px;
+    border: 2px solid var(--accent);
+    background: radial-gradient(circle, color-mix(in srgb, var(--accent) 18%, transparent), rgba(2,14,28,0.96) 65%);
+    box-shadow: 0 0 24px color-mix(in srgb, var(--accent) 38%, transparent);
+    color: var(--accent);
+    font-size: 24px;
+  }
+  strong {
+    display: block;
+    color: #effbff;
+    font-size: 13px;
+    letter-spacing: 0.8px;
+  }
+  .core strong {
+    font-size: 15px;
+    letter-spacing: 3px;
+  }
+  .node span, .core span {
+    display: block;
+    color: var(--muted);
+    font-size: 10px;
+    line-height: 1.35;
+  }
+  .side {
+    display: grid;
+    gap: 12px;
+    align-content: start;
+  }
+  .metric-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+    margin-top: 10px;
+  }
+  .metric, .detail {
+    border: 1px solid rgba(66,223,255,0.18);
+    border-radius: 6px;
+    padding: 10px;
+    background: rgba(2,13,26,0.52);
+  }
+  .metric strong {
+    margin-top: 5px;
+    font: 700 22px "Consolas", monospace;
+  }
+  .detail {
+    margin-top: 8px;
+    color: var(--muted);
+    font: 11px/1.45 "Consolas", monospace;
+    overflow-wrap: anywhere;
+  }
+  .event-list {
+    display: grid;
+    gap: 8px;
+    margin-top: 10px;
+  }
+  .event {
+    border: 1px solid rgba(66,223,255,0.16);
+    border-radius: 6px;
+    padding: 9px;
+    background: rgba(3,13,26,0.44);
+    color: var(--muted);
+    font-size: 11px;
+  }
+  .actions {
+    display: grid;
+    gap: 8px;
+    margin-top: 10px;
+  }
+  .action {
+    min-height: 32px;
+    border: 1px solid rgba(66,223,255,0.24);
+    border-radius: 6px;
+    color: var(--text);
+    background: rgba(8,24,42,0.68);
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 10px;
+    font-size: 10px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+  }
+  .action:hover {
+    color: var(--cyan);
+    border-color: rgba(66,223,255,0.58);
+  }
+  .footer {
+    border-radius: 8px;
+    min-height: 46px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 14px;
+    color: var(--muted);
+    font-size: 11px;
+    letter-spacing: 1.4px;
+  }
+  @media (max-width: 900px) {
+    .topbar { grid-template-columns: auto 1fr; }
+    .stat { border-left: 0; border-top: 1px solid rgba(66,223,255,0.18); padding: 10px 0 0; }
+    .main { grid-template-columns: 1fr; }
+    h1 { font-size: 16px; letter-spacing: 4px; }
+    .vault-map { min-height: 560px; }
+  }
+</style>
+</head>
+<body>
+<main class="shell">
+  <header class="topbar">
+    <div class="orb" aria-hidden="true"></div>
+    <div>
+      <h1>MEMORY VAULT</h1>
+      <div class="subtitle">Obsidian second brain · recall surface · session memory</div>
+    </div>
+    <div class="stat"><div class="label">Status</div><div class="value good" id="status">Loading</div></div>
+    <div class="stat"><div class="label">Notes</div><div class="value" id="notes">-</div></div>
+    <div class="stat"><div class="label">Today</div><div class="value" id="today">-</div></div>
+  </header>
+
+  <section class="main">
+    <section class="panel">
+      <div class="panel-title">Vault Memory Map <span class="badge" id="badge">SYNCING</span></div>
+      <div class="vault-map">
+        <div class="core" style="left:50%;top:50%">
+          <div class="core-icon">⬡</div>
+          <strong>OBSIDIAN VAULT</strong>
+          <span id="core-meta">Loading memory stats</span>
+        </div>
+        <div class="node" style="--accent:#b89cff;left:50%;top:16%"><div class="node-icon">K</div><strong>Knowledge</strong><span>facts and references</span></div>
+        <div class="node" style="--accent:#42dfff;left:82%;top:34%"><div class="node-icon">P</div><strong>Projects</strong><span>active state</span></div>
+        <div class="node" style="--accent:#5ee0a1;left:78%;top:72%"><div class="node-icon">S</div><strong>Sessions</strong><span>agent handoffs</span></div>
+        <div class="node" style="--accent:#ffd15e;left:22%;top:72%"><div class="node-icon">D</div><strong>Decisions</strong><span>architecture memory</span></div>
+        <div class="node" style="--accent:#5ecbff;left:18%;top:34%"><div class="node-icon">G</div><strong>Graphify</strong><span>relationship graph</span></div>
+      </div>
+    </section>
+
+    <aside class="side">
+      <section class="panel">
+        <div class="panel-title">Vault Health <span class="badge" id="health-badge">LIVE</span></div>
+        <div class="metric-grid">
+          <div class="metric"><div class="label">Notes</div><strong id="metric-notes">-</strong></div>
+          <div class="metric"><div class="label">Size</div><strong id="metric-size">-</strong></div>
+          <div class="metric"><div class="label">Daily</div><strong id="metric-daily">-</strong></div>
+          <div class="metric"><div class="label">Online</div><strong id="metric-online">-</strong></div>
+        </div>
+        <div class="detail" id="root">Vault: checking...</div>
+        <div class="detail" id="updated">Last write: checking...</div>
+      </section>
+      <section class="panel">
+        <div class="panel-title">Recent Memory Events</div>
+        <div class="event-list" id="events">
+          <div class="event">Loading recent vault events...</div>
+        </div>
+        <div class="actions">
+          <a class="action" href="/brain.html">Mission Control <span>›</span></a>
+          <a class="action" href="/graphify">Graphify Vault Brain <span>›</span></a>
+          <a class="action" href="/vault/summary">Raw Summary API <span>›</span></a>
+        </div>
+      </section>
+    </aside>
+  </section>
+
+  <footer class="footer">
+    <span>The visible Memory Vault page reads the raw /vault/summary API in the background.</span>
+    <span>Jarvis memory is live during sessions.</span>
+  </footer>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const fmt = (value) => Number(value || 0).toLocaleString();
+const sizeMb = (bytes) => `${(Number(bytes || 0) / (1024 * 1024)).toFixed(2)} MB`;
+
+async function fetchJson(path) {
+  const r = await fetch(path, { credentials: 'include' });
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
+}
+
+async function loadSummary() {
+  try {
+    const d = await fetchJson('/vault/summary');
+    $('status').textContent = d.online ? 'Online' : 'Check';
+    $('badge').textContent = d.online ? 'LIVE' : 'CHECK';
+    $('health-badge').textContent = d.online ? 'ONLINE' : 'CHECK';
+    $('notes').textContent = fmt(d.total_notes);
+    $('today').textContent = fmt(d.daily_today);
+    $('metric-notes').textContent = fmt(d.total_notes);
+    $('metric-size').textContent = sizeMb(d.total_bytes);
+    $('metric-daily').textContent = fmt(d.daily_today);
+    $('metric-online').textContent = d.online ? 'Yes' : 'No';
+    $('core-meta').textContent = `${fmt(d.total_notes)} notes / ${sizeMb(d.total_bytes)}`;
+    $('root').textContent = `Vault: ${d.vault_root || 'unknown'}`;
+    $('updated').textContent = `Last write: ${d.last_write_iso || 'unknown'}`;
+  } catch (e) {
+    $('status').textContent = 'Offline';
+    $('badge').textContent = 'ERROR';
+    $('updated').textContent = `Summary failed: ${e.message || e}`;
+  }
+}
+
+function renderEvents(events) {
+  const host = $('events');
+  const rows = (events || []).slice(-6).reverse();
+  if (!rows.length) {
+    host.innerHTML = '<div class="event">No recent vault events in this browser session.</div>';
+    return;
+  }
+  host.innerHTML = '';
+  for (const ev of rows) {
+    const div = document.createElement('div');
+    div.className = 'event';
+    const label = ev.path || ev.title || ev.name || ev.op || 'vault event';
+    const time = ev.ts || ev.time || ev.iso || '';
+    div.textContent = time ? `${label} · ${time}` : label;
+    host.appendChild(div);
+  }
+}
+
+async function loadEvents() {
+  try {
+    const d = await fetchJson('/vault');
+    renderEvents(d.events || []);
+  } catch (_) {
+    renderEvents([]);
+  }
+}
+
+loadSummary();
+loadEvents();
+setInterval(loadSummary, 30000);
+setInterval(loadEvents, 30000);
+</script>
+</body>
+</html>

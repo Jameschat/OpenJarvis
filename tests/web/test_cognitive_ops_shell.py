@@ -32,10 +32,12 @@ def test_brain_html_contains_cognitive_operations_shell():
     assert 'data-cog-page="agents"' in html
     assert 'data-cog-page="settings"' in html
     assert "Open Memory Vault" in html
+    assert "memory-vault.html" in (ROOT / "src" / "openjarvis" / "cli" / "brain_server.py").read_text(encoding="utf-8")
+    assert (ROOT / "jarvis_web" / "memory-vault.html").exists()
     assert "Open CodeGraph" in html
     assert "Open Markets" in html
     assert "Open System Monitor" in html
-    assert 'href="/vault/summary"' in html
+    assert 'href="/memory-vault"' in html
     assert 'href="/codegraph"' in html
     assert 'href="/jarvis-os"' in html
 
