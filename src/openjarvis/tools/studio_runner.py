@@ -24,6 +24,12 @@ def _lightweight_chat_reply(prompt: str) -> str | None:
     text = " ".join((prompt or "").strip().lower().split())
     if not text or len(text) > 120:
         return None
+    if ("model" in text or "qwen" in text) and any(term in text for term in ("running", "run", "using", "loaded")):
+        return (
+            "I'm running `qwen3.6-27b-local` as the Studio local-first model. "
+            "That routes to Qwen 3.6 27B through the local BeeLlama/Ollama path, "
+            "with Claude/Codex kept as escalation paths."
+        )
     if any(term in text for term in ("build", "create", "fix", "research", "search", "backtest", "run ")):
         return None
     if text in {"thanks", "thank you"}:

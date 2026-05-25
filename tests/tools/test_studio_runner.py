@@ -104,6 +104,26 @@ def test_start_run_answers_greeting_without_queueing_agent(monkeypatch, tmp_path
     assert any(e["type"] == "run.completed" for e in result["run"]["events"])
 
 
+def test_start_run_answers_model_status_without_queueing_agent(monkeypatch, tmp_path):
+    created_tasks = []
+    monkeypatch.setattr(studio_runner.studio_store, "STUDIO_ROOT", tmp_path)
+    monkeypatch.setattr(
+        studio_runner,
+        "_queue_agent_task",
+        lambda **kwargs: created_tasks.append(kwargs) or "task-1",
+    )
+
+    result = studio_runner.start_studio_run(
+        project_id="openjarvis",
+        chat_id="chat-1",
+        prompt="what qwen model are you running jarvis?",
+    )
+
+    assert result["run"]["status"] == "completed"
+    assert "qwen3.6-27b-local" in result["reply"]
+    assert created_tasks == []
+
+
 def test_record_verification_evidence_updates_run(monkeypatch, tmp_path):
     monkeypatch.setattr(studio_runner.studio_store, "STUDIO_ROOT", tmp_path)
     store = studio_runner.studio_store.StudioStore(tmp_path)

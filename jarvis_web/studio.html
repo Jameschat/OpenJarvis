@@ -451,6 +451,7 @@
     let studioState = { projects: [], chats: [], runs: [], approved: false };
     let activeProjectId = "openjarvis";
     let activeChatId = "";
+    let studioRefreshTimer = null;
 
     function el(id) { return document.getElementById(id); }
     function clear(node) { while (node && node.firstChild) node.removeChild(node.firstChild); }
@@ -650,6 +651,25 @@
       setText("studio-model-label", (state.model && state.model.alias) || "qwen3.6-27b-local");
       setText("studio-provider-label", state.provider || "auto");
       setText("studio-automation-count", (state.automations || []).length);
+      scheduleStudioRefresh();
+    }
+
+    function hasActiveRuns() {
+      return (studioState.runs || []).some((run) => ["queued", "running"].includes(run.status));
+    }
+
+    function scheduleStudioRefresh() {
+      if (studioRefreshTimer) {
+        clearTimeout(studioRefreshTimer);
+        studioRefreshTimer = null;
+      }
+      if (!hasActiveRuns()) return;
+      studioRefreshTimer = setTimeout(scheduleStudioRefreshTick, 3500);
+    }
+
+    async function scheduleStudioRefreshTick() {
+      studioRefreshTimer = null;
+      await loadStudioState();
     }
 
     async function loadStudioState() {

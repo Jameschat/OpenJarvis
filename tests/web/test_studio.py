@@ -74,3 +74,11 @@ def test_studio_messages_render_timestamps():
     assert "message-time" in html
     assert "message.created_at" in html
     assert "run.created_at" in html
+
+
+def test_studio_polls_while_runs_are_active():
+    html = (ROOT / "jarvis_web" / "studio.html").read_text(encoding="utf-8")
+
+    assert "scheduleStudioRefresh" in html
+    assert "hasActiveRuns" in html
+    assert "setTimeout(scheduleStudioRefresh" in html
