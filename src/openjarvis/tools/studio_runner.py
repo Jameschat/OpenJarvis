@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from openjarvis.tools import studio_context, studio_store, studio_workflows
+from openjarvis.tools import studio_context, studio_research, studio_store, studio_workflows
 
 
 def _queue_agent_task(
@@ -63,6 +63,20 @@ def start_studio_run(
         decision["reason"],
         {"workflow": decision["workflow"]},
     )
+    research_pack = {"ok": False, "markdown": ""}
+    if decision["workflow"] == "qwen_workflow" or studio_research.should_prefetch_research(prompt):
+        research_pack = studio_research.prefetch_research(prompt, limit=4)
+        store.append_run_event(
+            run["id"],
+            "run.research_prefetched",
+            "Web/GitHub research prefetched for local Qwen",
+            {
+                "ok": bool(research_pack.get("ok")),
+                "query": research_pack.get("query", prompt),
+                "web_hits": len((research_pack.get("web") or {}).get("hits") or []),
+                "github_repos": len((research_pack.get("github") or {}).get("repos") or []),
+            },
+        )
 
     if decision.get("requires_operator_approval") and not approved:
         run = _persist_run_status(store, store.get_run(run["id"]), "blocked")
@@ -75,12 +89,14 @@ def start_studio_run(
         return {
             "run": store.get_run(run["id"]),
             "context": context_pack,
+            "research": research_pack,
             "decision": decision,
         }
 
     agent_id = "qwen-researcher" if decision["workflow"] == "qwen_workflow" else "qwen-planner"
     task_prompt = (
         f"{context_pack.get('markdown', '')}\n\n"
+        f"{research_pack.get('markdown', '')}\n\n"
         f"Operator request:\n{prompt}\n\n"
         "Return concrete progress, blockers, and verification needed."
     )
@@ -102,6 +118,7 @@ def start_studio_run(
     return {
         "run": store.get_run(run["id"]),
         "context": context_pack,
+        "research": research_pack,
         "decision": decision,
     }
 

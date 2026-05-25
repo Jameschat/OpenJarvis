@@ -36,6 +36,8 @@ def test_start_run_records_context_workflow_and_task(monkeypatch, tmp_path):
 
     assert result["run"]["status"] == "running"
     assert created_tasks[0]["agent_id"] == "qwen-planner"
+    assert created_tasks[0]["prompt"].startswith("ctx")
+    assert "Operator request:\nBuild thing" in created_tasks[0]["prompt"]
     assert [e["type"] for e in result["run"]["events"]][:3] == [
         "run.created",
         "run.context_built",
