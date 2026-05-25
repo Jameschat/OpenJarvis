@@ -224,6 +224,7 @@ def build_beellama_dflash_command(
         "0",
         "--jinja",
         "--no-mmap",
+        "--mlock",
         "--no-host",
         "--temp",
         "0.6",

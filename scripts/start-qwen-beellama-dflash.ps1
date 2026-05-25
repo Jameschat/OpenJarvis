@@ -52,6 +52,7 @@ $argsList = @(
     "--cache-ram", "0",
     "--jinja",
     "--no-mmap",
+    "--mlock",
     "--no-host",
     "--temp", "0.6",
     "--top-k", "20",

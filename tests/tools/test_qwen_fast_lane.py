@@ -105,6 +105,7 @@ def test_beellama_dflash_command_uses_documented_runtime_flags():
     assert "--spec-dflash-cross-ctx" in command
     assert "--kv-unified" in command
     assert "--flash-attn" in command
+    assert "--mlock" in command
     assert "--cache-type-k" in command
     assert "q4_0" in command
     assert "--port" in command
@@ -131,6 +132,7 @@ def test_beellama_dflash_quality_command_matches_anbeeld_4090_profile():
     assert "q4_1" in command
     assert "--reasoning" in command
     assert "on" in command
+    assert "--mlock" in command
     assert "--chat-template-kwargs" in command
     assert '{"preserve_thinking":true}' in command
 
@@ -144,4 +146,5 @@ def test_beellama_quality_start_script_checks_q5_model_before_launch():
     assert "--ctx-size\", \"102400\"" in script
     assert "--cache-type-k\", \"q5_0\"" in script
     assert "--cache-type-v\", \"q4_1\"" in script
+    assert "--mlock" in script
     assert "--reasoning\", \"on\"" in script
