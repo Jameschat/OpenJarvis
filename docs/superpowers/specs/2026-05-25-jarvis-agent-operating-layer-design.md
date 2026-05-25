@@ -26,6 +26,7 @@ Jarvis Studio becomes a Codex-like workspace inside Operations Center:
 - Center: project conversation stream, work status blocks, and a composer for instructions.
 - Right drawer: project files, memory signals, CodeGraph/Graphify/AgentMemory status, plugins, automations, model/runtime state, and run controls.
 - Mobile: hamburger/project drawer, full-width chat, slide-over context drawer.
+- Startup: Studio shows a cyan-on-black boot screen while it loads project state and memory/tool health. The visual language should echo falling code/data streams with a centered `LOADING...` panel and progress bar, then fade into the workspace. It must be CSS/canvas-based, non-blocking, and hidden once the first `/studio/state` load completes or a visible error is shown.
 
 The operator should be able to create a project, discuss it through to completion, launch local Qwen tasks, see progress, review evidence, and keep all memory attached to that project.
 
@@ -233,6 +234,7 @@ Required coverage:
 ## Acceptance Criteria
 
 - `/studio` opens a Codex-style Jarvis workspace.
+- `/studio` displays an animated cyber boot/loading screen before the workspace appears.
 - The operator can create/select a project and chat.
 - Sending a message creates a persistent message and a visible run.
 - The run records context, workflow, progress, verification, and memory events.

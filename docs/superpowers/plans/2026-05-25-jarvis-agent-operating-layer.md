@@ -868,6 +868,9 @@ def test_studio_html_exists_and_wires_real_endpoints():
     html = (ROOT / "jarvis_web" / "studio.html").read_text(encoding="utf-8")
     for marker in [
         'id="jarvis-studio-root"',
+        'id="studio-boot-screen"',
+        'id="studio-boot-canvas"',
+        'LOADING',
         'id="studio-thread"',
         'id="studio-composer"',
         'id="studio-agent-list"',
@@ -894,6 +897,14 @@ def test_studio_buttons_are_not_inert():
     for line in html.splitlines():
         if "<button" in line:
             assert any(token in line for token in ("data-studio-action", "data-studio-page", "data-studio-tab", "id=")), line
+
+
+def test_studio_has_boot_screen_that_fades_after_state_load():
+    html = (ROOT / "jarvis_web" / "studio.html").read_text(encoding="utf-8")
+    assert "drawBootRain" in html
+    assert "hideBootScreen" in html
+    assert "studio-boot-screen.hidden" in html
+    assert "loadStudioState" in html
 ```
 
 - [ ] **Step 2: Run route tests and confirm failure**
@@ -983,6 +994,12 @@ Commit after Task 6 because routes and page must land together.
 
 Build a self-contained page with:
 
+- Matrix-style startup screen:
+  - `id="studio-boot-screen"` fixed over the page.
+  - `id="studio-boot-canvas"` for falling cyan code/data rain.
+  - centered `LOADING...` panel with a progress bar.
+  - `drawBootRain()` animation loop.
+  - `hideBootScreen()` fades the screen out only after initial state load succeeds or an error panel is rendered.
 - Codex-style three-column layout.
 - Left rail and project/chat list.
 - Center thread and composer.
