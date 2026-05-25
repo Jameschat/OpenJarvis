@@ -65,3 +65,12 @@ def test_studio_has_boot_screen_that_fades_after_state_load():
     assert "hideBootScreen" in html
     assert "studio-boot-screen.hidden" in html
     assert "loadStudioState" in html
+
+
+def test_studio_messages_render_timestamps():
+    html = (ROOT / "jarvis_web" / "studio.html").read_text(encoding="utf-8")
+
+    assert "function formatStudioTime" in html
+    assert "message-time" in html
+    assert "message.created_at" in html
+    assert "run.created_at" in html

@@ -185,6 +185,19 @@
       border: 1px solid var(--line);
       border-top-left-radius: 6px;
     }
+    .message-time {
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1;
+      padding: 0 4px;
+    }
+    .operator .message-time { text-align: right; }
+    .run-time {
+      color: var(--muted);
+      font-size: 11px;
+      margin-left: auto;
+      white-space: nowrap;
+    }
     .run-strip {
       max-width: 880px;
       margin: 0 auto 18px;
@@ -442,6 +455,12 @@
     function el(id) { return document.getElementById(id); }
     function clear(node) { while (node && node.firstChild) node.removeChild(node.firstChild); }
     function setText(id, value) { const node = el(id); if (node) node.textContent = value == null ? "" : String(value); }
+    function formatStudioTime(value) {
+      if (!value) return "";
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return "";
+      return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    }
 
     function drawBootRain() {
       const canvas = el("studio-boot-canvas");
@@ -544,6 +563,14 @@
         bubble.className = "bubble";
         bubble.textContent = message.content || "";
         article.appendChild(bubble);
+        const messageTime = formatStudioTime(message.created_at);
+        if (messageTime) {
+          const stamp = document.createElement("time");
+          stamp.className = "message-time";
+          stamp.dateTime = message.created_at;
+          stamp.textContent = messageTime;
+          article.appendChild(stamp);
+        }
         root.appendChild(article);
       });
       root.scrollTop = root.scrollHeight;
@@ -562,7 +589,11 @@
         status.textContent = run.status || "queued";
         const title = document.createElement("span");
         title.textContent = run.prompt || run.id;
-        top.append(status, title);
+        const time = document.createElement("time");
+        time.className = "run-time";
+        time.dateTime = run.created_at || "";
+        time.textContent = formatStudioTime(run.created_at);
+        top.append(status, title, time);
         card.appendChild(top);
         root.appendChild(card);
       });
