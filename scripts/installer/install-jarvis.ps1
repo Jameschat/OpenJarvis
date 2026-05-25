@@ -46,6 +46,7 @@ if (-not (Test-Path -LiteralPath $PayloadZip)) {
 $installRootFull = [System.IO.Path]::GetFullPath($InstallRoot)
 $openJarvisRoot = Join-Path $installRootFull "OpenJarvis"
 $brainRoot = Join-Path $installRootFull "Obsidian\Claude\Brain"
+$docsRoot = Join-Path $installRootFull "docs"
 $stage = Join-Path $env:TEMP ("jarvis-install-" + [guid]::NewGuid().ToString("N"))
 
 Write-Step "Preparing install folders"
@@ -72,10 +73,20 @@ Copy-DirectoryContents -Source (Join-Path $stage "OpenJarvis") -Destination $ope
 Write-Step "Restoring Brain vault"
 Copy-DirectoryContents -Source (Join-Path $stage "Brain") -Destination $brainRoot
 
+Write-Step "Restoring Claude docs"
+Copy-DirectoryContents -Source (Join-Path $stage "ClaudeDocs") -Destination $docsRoot
+
 Write-Step "Restoring .openjarvis state"
 $stateSource = Join-Path $stage "OpenJarvisState"
 $stateDest = Join-Path $env:USERPROFILE ".openjarvis"
 Copy-DirectoryContents -Source $stateSource -Destination $stateDest
+
+Write-Step "Restoring user agent assets"
+$userAssetsSource = Join-Path $stage "UserAssets"
+Copy-DirectoryContents -Source (Join-Path $userAssetsSource "codex-superpowers") -Destination (Join-Path $env:USERPROFILE ".codex\plugins\cache\local\superpowers")
+Copy-DirectoryContents -Source (Join-Path $userAssetsSource "claude-superpowers") -Destination (Join-Path $env:USERPROFILE ".claude\plugins\cache\claude-plugins-official\superpowers")
+Copy-DirectoryContents -Source (Join-Path $userAssetsSource "agentmemory-home") -Destination (Join-Path $env:USERPROFILE ".agentmemory")
+Copy-DirectoryContents -Source (Join-Path $userAssetsSource "local-bin") -Destination (Join-Path $env:USERPROFILE ".local\bin")
 
 Write-Step "Restoring secrets if present"
 $secretsSource = Join-Path $stage "Secrets"
@@ -129,6 +140,7 @@ Jarvis install complete.
 
 OpenJarvis: $openJarvisRoot
 Brain vault: $brainRoot
+Claude docs: $docsRoot
 State: $stateDest
 Shortcut: $shortcutPath
 

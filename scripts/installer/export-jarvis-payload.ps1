@@ -49,8 +49,10 @@ New-CleanDirectory -Path $stage
 
 $repoDest = Join-Path $stage "OpenJarvis"
 $brainDest = Join-Path $stage "Brain"
+$docsDest = Join-Path $stage "ClaudeDocs"
 $stateDest = Join-Path $stage "OpenJarvisState"
 $secretsDest = Join-Path $stage "Secrets"
+$userAssetsDest = Join-Path $stage "UserAssets"
 
 $repoExcludes = @(
     ".git",
@@ -73,6 +75,11 @@ if (Test-Path -LiteralPath $BrainRoot) {
     Copy-TreeFiltered -Source $BrainRoot -Destination $brainDest -ExcludeNames @(".obsidian", ".trash", "__pycache__")
 }
 
+$claudeDocsRoot = "E:\Claude\docs"
+if (Test-Path -LiteralPath $claudeDocsRoot) {
+    Copy-TreeFiltered -Source $claudeDocsRoot -Destination $docsDest -ExcludeNames @(".git", "__pycache__", "node_modules")
+}
+
 $openJarvisState = Join-Path $env:USERPROFILE ".openjarvis"
 if (Test-Path -LiteralPath $openJarvisState) {
     Copy-TreeFiltered -Source $openJarvisState -Destination $stateDest -ExcludeNames @(
@@ -81,6 +88,26 @@ if (Test-Path -LiteralPath $openJarvisState) {
         "cache",
         "__pycache__"
     )
+}
+
+New-Item -ItemType Directory -Force -Path $userAssetsDest | Out-Null
+$codexSuperpowers = Join-Path $env:USERPROFILE ".codex\plugins\cache\local\superpowers"
+if (Test-Path -LiteralPath $codexSuperpowers) {
+    Copy-TreeFiltered -Source $codexSuperpowers -Destination (Join-Path $userAssetsDest "codex-superpowers") -ExcludeNames @(".git", "node_modules", "__pycache__")
+}
+$claudeSuperpowers = Join-Path $env:USERPROFILE ".claude\plugins\cache\claude-plugins-official\superpowers"
+if (Test-Path -LiteralPath $claudeSuperpowers) {
+    Copy-TreeFiltered -Source $claudeSuperpowers -Destination (Join-Path $userAssetsDest "claude-superpowers") -ExcludeNames @(".git", "node_modules", "__pycache__")
+}
+$agentMemoryHome = Join-Path $env:USERPROFILE ".agentmemory"
+if (Test-Path -LiteralPath $agentMemoryHome) {
+    Copy-TreeFiltered -Source $agentMemoryHome -Destination (Join-Path $userAssetsDest "agentmemory-home") -ExcludeNames @("iii.pid", "logs", "cache", "__pycache__")
+}
+$iiiExe = Join-Path $env:USERPROFILE ".local\bin\iii.exe"
+if (Test-Path -LiteralPath $iiiExe) {
+    $localBinDest = Join-Path $userAssetsDest "local-bin"
+    New-Item -ItemType Directory -Force -Path $localBinDest | Out-Null
+    Copy-Item -LiteralPath $iiiExe -Destination $localBinDest -Force
 }
 
 New-Item -ItemType Directory -Force -Path $secretsDest | Out-Null
@@ -119,6 +146,7 @@ try {
     source_machine = $env:COMPUTERNAME
     openjarvis_root = $OpenJarvisRoot
     brain_root = $BrainRoot
+    claude_docs_root = $claudeDocsRoot
     includes_secrets = [bool]$IncludeSecrets
 } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $stage "manifest.json") -Encoding UTF8
 
