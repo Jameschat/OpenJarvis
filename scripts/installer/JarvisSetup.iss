@@ -10,6 +10,7 @@ AppPublisher={#MyAppPublisher}
 DefaultDirName=E:\Claude
 DisableDirPage=no
 DefaultGroupName=J.A.R.V.I.S.
+DisableProgramGroupPage=yes
 OutputDir=..\..\dist\installer
 OutputBaseFilename=JarvisSetup
 Compression=lzma2
