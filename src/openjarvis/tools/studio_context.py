@@ -54,6 +54,16 @@ def _project_file_excerpt(brain_root: Path, project_name: str | None, filename: 
     }
 
 
+def _vault_file_excerpt(brain_root: Path, filename: str) -> dict[str, str]:
+    path = brain_root / filename
+    if not path.exists():
+        return {"path": str(path), "excerpt": ""}
+    return {
+        "path": str(path),
+        "excerpt": _clip(path.read_text(encoding="utf-8", errors="replace"), 1200),
+    }
+
+
 def build_project_context_pack(
     query: str, project: dict[str, Any] | None = None, *, budget_chars: int = 8000
 ) -> dict[str, Any]:
@@ -68,8 +78,10 @@ def build_project_context_pack(
         return {"ok": False, "query": query, "warnings": [f"vault unavailable: {exc}"], "markdown": ""}
 
     vault_project = project.get("vault_project") or project.get("title") or "OpenJarvis"
+    handoff = _vault_file_excerpt(brain_root, "00 Session Handoff.md")
     state = _project_file_excerpt(brain_root, vault_project, "STATE.md")
     context = _project_file_excerpt(brain_root, vault_project, "CONTEXT.md")
+    roadmap = _project_file_excerpt(brain_root, vault_project, "ROADMAP.md")
 
     vault_hits: list[dict[str, str]] = []
     try:
@@ -106,10 +118,14 @@ def build_project_context_pack(
         "query": query,
         "active_project": {
             "name": vault_project,
+            "handoff_path": handoff["path"],
+            "handoff_excerpt": handoff["excerpt"],
             "state_path": state["path"],
             "state_excerpt": state["excerpt"],
             "context_path": context["path"],
             "context_excerpt": context["excerpt"],
+            "roadmap_path": roadmap["path"],
+            "roadmap_excerpt": roadmap["excerpt"],
         },
         "vault": {"root": str(brain_root), "hits": vault_hits},
         "episodic": episodic,
@@ -131,10 +147,14 @@ def render_context_markdown(pack: dict[str, Any], *, budget_chars: int = 8000) -
         f"Project: {pack.get('active_project', {}).get('name', '')}",
     ]
     active = pack.get("active_project", {})
+    if active.get("handoff_excerpt"):
+        lines += ["", "### 00 Session Handoff.md", active["handoff_excerpt"]]
     if active.get("state_excerpt"):
         lines += ["", "### STATE.md", active["state_excerpt"]]
     if active.get("context_excerpt"):
         lines += ["", "### CONTEXT.md", active["context_excerpt"]]
+    if active.get("roadmap_excerpt"):
+        lines += ["", "### ROADMAP.md", active["roadmap_excerpt"]]
     lines += ["", "## Vault hits"]
     for hit in pack.get("vault", {}).get("hits", []):
         lines.append(f"- `{hit.get('path')}`: {hit.get('snippet')}")

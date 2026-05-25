@@ -1953,6 +1953,13 @@ def _build_brain_context() -> str:
     knowledge = _list("Knowledge", n=6)
     sessions = _list("Sessions", n=4)
 
+    def _read_excerpt(path: Path, limit: int = 1800) -> str:
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace").replace("\x00", "").strip()
+        except OSError:
+            return ""
+        return text if len(text) <= limit else text[: limit - 20].rstrip() + "\n...[truncated]"
+
     fs_root = str(ob.BRAIN_ROOT)
     claude_mem = r"C:\Users\User\.claude\projects\E--Claude\memory"
     handoff = "00 Session Handoff"
@@ -1987,6 +1994,11 @@ def _build_brain_context() -> str:
         lines.append("Recent knowledge: " + ", ".join(knowledge))
     if sessions:
         lines.append("Recent sessions: " + ", ".join(sessions))
+    handoff_excerpt = _read_excerpt(ob.BRAIN_ROOT / f"{handoff}.md", limit=1800)
+    if handoff_excerpt:
+        lines.append("")
+        lines.append(f"### {handoff}.md")
+        lines.append(handoff_excerpt)
     lines.append("")
     lines.append("BEFORE starting: recall prior work on this topic (vault recall or "
                  "grep the FS path above).")
@@ -2003,18 +2015,24 @@ def _build_brain_context() -> str:
     if slug:
         state_path = PROJECTS_ROOT / slug / "STATE.md"
         context_path = PROJECTS_ROOT / slug / "CONTEXT.md"
-        try:
-            state = state_path.read_text(encoding="utf-8")
-            ctx = context_path.read_text(encoding="utf-8")
+        roadmap_path = PROJECTS_ROOT / slug / "ROADMAP.md"
+        state = _read_excerpt(state_path, limit=2200)
+        ctx = _read_excerpt(context_path, limit=2200)
+        roadmap = _read_excerpt(roadmap_path, limit=2200)
+        if state or ctx or roadmap:
             active_block = (
                 f"\n## Active project: {slug}\n"
-                f"Update STATE.md at end of session. Update CONTEXT.md when stable info appears.\n"
-                f"\n### STATE.md\n{state}\n"
-                f"\n### CONTEXT.md\n{ctx}\n"
+                f"Read STATE.md, CONTEXT.md, and ROADMAP.md before acting. "
+                f"Update STATE.md at end of session. Update ROADMAP.md when plan status changes. "
+                f"Update CONTEXT.md when stable info appears.\n"
             )
+            if state:
+                active_block += f"\n### STATE.md\n{state}\n"
+            if ctx:
+                active_block += f"\n### CONTEXT.md\n{ctx}\n"
+            if roadmap:
+                active_block += f"\n### ROADMAP.md\n{roadmap}\n"
             lines.append(active_block)
-        except OSError:
-            pass
 
     return "\n".join(lines)
 

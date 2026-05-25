@@ -7,8 +7,10 @@ from openjarvis.tools import studio_context
 def test_context_pack_includes_project_files_and_memory(monkeypatch, tmp_path):
     project_dir = tmp_path / "Projects" / "OpenJarvis"
     project_dir.mkdir(parents=True)
+    (tmp_path / "00 Session Handoff.md").write_text("# Handoff\n\nCurrent cross-agent state", encoding="utf-8")
     (project_dir / "STATE.md").write_text("# State\n\nWhere we left off", encoding="utf-8")
     (project_dir / "CONTEXT.md").write_text("# Context\n\nKey paths", encoding="utf-8")
+    (project_dir / "ROADMAP.md").write_text("# Roadmap\n\nNext phase", encoding="utf-8")
     brain = tmp_path
 
     fake_ob = SimpleNamespace(
@@ -36,11 +38,15 @@ def test_context_pack_includes_project_files_and_memory(monkeypatch, tmp_path):
         "Build Studio", project={"vault_project": "OpenJarvis"}, budget_chars=4000
     )
 
+    assert pack["active_project"]["handoff_excerpt"]
     assert pack["active_project"]["state_excerpt"]
+    assert pack["active_project"]["roadmap_excerpt"]
     assert pack["vault"]["hits"][0]["snippet"] == "memory snippet"
     assert pack["episodic"]["hits"][0]["snippet"] == "episodic"
     assert pack["codegraph"]["online"] is True
     assert "PROJECT CONTEXT PACK" in pack["markdown"]
+    assert "00 Session Handoff.md" in pack["markdown"]
+    assert "ROADMAP.md" in pack["markdown"]
 
 
 def test_context_pack_degrades_when_agentmemory_offline(monkeypatch, tmp_path):
