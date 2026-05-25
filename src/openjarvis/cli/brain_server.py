@@ -1231,6 +1231,76 @@ def _jarvis_os_state() -> Dict[str, Any]:
     }
 
 
+def _studio_plugins() -> List[Dict[str, Any]]:
+    plugins: List[Dict[str, Any]] = []
+    try:
+        codegraph = _codegraph_status()
+        plugins.append({
+            "id": "codegraph",
+            "name": "CodeGraph",
+            "status": "online" if codegraph.get("online") else "attention",
+            "summary": f"{codegraph.get('files') or 0} files, {codegraph.get('nodes') or 0} nodes",
+            "details": codegraph,
+        })
+    except Exception as exc:
+        plugins.append({"id": "codegraph", "name": "CodeGraph", "status": "offline", "error": str(exc)})
+    try:
+        from openjarvis.tools import agentmemory_client
+
+        health = agentmemory_client.health()
+        plugins.append({
+            "id": "agentmemory",
+            "name": "AgentMemory",
+            "status": "online" if health else "attention",
+            "summary": "episodic memory",
+            "details": {"online": bool(health)},
+        })
+    except Exception as exc:
+        plugins.append({"id": "agentmemory", "name": "AgentMemory", "status": "offline", "error": str(exc)})
+    try:
+        from openjarvis.tools import obsidian_brain
+
+        root = Path(obsidian_brain.BRAIN_ROOT)
+        plugins.append({
+            "id": "obsidian",
+            "name": "Obsidian Vault",
+            "status": "online" if root.exists() else "attention",
+            "summary": str(root),
+        })
+    except Exception as exc:
+        plugins.append({"id": "obsidian", "name": "Obsidian Vault", "status": "offline", "error": str(exc)})
+    return plugins
+
+
+def _studio_state() -> Dict[str, Any]:
+    from openjarvis.tools.studio_store import StudioStore
+
+    store = StudioStore()
+    state = store.initial_state()
+    state["ok"] = True
+    state["model"] = {
+        "primary": "qwen3.6:27b",
+        "alias": "qwen3.6-27b-local",
+        "mode": "local-first",
+        "escalation": "Claude/Codex standby",
+    }
+    state["system"] = _system_health_snapshot()
+    state["plugins"] = _studio_plugins()
+    try:
+        state["orchestration"] = orch_bridge.get_snapshot()
+    except Exception:
+        state["orchestration"] = {"tasks": [], "agents": []}
+    try:
+        from openjarvis.tools import agent_runner
+
+        state["automations"] = agent_runner.list_scheduled()
+        state["provider"] = agent_runner.get_provider_mode()
+    except Exception:
+        state["automations"] = []
+        state["provider"] = "auto"
+    return state
+
+
 def emit_chat_widget_toggle(action: str) -> None:
     """Public bridge for voice_cmd / fast-paths to nudge the HUD's chat
     widget open or closed. Decoupled from _chat_history's internal class
@@ -1402,6 +1472,7 @@ class _Handler(SimpleHTTPRequestHandler):
         if path_only in ("/", "/brain", "/brain.html", "/phone", "/phone.html",
                           "/markets", "/markets.html",
                           "/jarvis-os", "/jarvis-os.html",
+                          "/studio", "/studio.html",
                           "/manifest.webmanifest"):
             # Static shell — auth happens client-side via the modal
             if path_only in ("/", "/brain", "/brain.html"):
@@ -1412,6 +1483,8 @@ class _Handler(SimpleHTTPRequestHandler):
                 self.path = "/markets.html"
             elif path_only in ("/jarvis-os", "/jarvis-os.html"):
                 self.path = "/jarvis-os.html"
+            elif path_only in ("/studio", "/studio.html"):
+                self.path = "/studio.html"
             return super().do_GET()
         if path_only.startswith("/icons/"):
             return super().do_GET()
@@ -1517,6 +1590,60 @@ class _Handler(SimpleHTTPRequestHandler):
             self._json_response(200, orch_bridge.get_snapshot())
         elif self.path == "/jarvis-os/state":
             self._json_response(200, _jarvis_os_state())
+        elif self.path == "/studio/state":
+            self._json_response(200, _studio_state())
+        elif self.path.startswith("/studio/projects"):
+            try:
+                from openjarvis.tools.studio_store import StudioStore
+
+                self._json_response(200, {"projects": StudioStore().list_projects()})
+            except Exception:
+                logger.exception("/studio/projects failed")
+                self._json_response(500, {"error": "internal error", "ref": _err_ref()})
+        elif self.path.startswith("/studio/chats"):
+            try:
+                from urllib.parse import parse_qs, urlparse
+                from openjarvis.tools.studio_store import StudioStore
+
+                qs = parse_qs(urlparse(self.path).query)
+                project_id = (qs.get("project_id") or [None])[0]
+                self._json_response(200, {"chats": StudioStore().list_chats(project_id)})
+            except Exception:
+                logger.exception("/studio/chats failed")
+                self._json_response(500, {"error": "internal error", "ref": _err_ref()})
+        elif self.path.startswith("/studio/runs"):
+            try:
+                from urllib.parse import parse_qs, urlparse
+                from openjarvis.tools.studio_store import StudioStore
+
+                qs = parse_qs(urlparse(self.path).query)
+                project_id = (qs.get("project_id") or [None])[0]
+                chat_id = (qs.get("chat_id") or [None])[0]
+                self._json_response(200, {"runs": StudioStore().list_runs(project_id, chat_id)})
+            except Exception:
+                logger.exception("/studio/runs failed")
+                self._json_response(500, {"error": "internal error", "ref": _err_ref()})
+        elif self.path.startswith("/studio/search"):
+            try:
+                from urllib.parse import parse_qs, urlparse
+                from openjarvis.tools.studio_store import StudioStore
+
+                qs = parse_qs(urlparse(self.path).query)
+                query = (qs.get("q") or [""])[0]
+                self._json_response(200, {"results": StudioStore().search(query)})
+            except Exception:
+                logger.exception("/studio/search failed")
+                self._json_response(500, {"error": "internal error", "ref": _err_ref()})
+        elif self.path == "/studio/plugins":
+            self._json_response(200, {"plugins": _studio_plugins()})
+        elif self.path == "/studio/automations":
+            try:
+                from openjarvis.tools import agent_runner
+
+                self._json_response(200, {"automations": agent_runner.list_scheduled()})
+            except Exception:
+                logger.exception("/studio/automations failed")
+                self._json_response(500, {"error": "internal error", "ref": _err_ref()})
         elif self.path == "/provider":
             try:
                 from openjarvis.tools import agent_runner
@@ -1568,6 +1695,9 @@ class _Handler(SimpleHTTPRequestHandler):
         elif self.path in ("/jarvis-os", "/jarvis-os.html"):
             self.path = "/jarvis-os.html"
             super().do_GET()
+        elif self.path in ("/studio", "/studio.html"):
+            self.path = "/studio.html"
+            super().do_GET()
         else:
             super().do_GET()
 
@@ -1605,6 +1735,12 @@ class _Handler(SimpleHTTPRequestHandler):
             self._handle_chat()
         elif self.path == "/agent_task":
             self._handle_agent_task()
+        elif self.path == "/studio/chats":
+            self._handle_studio_chat_create()
+        elif self.path == "/studio/runs":
+            self._handle_studio_run_create()
+        elif self.path.startswith("/studio/runs/") and self.path.endswith("/evidence"):
+            self._handle_studio_run_evidence()
         # /claude_event handled at the open-routes top (skipped here)
         # /vault/remember handled at the open-routes top too (skipped here)
         elif self.path.startswith("/agent_task/cancel/"):
@@ -1631,6 +1767,91 @@ class _Handler(SimpleHTTPRequestHandler):
             self._handle_tiktok_post()
         else:
             self.send_error(404, "Not Found")
+
+    def _read_json_body(self) -> Dict[str, Any]:
+        n = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(n) if n > 0 else b"{}"
+        data = json.loads(body.decode("utf-8")) if body else {}
+        if not isinstance(data, dict):
+            raise ValueError("JSON body must be an object")
+        return data
+
+    def _handle_studio_chat_create(self) -> None:
+        try:
+            from openjarvis.tools.studio_store import StudioStore
+
+            data = self._read_json_body()
+            store = StudioStore()
+            project_id = str(data.get("project_id") or "openjarvis")
+            title = str(data.get("title") or "New chat")
+            store.ensure_project(project_id, title=project_id)
+            chat = store.create_chat(project_id, title=title)
+            self._json_response(200, {"chat": chat})
+        except ValueError as exc:
+            self._json_response(400, {"error": str(exc)})
+        except Exception:
+            logger.exception("/studio/chats create failed")
+            self._json_response(500, {"error": "internal error", "ref": _err_ref()})
+
+    def _handle_studio_run_create(self) -> None:
+        try:
+            from openjarvis.tools.studio_runner import start_studio_run
+            from openjarvis.tools.studio_store import StudioStore
+
+            data = self._read_json_body()
+            store = StudioStore()
+            project_id = str(data.get("project_id") or "openjarvis")
+            prompt = str(data.get("prompt") or "").strip()
+            if not prompt:
+                return self._json_response(400, {"error": "prompt is required"})
+            chats = store.list_chats(project_id)
+            chat_id = str(data.get("chat_id") or (chats[0]["id"] if chats else ""))
+            if not chat_id:
+                chat = store.create_chat(project_id, title=prompt[:80] or "New chat")
+                chat_id = chat["id"]
+            store.add_message(chat_id, "operator", prompt)
+            result = start_studio_run(project_id, chat_id, prompt, approved=bool(data.get("approved")))
+            run = result.get("run") or {}
+            status = run.get("status", "queued")
+            store.add_message(
+                chat_id,
+                "jarvis",
+                f"Studio run {status}: {result.get('decision', {}).get('reason', 'workflow selected')}",
+                run_id=run.get("id"),
+            )
+            self._json_response(200, result)
+        except KeyError as exc:
+            self._json_response(404, {"error": f"chat not found: {exc}"})
+        except ValueError as exc:
+            self._json_response(400, {"error": str(exc)})
+        except Exception:
+            logger.exception("/studio/runs create failed")
+            self._json_response(500, {"error": "internal error", "ref": _err_ref()})
+
+    def _handle_studio_run_evidence(self) -> None:
+        try:
+            from urllib.parse import urlparse
+            from openjarvis.tools.studio_runner import record_verification_evidence
+
+            path_only = urlparse(self.path).path
+            run_id = path_only.split("/")[-2]
+            data = self._read_json_body()
+            run = record_verification_evidence(
+                run_id,
+                kind=str(data.get("kind") or "manual"),
+                status=str(data.get("status") or "recorded"),
+                summary=str(data.get("summary") or "Verification evidence recorded"),
+                command_or_check=str(data.get("command_or_check") or ""),
+                artifact=str(data.get("artifact") or ""),
+            )
+            self._json_response(200, {"run": run})
+        except KeyError as exc:
+            self._json_response(404, {"error": f"run not found: {exc}"})
+        except ValueError as exc:
+            self._json_response(400, {"error": str(exc)})
+        except Exception:
+            logger.exception("/studio/runs evidence failed")
+            self._json_response(500, {"error": "internal error", "ref": _err_ref()})
 
     def _handle_provider_set(self) -> None:
         """POST /provider — body: {"mode": "auto"|"claude"|"codex"}.

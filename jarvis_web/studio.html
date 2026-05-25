@@ -1,0 +1,726 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>J.A.R.V.I.S. Studio</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #111113;
+      --rail: #201f27;
+      --panel: #17171a;
+      --panel-2: #202024;
+      --line: rgba(255,255,255,0.09);
+      --text: #f4f4f5;
+      --muted: #a1a1aa;
+      --accent: #62e6ff;
+      --green: #37e583;
+      --shadow: 0 18px 60px rgba(0,0,0,0.35);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--text);
+    }
+    button, input, textarea { font: inherit; }
+    button {
+      color: inherit;
+      border: 0;
+      cursor: pointer;
+      background: transparent;
+    }
+    .studio-boot-screen {
+      position: fixed;
+      inset: 0;
+      z-index: 50;
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+      background: #020707;
+      transition: opacity 520ms ease, visibility 520ms ease;
+    }
+    .studio-boot-screen.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
+    #studio-boot-canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+    .boot-card {
+      position: relative;
+      width: min(360px, calc(100vw - 42px));
+      padding: 14px;
+      border: 3px solid #29f5ef;
+      background: #030707;
+      box-shadow: 0 0 38px rgba(41,245,239,0.45), inset 0 0 0 1px rgba(41,245,239,0.35);
+      text-align: center;
+    }
+    .boot-title {
+      color: #4ffff7;
+      font-size: 27px;
+      letter-spacing: 0;
+      font-weight: 700;
+      margin-bottom: 10px;
+    }
+    .boot-progress {
+      height: 28px;
+      border: 2px solid #29f5ef;
+      padding: 3px;
+    }
+    .boot-progress i {
+      display: block;
+      height: 100%;
+      width: 64%;
+      background: #29f5ef;
+      animation: bootFill 1.8s ease-in-out infinite alternate;
+    }
+    @keyframes bootFill { from { width: 32%; } to { width: 96%; } }
+    #jarvis-studio-root {
+      height: 100vh;
+      display: grid;
+      grid-template-columns: 304px minmax(0, 1fr) 344px;
+      background: #171719;
+    }
+    .studio-sidebar {
+      background: var(--rail);
+      border-right: 1px solid var(--line);
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+    .sidebar-top { padding: 14px 12px 10px; }
+    .side-command {
+      width: 100%;
+      height: 40px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      border-radius: 8px;
+      padding: 0 12px;
+      color: #f8fafc;
+      font-weight: 650;
+    }
+    .side-command:hover, .side-command.active { background: rgba(255,255,255,0.08); }
+    .side-section {
+      padding: 16px 12px 4px;
+      color: #8b8b95;
+      font-size: 13px;
+    }
+    .project-row, .chat-row {
+      width: calc(100% - 12px);
+      margin: 2px 6px;
+      min-height: 34px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      border-radius: 8px;
+      padding: 0 8px;
+      color: #f0f0f2;
+      text-align: left;
+    }
+    .project-row:hover, .chat-row:hover, .chat-row.active { background: rgba(255,255,255,0.08); }
+    .row-meta {
+      margin-left: auto;
+      color: #9ca3af;
+      font-size: 12px;
+    }
+    .sidebar-bottom {
+      margin-top: auto;
+      padding: 12px;
+      border-top: 1px solid var(--line);
+    }
+    .studio-main {
+      min-width: 0;
+      display: grid;
+      grid-template-rows: 48px minmax(0, 1fr) auto;
+      background: #181818;
+    }
+    .thread-head {
+      height: 48px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      padding: 0 18px;
+      gap: 12px;
+    }
+    .thread-title {
+      font-weight: 700;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .thread-head .dots { margin-left: auto; color: #aaa; }
+    #studio-thread {
+      overflow: auto;
+      padding: 32px clamp(18px, 8vw, 118px);
+    }
+    .message {
+      max-width: 880px;
+      margin: 0 auto 24px;
+      display: grid;
+      gap: 10px;
+    }
+    .message.operator { justify-items: end; }
+    .bubble {
+      max-width: min(720px, 100%);
+      border-radius: 18px;
+      padding: 14px 16px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      background: #252528;
+      color: #f7f7f8;
+      box-shadow: var(--shadow);
+    }
+    .operator .bubble {
+      background: #303033;
+      border-top-right-radius: 6px;
+    }
+    .jarvis .bubble {
+      background: #1d1d20;
+      border: 1px solid var(--line);
+      border-top-left-radius: 6px;
+    }
+    .run-strip {
+      max-width: 880px;
+      margin: 0 auto 18px;
+      border: 1px solid rgba(98,230,255,0.18);
+      background: rgba(98,230,255,0.05);
+      border-radius: 12px;
+      padding: 12px;
+      display: grid;
+      gap: 8px;
+    }
+    .run-top { display: flex; gap: 10px; align-items: center; }
+    .run-status {
+      color: var(--green);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0;
+    }
+    .composer-wrap {
+      padding: 18px clamp(18px, 8vw, 118px) 24px;
+    }
+    .composer-box {
+      max-width: 880px;
+      margin: 0 auto;
+      border-radius: 18px;
+      background: #2a2a2d;
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow);
+      padding: 12px;
+    }
+    #studio-composer {
+      width: 100%;
+      min-height: 72px;
+      resize: vertical;
+      color: var(--text);
+      background: transparent;
+      border: 0;
+      outline: 0;
+    }
+    .composer-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .pill-btn {
+      min-height: 34px;
+      border-radius: 999px;
+      padding: 0 12px;
+      background: rgba(255,255,255,0.07);
+      color: #e7e7eb;
+      border: 1px solid var(--line);
+    }
+    .pill-btn:hover { background: rgba(255,255,255,0.12); }
+    .send-btn {
+      margin-left: auto;
+      width: 38px;
+      height: 38px;
+      border-radius: 999px;
+      display: grid;
+      place-items: center;
+      background: #f5f5f5;
+      color: #111;
+      font-weight: 800;
+    }
+    .studio-context {
+      background: #151517;
+      border-left: 1px solid var(--line);
+      display: grid;
+      grid-template-rows: auto auto minmax(0,1fr);
+      min-width: 0;
+    }
+    .context-head {
+      padding: 14px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .search-box {
+      margin: 12px 14px;
+      border: 1px solid var(--line);
+      background: #202024;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      padding: 0 10px;
+    }
+    .search-box input {
+      width: 100%;
+      height: 38px;
+      background: transparent;
+      color: var(--text);
+      border: 0;
+      outline: 0;
+    }
+    #studio-context-panel {
+      overflow: auto;
+      padding: 0 14px 14px;
+      display: grid;
+      gap: 12px;
+      align-content: start;
+    }
+    .context-card {
+      border: 1px solid var(--line);
+      background: #1b1b1f;
+      border-radius: 12px;
+      padding: 12px;
+    }
+    .context-kicker {
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0;
+      margin-bottom: 8px;
+    }
+    .agent-list { display: grid; gap: 8px; }
+    .agent-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      align-items: center;
+      padding: 8px;
+      border-radius: 10px;
+      background: rgba(255,255,255,0.035);
+    }
+    .state-dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 99px;
+      background: var(--green);
+      margin-right: 7px;
+    }
+    .mobile-menu { display: none; }
+    @media (max-width: 900px) {
+      body { overflow: auto; }
+      #jarvis-studio-root {
+        min-height: 100vh;
+        height: auto;
+        grid-template-columns: 1fr;
+      }
+      .mobile-menu {
+        display: flex;
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        height: 48px;
+        align-items: center;
+        gap: 8px;
+        padding: 0 12px;
+        background: #181818;
+        border-bottom: 1px solid var(--line);
+      }
+      .studio-sidebar, .studio-context { display: none; }
+      .studio-sidebar.mobile-open, .studio-context.mobile-open { display: flex; min-height: 50vh; }
+      .studio-main { min-height: 100vh; grid-template-rows: 48px minmax(55vh, 1fr) auto; }
+      #studio-thread, .composer-wrap { padding-left: 14px; padding-right: 14px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="studio-boot-screen" id="studio-boot-screen" aria-label="Jarvis Studio loading">
+    <canvas id="studio-boot-canvas"></canvas>
+    <div class="boot-card">
+      <div class="boot-title">LOADING...</div>
+      <div class="boot-progress"><i></i></div>
+    </div>
+  </div>
+
+  <div id="jarvis-studio-root">
+    <aside class="studio-sidebar" id="studio-sidebar">
+      <div class="sidebar-top">
+        <button class="side-command active" type="button" data-studio-action="new-chat">New chat</button>
+        <button class="side-command" type="button" data-studio-action="focus-search">Search</button>
+        <button class="side-command" type="button" data-studio-action="show-plugins">Plugins</button>
+        <button class="side-command" type="button" data-studio-action="show-automations">Automations <span class="row-meta" id="studio-automation-count">0</span></button>
+      </div>
+      <div class="side-section">Projects</div>
+      <div id="studio-projects"></div>
+      <div class="side-section">Chats</div>
+      <div id="studio-chats"></div>
+      <div class="sidebar-bottom">
+        <button class="side-command" type="button" data-studio-action="open-operations">Operations Center</button>
+        <button class="side-command" type="button" data-studio-action="open-settings">Settings</button>
+      </div>
+    </aside>
+
+    <main class="studio-main">
+      <div class="mobile-menu">
+        <button class="pill-btn" type="button" data-studio-action="toggle-left">Menu</button>
+        <button class="pill-btn" type="button" data-studio-action="toggle-context">Context</button>
+        <strong>J.A.R.V.I.S. Studio</strong>
+      </div>
+      <header class="thread-head">
+        <div class="thread-title" id="studio-thread-title">Jarvis local Qwen workspace</div>
+        <span class="row-meta" id="studio-model-label">qwen3.6-27b-local</span>
+        <button class="dots" type="button" data-studio-action="refresh-state">...</button>
+      </header>
+      <section id="studio-thread" aria-live="polite"></section>
+      <section class="composer-wrap">
+        <div class="composer-box">
+          <textarea id="studio-composer" placeholder="Ask Jarvis to plan, build, test, search memory, or run a local Qwen workflow..."></textarea>
+          <div class="composer-actions">
+            <button class="pill-btn" type="button" data-studio-action="attach-context">+ Context</button>
+            <button class="pill-btn" type="button" data-studio-action="toggle-approved">Default permissions</button>
+            <button class="pill-btn" type="button" data-studio-action="open-agent-list">Qwen local</button>
+            <button class="send-btn" type="button" data-studio-action="send-message">↑</button>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <aside class="studio-context" id="studio-context">
+      <div class="context-head">
+        <strong>Context</strong>
+        <span class="row-meta" id="studio-provider-label">auto</span>
+      </div>
+      <div class="search-box">
+        <input id="studio-search" placeholder="Search chats, runs, memory links">
+      </div>
+      <section id="studio-context-panel">
+        <article class="context-card">
+          <div class="context-kicker">Agents</div>
+          <div id="studio-agent-list" class="agent-list"></div>
+        </article>
+        <article class="context-card">
+          <div class="context-kicker">Plugins</div>
+          <div id="studio-plugin-list"></div>
+        </article>
+        <article class="context-card">
+          <div class="context-kicker">Runs</div>
+          <div id="studio-run-list"></div>
+        </article>
+      </section>
+    </aside>
+  </div>
+
+  <script>
+    const API = {
+      state: "/studio/state",
+      projects: "/studio/projects",
+      chats: "/studio/chats",
+      runs: "/studio/runs",
+      search: "/studio/search",
+      chatEvents: "/chat_events",
+      orchEvents: "/orch_events",
+      agentTask: "/agent_task",
+      schedule: "/schedule",
+      vault: "/vault/summary",
+      codegraph: "/codegraph/status"
+    };
+    let studioState = { projects: [], chats: [], runs: [], approved: false };
+    let activeProjectId = "openjarvis";
+    let activeChatId = "";
+
+    function el(id) { return document.getElementById(id); }
+    function clear(node) { while (node && node.firstChild) node.removeChild(node.firstChild); }
+    function setText(id, value) { const node = el(id); if (node) node.textContent = value == null ? "" : String(value); }
+
+    function drawBootRain() {
+      const canvas = el("studio-boot-canvas");
+      if (!canvas) return;
+      const ctx = canvas.getContext("2d");
+      const glyphs = "010101101001101011001JARVISQWEN";
+      let width = 0;
+      let height = 0;
+      let drops = [];
+      function resize() {
+        width = canvas.width = window.innerWidth;
+        height = canvas.height = window.innerHeight;
+        drops = Array.from({ length: Math.ceil(width / 14) }, () => Math.random() * -height);
+      }
+      function tick() {
+        ctx.fillStyle = "rgba(2,7,7,0.18)";
+        ctx.fillRect(0, 0, width, height);
+        ctx.font = "16px Consolas, monospace";
+        for (let i = 0; i < drops.length; i += 1) {
+          const text = glyphs[Math.floor(Math.random() * glyphs.length)];
+          ctx.fillStyle = Math.random() > 0.92 ? "#e6ffff" : "#28f5e9";
+          ctx.fillText(text, i * 14, drops[i]);
+          drops[i] += 16;
+          if (drops[i] > height + Math.random() * 220) drops[i] = Math.random() * -80;
+        }
+        requestAnimationFrame(tick);
+      }
+      resize();
+      window.addEventListener("resize", resize);
+      tick();
+    }
+
+    function hideBootScreen() {
+      const boot = el("studio-boot-screen");
+      if (boot) boot.classList.add("hidden");
+    }
+
+    async function apiGet(path) {
+      const response = await fetch(path, { credentials: "same-origin" });
+      if (!response.ok) throw new Error(`${path} ${response.status}`);
+      return response.json();
+    }
+
+    async function apiPost(path, payload) {
+      const response = await fetch(path, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload || {})
+      });
+      if (!response.ok) throw new Error(`${path} ${response.status}`);
+      return response.json();
+    }
+
+    function renderProjects(projects) {
+      const root = el("studio-projects");
+      clear(root);
+      projects.forEach((project) => {
+        const button = document.createElement("button");
+        button.className = "project-row";
+        button.type = "button";
+        button.dataset.studioAction = "select-project";
+        button.dataset.projectId = project.id;
+        button.textContent = project.title || project.id;
+        root.appendChild(button);
+      });
+    }
+
+    function renderChats(chats) {
+      const root = el("studio-chats");
+      clear(root);
+      chats.forEach((chat) => {
+        const button = document.createElement("button");
+        button.className = `chat-row${chat.id === activeChatId ? " active" : ""}`;
+        button.type = "button";
+        button.dataset.studioAction = "select-chat";
+        button.dataset.chatId = chat.id;
+        button.textContent = chat.title || "New chat";
+        root.appendChild(button);
+      });
+    }
+
+    function renderThread(chat) {
+      const root = el("studio-thread");
+      clear(root);
+      if (!chat || !chat.messages || chat.messages.length === 0) {
+        const intro = document.createElement("article");
+        intro.className = "message jarvis";
+        const bubble = document.createElement("div");
+        bubble.className = "bubble";
+        bubble.textContent = "Jarvis Studio is ready. Local Qwen handles normal planning and task runs; Claude/Codex remain escalation paths. Start a project, ask a question, or run a workflow.";
+        intro.appendChild(bubble);
+        root.appendChild(intro);
+        return;
+      }
+      chat.messages.forEach((message) => {
+        const article = document.createElement("article");
+        article.className = `message ${message.role === "operator" ? "operator" : "jarvis"}`;
+        const bubble = document.createElement("div");
+        bubble.className = "bubble";
+        bubble.textContent = message.content || "";
+        article.appendChild(bubble);
+        root.appendChild(article);
+      });
+      root.scrollTop = root.scrollHeight;
+    }
+
+    function renderRuns(runs) {
+      const root = el("studio-run-list");
+      clear(root);
+      (runs || []).slice(0, 6).forEach((run) => {
+        const card = document.createElement("div");
+        card.className = "run-strip";
+        const top = document.createElement("div");
+        top.className = "run-top";
+        const status = document.createElement("span");
+        status.className = "run-status";
+        status.textContent = run.status || "queued";
+        const title = document.createElement("span");
+        title.textContent = run.prompt || run.id;
+        top.append(status, title);
+        card.appendChild(top);
+        root.appendChild(card);
+      });
+    }
+
+    function renderPlugins(plugins) {
+      const root = el("studio-plugin-list");
+      clear(root);
+      (plugins || []).forEach((plugin) => {
+        const row = document.createElement("div");
+        row.className = "agent-row";
+        const name = document.createElement("span");
+        name.textContent = plugin.name || plugin.id;
+        const status = document.createElement("span");
+        status.textContent = plugin.status || "ready";
+        row.append(name, status);
+        root.appendChild(row);
+      });
+    }
+
+    function renderAgents(snapshot) {
+      const root = el("studio-agent-list");
+      clear(root);
+      const agents = (snapshot && snapshot.agents) || [
+        { id: "qwen-planner", provider: "qwen3.6-27b-local", status: "ready" },
+        { id: "qwen-builder", provider: "qwen3.6-27b-local", status: "ready" },
+        { id: "qwen-tester", provider: "qwen3.6-27b-local", status: "ready" }
+      ];
+      agents.slice(0, 8).forEach((agent) => {
+        const row = document.createElement("div");
+        row.className = "agent-row";
+        const name = document.createElement("span");
+        name.textContent = agent.id || agent.name || "agent";
+        const state = document.createElement("span");
+        state.textContent = agent.status || agent.provider || "ready";
+        row.append(name, state);
+        root.appendChild(row);
+      });
+    }
+
+    function renderState(state) {
+      studioState = { ...studioState, ...state };
+      const projects = state.projects || [];
+      const chats = state.chats || [];
+      activeProjectId = projects[0] ? projects[0].id : activeProjectId;
+      activeChatId = activeChatId || (chats[0] ? chats[0].id : "");
+      renderProjects(projects);
+      renderChats(chats);
+      renderRuns(state.runs || []);
+      renderPlugins(state.plugins || []);
+      renderAgents(state.orchestration || {});
+      const activeChat = chats.find((chat) => chat.id === activeChatId);
+      renderThread(activeChat);
+      setText("studio-model-label", (state.model && state.model.alias) || "qwen3.6-27b-local");
+      setText("studio-provider-label", state.provider || "auto");
+      setText("studio-automation-count", (state.automations || []).length);
+    }
+
+    async function loadStudioState() {
+      try {
+        const state = await apiGet(API.state);
+        renderState(state);
+      } catch (error) {
+        const root = el("studio-thread");
+        clear(root);
+        const article = document.createElement("article");
+        article.className = "message jarvis";
+        const bubble = document.createElement("div");
+        bubble.className = "bubble";
+        bubble.textContent = `Studio state failed to load: ${error.message}`;
+        article.appendChild(bubble);
+        root.appendChild(article);
+      } finally {
+        setTimeout(hideBootScreen, 450);
+      }
+    }
+
+    async function sendComposer() {
+      const composer = el("studio-composer");
+      const prompt = (composer.value || "").trim();
+      if (!prompt) return;
+      composer.value = "";
+      const optimistic = {
+        ...studioState,
+        chats: [{
+          id: activeChatId || "pending",
+          title: "Current session",
+          messages: [{ role: "operator", content: prompt }, { role: "jarvis", content: "Queued. Building memory context and selecting a workflow..." }]
+        }]
+      };
+      renderState(optimistic);
+      const result = await apiPost(API.runs, {
+        project_id: activeProjectId,
+        chat_id: activeChatId,
+        prompt,
+        approved: studioState.approved
+      });
+      activeChatId = result.run && result.run.chat_id ? result.run.chat_id : activeChatId;
+      await loadStudioState();
+    }
+
+    async function createChat() {
+      const result = await apiPost(API.chats, { project_id: activeProjectId, title: "New chat" });
+      activeChatId = result.chat.id;
+      await loadStudioState();
+    }
+
+    async function searchStudio() {
+      const query = el("studio-search").value || "";
+      if (!query.trim()) return loadStudioState();
+      const result = await apiGet(`${API.search}?q=${encodeURIComponent(query)}`);
+      const root = el("studio-run-list");
+      clear(root);
+      (result.results || []).forEach((item) => {
+        const row = document.createElement("div");
+        row.className = "agent-row";
+        const title = document.createElement("span");
+        title.textContent = item.title || item.snippet || item.type;
+        const type = document.createElement("span");
+        type.textContent = item.type;
+        row.append(title, type);
+        root.appendChild(row);
+      });
+    }
+
+    document.addEventListener('click', async (event) => {
+      const target = event.target.closest('[data-studio-action]');
+      if (!target) return;
+      const action = target.dataset.studioAction;
+      try {
+        if (action === "new-chat") await createChat();
+        if (action === "focus-search") el("studio-search").focus();
+        if (action === "show-plugins") renderPlugins((await apiGet("/studio/plugins")).plugins || []);
+        if (action === "show-automations") renderRuns((await apiGet("/studio/automations")).automations || []);
+        if (action === "open-operations") window.location.href = "/brain";
+        if (action === "open-settings") window.location.href = "/brain#settings";
+        if (action === "select-project") { activeProjectId = target.dataset.projectId; activeChatId = ""; await loadStudioState(); }
+        if (action === "select-chat") { activeChatId = target.dataset.chatId; renderState(studioState); }
+        if (action === "refresh-state") await loadStudioState();
+        if (action === "toggle-left") el("studio-sidebar").classList.toggle("mobile-open");
+        if (action === "toggle-context") el("studio-context").classList.toggle("mobile-open");
+        if (action === "attach-context") await apiGet(API.vault);
+        if (action === "toggle-approved") { studioState.approved = !studioState.approved; target.textContent = studioState.approved ? "Approved run" : "Default permissions"; }
+        if (action === "open-agent-list") renderAgents(studioState.orchestration || {});
+        if (action === "send-message") await sendComposer();
+      } catch (error) {
+        console.error(error);
+      }
+    });
+
+    el("studio-search").addEventListener("keydown", (event) => {
+      if (event.key === "Enter") searchStudio();
+    });
+    el("studio-composer").addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) sendComposer();
+    });
+    drawBootRain();
+    loadStudioState();
+  </script>
+</body>
+</html>
