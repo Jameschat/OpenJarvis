@@ -17,6 +17,20 @@ def test_fastlane_litellm_config_keeps_public_alias_and_ollama_fallback(tmp_path
     assert '- qwen3.6-27b-local: ["qwen3.6-27b-ollama"]' in text
 
 
+def test_beellama_litellm_config_uses_dflash_port_and_ollama_fallback(tmp_path: Path):
+    config_path = tmp_path / "litellm.qwen-beellama.yaml"
+
+    qwen_fast_lane.write_litellm_beellama_config(config_path)
+
+    text = config_path.read_text(encoding="utf-8")
+    assert "BeeLlama DFlash" in text
+    assert "model_name: qwen3.6-27b-local" in text
+    assert "model: openai/qwen3.6-27b-local" in text
+    assert "api_base: http://localhost:8082/v1" in text
+    assert "model_name: qwen3.6-27b-ollama" in text
+    assert '- qwen3.6-27b-local: ["qwen3.6-27b-ollama"]' in text
+
+
 def test_fastlane_server_command_uses_llama_cpp_speculative_defaults():
     command = qwen_fast_lane.build_llama_server_command(
         llama_server_path=Path("C:/llama/llama-server.exe"),
@@ -60,3 +74,24 @@ def test_fastlane_server_command_can_use_qwen_mtp_checkpoint():
     assert "--spec-type" in command
     assert "draft-mtp" in command
     assert "--spec-draft-n-max" in command
+
+
+def test_beellama_dflash_command_uses_documented_runtime_flags():
+    command = qwen_fast_lane.build_beellama_dflash_command(
+        beellama_server_path=Path("C:/beellama/beellama-server.exe"),
+        model_path=Path("E:/Claude/models/Qwen3.6-27B-Q4_K_M.gguf"),
+        draft_model_path=Path("E:/Claude/models/Qwen3.6-27B-DFlash-Q4_K_M.gguf"),
+    )
+
+    assert command[:2] == ["C:\\beellama\\beellama-server.exe", "-m"]
+    assert "--spec-draft-model" in command
+    assert "E:\\Claude\\models\\Qwen3.6-27B-DFlash-Q4_K_M.gguf" in command
+    assert "--spec-type" in command
+    assert "dflash" in command
+    assert "--spec-dflash-cross-ctx" in command
+    assert "--kv-unified" in command
+    assert "--flash-attn" in command
+    assert "--cache-type-k" in command
+    assert "q4_0" in command
+    assert "--port" in command
+    assert "8082" in command

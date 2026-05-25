@@ -2172,6 +2172,11 @@ def _run_qwen_task(task: Task, agent_spec: Dict[str, Any]) -> None:
 
             api_key = os.environ.get("OPENAI_API_KEY", "sk-noop")
             client = OpenAI(base_url=base_url, api_key=api_key)
+            create_kwargs: Dict[str, Any] = {}
+            if model == "qwen3.6-27b-local":
+                create_kwargs["extra_body"] = {
+                    "chat_template_kwargs": {"enable_thinking": False}
+                }
             resp = client.chat.completions.create(
                 model=model,
                 messages=[
@@ -2180,10 +2185,14 @@ def _run_qwen_task(task: Task, agent_spec: Dict[str, Any]) -> None:
                 ],
                 max_tokens=2500,
                 timeout=600,
+                **create_kwargs,
             )
             content = ""
             if resp.choices:
-                content = resp.choices[0].message.content or ""
+                message = resp.choices[0].message
+                content = message.content or ""
+                if not content:
+                    content = getattr(message, "reasoning_content", "") or ""
         if not content.strip():
             raise RuntimeError("qwen returned empty content")
 

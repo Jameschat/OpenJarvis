@@ -139,6 +139,9 @@ def test_qwen_provider_writes_result_markdown(monkeypatch, tmp_path):
     class DummyCompletions:
         def create(self, **kwargs):
             assert kwargs["model"] == "qwen3.6-27b-local"
+            assert kwargs["extra_body"] == {
+                "chat_template_kwargs": {"enable_thinking": False}
+            }
             return types.SimpleNamespace(choices=[DummyChoice()])
 
     class DummyClient:
@@ -233,6 +236,56 @@ def test_qwen_project_tasks_write_task_scoped_result(monkeypatch, tmp_path):
     ws = tmp_path / "qwen-workflow-test"
     assert (ws / "task-project.RESULT.md").exists()
     assert not (ws / "RESULT.md").exists()
+
+
+def test_qwen_provider_uses_reasoning_content_only_as_fallback(monkeypatch, tmp_path):
+    from openjarvis.tools import agent_runner
+    from openjarvis.tools.agent_runner import Task
+
+    class DummyMessage:
+        content = ""
+        reasoning_content = "Fallback reasoning result."
+
+    class DummyChoice:
+        message = DummyMessage()
+
+    class DummyCompletions:
+        def create(self, **kwargs):
+            assert kwargs["extra_body"] == {
+                "chat_template_kwargs": {"enable_thinking": False}
+            }
+            return types.SimpleNamespace(choices=[DummyChoice()])
+
+    class DummyClient:
+        def __init__(self, **kwargs):
+            self.chat = types.SimpleNamespace(completions=DummyCompletions())
+
+    class DummyRegistry:
+        def mark_running(self, task_id, workspace):
+            pass
+
+        def mark_finished(self, task_id, exit_code, error=None):
+            assert exit_code == 0
+
+    monkeypatch.setitem(sys.modules, "openai", types.SimpleNamespace(OpenAI=DummyClient))
+    monkeypatch.setattr(agent_runner, "RUNS_DIR", tmp_path)
+    monkeypatch.setattr(agent_runner, "_reg", DummyRegistry())
+    monkeypatch.setattr(agent_runner, "_build_brain_context", lambda: "")
+    monkeypatch.setattr(agent_runner, "_write_agent_task_note", lambda *args, **kwargs: None)
+
+    task = Task(
+        id="task-qwen-reasoning",
+        title="Reasoning fallback",
+        agent_id="qwen-researcher",
+        prompt="Write it.",
+    )
+    agent_runner._run_qwen_task(
+        task,
+        {"id": "qwen-researcher", "role": "Research.", "model": "qwen3.6-27b-local"},
+    )
+
+    result = tmp_path / "task-qwen-reasoning" / "RESULT.md"
+    assert "Fallback reasoning result." in result.read_text(encoding="utf-8")
 
 
 def test_qwen_builder_writes_safe_workspace_files(monkeypatch, tmp_path):

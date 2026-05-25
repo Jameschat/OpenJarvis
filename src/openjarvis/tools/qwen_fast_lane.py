@@ -11,6 +11,7 @@ from typing import Literal
 
 
 DEFAULT_LLAMA_BASE_URL = "http://localhost:8081/v1"
+DEFAULT_BEELLAMA_BASE_URL = "http://localhost:8082/v1"
 DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434"
 PUBLIC_QWEN_ALIAS = "qwen3.6-27b-local"
 OLLAMA_QWEN_ALIAS = "qwen3.6-27b-ollama"
@@ -44,15 +45,35 @@ def write_litellm_fastlane_config(
     return path
 
 
+def write_litellm_beellama_config(
+    path: Path,
+    *,
+    beellama_base_url: str = DEFAULT_BEELLAMA_BASE_URL,
+    ollama_base_url: str = DEFAULT_OLLAMA_BASE_URL,
+) -> Path:
+    """Write an opt-in LiteLLM config with BeeLlama DFlash first, Ollama fallback."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        _render_litellm_fastlane_config(
+            llama_base_url=beellama_base_url,
+            ollama_base_url=ollama_base_url,
+            runtime_name="BeeLlama DFlash",
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
 def _render_litellm_fastlane_config(
     *,
     llama_base_url: str,
     ollama_base_url: str,
+    runtime_name: str = "llama.cpp",
 ) -> str:
     return f"""# Optional Qwen fast-lane LiteLLM config.
 #
-# Use only after the llama.cpp benchmark beats the current Ollama path.
-# Public model contract remains {PUBLIC_QWEN_ALIAS}; if the llama.cpp server is
+# Use only after the {runtime_name} benchmark beats the current Ollama path.
+# Public model contract remains {PUBLIC_QWEN_ALIAS}; if the {runtime_name} server is
 # down or unstable, LiteLLM falls back to {OLLAMA_QWEN_ALIAS}.
 
 model_list:
@@ -142,4 +163,79 @@ def build_llama_server_command(
             "--spec-draft-n-max",
             str(max(draft_max, 16)),
         ])
+    return command
+
+
+def build_beellama_dflash_command(
+    *,
+    beellama_server_path: Path,
+    model_path: Path,
+    draft_model_path: Path,
+    mmproj_path: Path | None = None,
+    host: str = "127.0.0.1",
+    port: int = 8082,
+    context_tokens: int = 32768,
+    gpu_layers: str = "all",
+    draft_gpu_layers: str = "all",
+    cache_type_k: str = "q4_0",
+    cache_type_v: str = "q4_0",
+    cross_context_tokens: int = 512,
+    draft_max: int = 8,
+) -> list[str]:
+    """Return argv for BeeLlama's Qwen DFlash OpenAI-compatible server.
+
+    Defaults start conservative for a 24 GB RTX 4090: Q4 target, Q4 caches,
+    32K context, one server slot, and adaptive DFlash with an 8-token ceiling.
+    """
+    command = [
+        str(beellama_server_path),
+        "-m",
+        str(model_path),
+        "--spec-draft-model",
+        str(draft_model_path),
+        "--spec-type",
+        "dflash",
+        "--spec-dflash-cross-ctx",
+        str(cross_context_tokens),
+        "--host",
+        host,
+        "--port",
+        str(port),
+        "-np",
+        "1",
+        "--kv-unified",
+        "-ngl",
+        str(gpu_layers),
+        "--spec-draft-ngl",
+        str(draft_gpu_layers),
+        "-b",
+        "2048",
+        "-ub",
+        "512",
+        "--ctx-size",
+        str(context_tokens),
+        "--cache-type-k",
+        cache_type_k,
+        "--cache-type-v",
+        cache_type_v,
+        "--flash-attn",
+        "on",
+        "--cache-ram",
+        "0",
+        "--jinja",
+        "--no-mmap",
+        "--no-host",
+        "--temp",
+        "0.6",
+        "--top-k",
+        "20",
+        "--top-p",
+        "1.0",
+        "--min-p",
+        "0.0",
+        "--spec-draft-n-max",
+        str(draft_max),
+    ]
+    if mmproj_path is not None:
+        command.extend(["--mmproj", str(mmproj_path), "--no-mmproj-offload"])
     return command
