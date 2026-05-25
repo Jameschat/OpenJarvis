@@ -239,3 +239,40 @@ def build_beellama_dflash_command(
     if mmproj_path is not None:
         command.extend(["--mmproj", str(mmproj_path), "--no-mmproj-offload"])
     return command
+
+
+def build_beellama_dflash_quality_command(
+    *,
+    beellama_server_path: Path,
+    model_path: Path,
+    draft_model_path: Path,
+    mmproj_path: Path | None = None,
+    host: str = "127.0.0.1",
+    port: int = 8083,
+) -> list[str]:
+    """Return argv for the Anbeeld RTX 4090 Qwen DFlash quality profile.
+
+    This profile is intentionally separate from the live fast profile. It
+    targets the Q5_K_S model, larger DFlash cross-context, 100K context, and
+    higher-quality KV cache settings for Studio/coding deep-work benchmarks.
+    """
+    command = build_beellama_dflash_command(
+        beellama_server_path=beellama_server_path,
+        model_path=model_path,
+        draft_model_path=draft_model_path,
+        mmproj_path=mmproj_path,
+        host=host,
+        port=port,
+        context_tokens=102400,
+        cache_type_k="q5_0",
+        cache_type_v="q4_1",
+        cross_context_tokens=1024,
+        draft_max=8,
+    )
+    command.extend([
+        "--reasoning",
+        "on",
+        "--chat-template-kwargs",
+        '{"preserve_thinking":true}',
+    ])
+    return command

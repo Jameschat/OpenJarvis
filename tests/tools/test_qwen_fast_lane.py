@@ -1,4 +1,5 @@
 from pathlib import Path
+import yaml
 
 from openjarvis.tools import qwen_fast_lane
 
@@ -29,6 +30,19 @@ def test_beellama_litellm_config_uses_dflash_port_and_ollama_fallback(tmp_path: 
     assert "api_base: http://localhost:8082/v1" in text
     assert "model_name: qwen3.6-27b-ollama" in text
     assert '- qwen3.6-27b-local: ["qwen3.6-27b-ollama"]' in text
+
+
+def test_beellama_quality_litellm_config_is_valid_and_separate():
+    config_path = Path("configs/litellm.qwen-beellama-quality.yaml")
+
+    data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    model_names = [item["model_name"] for item in data["model_list"]]
+
+    assert "qwen3.6-27b-quality" in model_names
+    assert "qwen3.6-27b-local" in model_names
+    quality = next(item for item in data["model_list"] if item["model_name"] == "qwen3.6-27b-quality")
+    assert quality["litellm_params"]["api_base"] == "http://localhost:8083/v1"
+    assert {"qwen3.6-27b-quality": ["qwen3.6-27b-local", "qwen3.6-27b-ollama"]} in data["litellm_settings"]["fallbacks"]
 
 
 def test_fastlane_server_command_uses_llama_cpp_speculative_defaults():
@@ -95,3 +109,39 @@ def test_beellama_dflash_command_uses_documented_runtime_flags():
     assert "q4_0" in command
     assert "--port" in command
     assert "8082" in command
+
+
+def test_beellama_dflash_quality_command_matches_anbeeld_4090_profile():
+    command = qwen_fast_lane.build_beellama_dflash_quality_command(
+        beellama_server_path=Path("C:/beellama/llama-server.exe"),
+        model_path=Path("E:/Claude/models/Qwen3.6-27B-Q5_K_S.gguf"),
+        draft_model_path=Path("E:/Claude/models/Qwen3.6-27B-DFlash-Q4_K_M.gguf"),
+    )
+
+    assert "E:\\Claude\\models\\Qwen3.6-27B-Q5_K_S.gguf" in command
+    assert "--spec-type" in command
+    assert "dflash" in command
+    assert "--spec-dflash-cross-ctx" in command
+    assert "1024" in command
+    assert "--ctx-size" in command
+    assert "102400" in command
+    assert "--cache-type-k" in command
+    assert "q5_0" in command
+    assert "--cache-type-v" in command
+    assert "q4_1" in command
+    assert "--reasoning" in command
+    assert "on" in command
+    assert "--chat-template-kwargs" in command
+    assert '{"preserve_thinking":true}' in command
+
+
+def test_beellama_quality_start_script_checks_q5_model_before_launch():
+    script = Path("scripts/start-qwen-beellama-dflash-quality.ps1").read_text(encoding="utf-8")
+
+    assert "Qwen3.6-27B-Q5_K_S.gguf" in script
+    assert "Qwen Q5_K_S target GGUF missing" in script
+    assert "--spec-dflash-cross-ctx\", \"1024\"" in script
+    assert "--ctx-size\", \"102400\"" in script
+    assert "--cache-type-k\", \"q5_0\"" in script
+    assert "--cache-type-v\", \"q4_1\"" in script
+    assert "--reasoning\", \"on\"" in script
