@@ -1274,8 +1274,10 @@ def _studio_plugins() -> List[Dict[str, Any]]:
 
 def _studio_state() -> Dict[str, Any]:
     from openjarvis.tools.studio_store import StudioStore
+    from openjarvis.tools import studio_runner
 
     store = StudioStore()
+    studio_runner.sync_completed_run_outputs(store)
     state = store.initial_state()
     state["ok"] = True
     state["model"] = {
@@ -1817,7 +1819,7 @@ class _Handler(SimpleHTTPRequestHandler):
             store.add_message(
                 chat_id,
                 "jarvis",
-                f"Studio run {status}: {result.get('decision', {}).get('reason', 'workflow selected')}",
+                str(result.get("reply") or f"Studio run {status}: {result.get('decision', {}).get('reason', 'workflow selected')}"),
                 run_id=run.get("id"),
             )
             self._json_response(200, result)
