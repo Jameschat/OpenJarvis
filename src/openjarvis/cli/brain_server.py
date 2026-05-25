@@ -1471,8 +1471,8 @@ class _Handler(SimpleHTTPRequestHandler):
             return self._json_response(200, _vault_openapi_schema())
         if path_only in ("/", "/brain", "/brain.html", "/phone", "/phone.html",
                           "/markets", "/markets.html",
-                          "/jarvis-os", "/jarvis-os.html",
                           "/studio", "/studio.html",
+                          "/jarvis-os", "/jarvis-os.html",
                           "/manifest.webmanifest"):
             # Static shell — auth happens client-side via the modal
             if path_only in ("/", "/brain", "/brain.html"):
@@ -1481,9 +1481,10 @@ class _Handler(SimpleHTTPRequestHandler):
                 self.path = "/phone.html"
             elif path_only in ("/markets", "/markets.html"):
                 self.path = "/markets.html"
-            elif path_only in ("/jarvis-os", "/jarvis-os.html"):
-                self.path = "/jarvis-os.html"
             elif path_only in ("/studio", "/studio.html"):
+                self.path = "/studio.html"
+            elif path_only in ("/jarvis-os", "/jarvis-os.html"):
+                # Compatibility alias: super().do_GET() serves Studio below.
                 self.path = "/studio.html"
             return super().do_GET()
         if path_only.startswith("/icons/"):
@@ -1589,7 +1590,7 @@ class _Handler(SimpleHTTPRequestHandler):
         elif self.path == "/orch":
             self._json_response(200, orch_bridge.get_snapshot())
         elif self.path == "/jarvis-os/state":
-            self._json_response(200, _jarvis_os_state())
+            self._json_response(200, _studio_state())
         elif self.path == "/studio/state":
             self._json_response(200, _studio_state())
         elif self.path.startswith("/studio/projects"):
@@ -1693,7 +1694,7 @@ class _Handler(SimpleHTTPRequestHandler):
             self.path = "/phone.html"
             super().do_GET()
         elif self.path in ("/jarvis-os", "/jarvis-os.html"):
-            self.path = "/jarvis-os.html"
+            self.path = "/studio.html"
             super().do_GET()
         elif self.path in ("/studio", "/studio.html"):
             self.path = "/studio.html"

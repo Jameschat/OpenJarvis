@@ -56,17 +56,17 @@ def test_brain_html_contains_cognitive_operations_shell():
     assert (ROOT / "jarvis_web" / "memory-vault.html").exists()
     assert "Open CodeGraph" in html
     assert "Open Markets" in html
-    assert "Open System Monitor" in html
+    assert "Open Studio" in html
     assert 'href="/memory-vault"' in html
     assert 'href="/codegraph"' in html
-    assert 'href="/jarvis-os"' in html
+    assert 'href="/studio"' in html
 
 
 def test_cognitive_shell_uses_existing_live_status_endpoints():
     html = (ROOT / "jarvis_web" / "brain.html").read_text(encoding="utf-8")
 
     assert "refreshCognitiveOps" in html
-    assert "cogFetchJson('/jarvis-os/state')" in html
+    assert "cogFetchJson('/studio/state')" in html
     assert "cogFetchJson('/vault/summary')" in html
     assert "cogFetchJson('/codegraph/status')" in html
     assert "cogFetchJson('/graphify/status')" in html

@@ -271,7 +271,7 @@ canvas { display: block; }
   box-shadow: 0 0 8px rgba(94,224,255,0.35);
 }
 #ops-banner .ob-chat-btn svg { width: 14px; height: 14px; pointer-events: none; }
-#ops-banner #ob-jarvis-os-btn {
+#ops-banner #ob-studio-btn {
   width: auto;
   min-width: 74px;
   padding: 0 9px;
@@ -4389,7 +4389,6 @@ canvas { display: block; }
     </svg>
   </button>
   <button id="ob-tiktok-btn" class="ob-chat-btn" onclick="window.location='/tiktok'" title="TikTok Business — dashboard" style="background:rgba(255,45,85,0.15);border-color:#ff2d55;color:#ff6b8a;font-size:10px;letter-spacing:0.06em;width:auto;padding:0 10px;">📱 TIKTOK</button>
-  <button id="ob-jarvis-os-btn" class="ob-chat-btn" title="Open Jarvis OS" onclick="window.location='/jarvis-os'">Jarvis OS</button>
   <button id="ob-studio-btn" class="ob-chat-btn" title="Open Jarvis Studio" onclick="window.location='/studio'">Studio</button>
   <a class="ob-chat-btn" id="ob-markets-pro-link" href="/markets.html" target="_blank"
      title="Open Markets Pro — full-page Dashboard / Pulse / Analyze (new tab)"
@@ -4580,7 +4579,6 @@ canvas { display: block; }
     <a class="rail-btn" href="/markets.html" title="Markets">⌁</a>
     <button class="rail-btn" type="button" data-cog-page="directives" title="Directives">▤</button>
     <button class="rail-btn" type="button" data-cog-page="intel" title="Memory">◎</button>
-    <a class="rail-btn" href="/jarvis-os" title="Jarvis OS">⌘</a>
     <a class="rail-btn" href="/studio" title="Jarvis Studio">S</a>
     <button class="rail-btn" type="button" data-cog-page="decision" title="Approvals">◇</button>
     <button class="rail-btn" type="button" data-cog-page="settings" title="Settings">⚙</button>
@@ -4991,7 +4989,7 @@ canvas { display: block; }
           <div><div class="intel-field-label">RAM</div><div class="intel-field-value" id="cog-ram-copy">-- / -- GB</div></div>
           <div><div class="intel-field-label">GPU Power</div><div class="intel-field-value" id="cog-gpu-power-copy">-- W</div></div>
         </div>
-        <a class="intel-link-row" href="/jarvis-os">Open System Monitor <span>›</span></a>
+        <a class="intel-link-row" href="/studio">Open Studio <span>›</span></a>
       </article>
       <article class="intel-card">
         <div class="intel-top">
@@ -5115,7 +5113,6 @@ canvas { display: block; }
     <a href="/markets.html#bot-lab">Bot Lab</a>
     <button type="button" data-cog-page="agents">Agents</button>
     <button type="button" data-cog-page="intel">Memory</button>
-    <a href="/jarvis-os">Jarvis OS</a>
     <a href="/studio">Studio</a>
     <button type="button" data-cog-page="settings">Settings</button>
     <div class="cog-bottom-copy">J.A.R.V.I.S. isn't just a system.<br>It's an evolving mind.</div>
@@ -10744,7 +10741,7 @@ async function refreshCognitiveOps() {
   const shell = document.getElementById('cognitive-shell');
   if (!shell) return;
   try {
-    const state = await cogFetchJson('/jarvis-os/state');
+    const state = await cogFetchJson('/studio/state');
     const widgets = state.widgets || {};
     const missions = widgets.missions || {};
     const agents = widgets.agents || {};
