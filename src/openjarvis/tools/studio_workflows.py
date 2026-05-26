@@ -7,7 +7,15 @@ BUG_TERMS = {"bug", "fix", "error", "failed", "failure", "broken", "regression",
 RESEARCH_TERMS = {"research", "find", "compare", "look up", "watchlist", "recommend"}
 BUILD_TERMS = {"build", "create", "implement", "add", "make"}
 LARGE_TERMS = {"complete", "full", "replica", "platform", "operating layer", "through to completion"}
-EXTERNAL_TERMS = {"install", "connect", "account", "exchange", "delete", "trade", "spend", "key", "secret"}
+PLANNING_TERMS = {"plan", "planning", "idea", "thinking", "project", "proposal"}
+EXTERNAL_ACTION_RE = re.compile(
+    r"\b("
+    r"install|uninstall|connect\s+(?:my\s+)?(?:exchange|account|wallet)|"
+    r"delete|remove|trade|buy|sell|spend|"
+    r"(?:add|use|store|include|update)\s+(?:my\s+)?(?:key|secret|token|password)"
+    r")\b",
+    re.IGNORECASE,
+)
 
 
 def _has_any(text: str, terms: set[str]) -> bool:
@@ -20,7 +28,7 @@ def select_workflow(prompt: str) -> dict[str, Any]:
     lower = text.lower()
     risks: list[str] = []
     approval = False
-    if _has_any(text, EXTERNAL_TERMS):
+    if EXTERNAL_ACTION_RE.search(text):
         approval = True
         risks.append("External/account/destructive capability requires explicit operator approval.")
 
@@ -41,7 +49,7 @@ def select_workflow(prompt: str) -> dict[str, Any]:
             "Create implementation plan.",
             "Execute in reviewed slices.",
         ]
-    elif _has_any(text, RESEARCH_TERMS):
+    elif _has_any(text, RESEARCH_TERMS) or _has_any(text, PLANNING_TERMS):
         workflow = "qwen_workflow"
         reason = "Research/planning task is safe for local Qwen with memory context."
         next_steps = [

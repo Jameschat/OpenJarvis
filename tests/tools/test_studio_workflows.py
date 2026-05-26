@@ -39,3 +39,15 @@ def test_selector_marks_external_mutation_for_approval():
         "external" in item.lower() or "account" in item.lower()
         for item in decision["risks"]
     )
+
+
+def test_selector_does_not_block_project_planning_with_installed_devices():
+    decision = studio_workflows.select_workflow(
+        "I'm thinking of planning a new project for a home devices inventory, "
+        "IP address it's currently on when installed, documentation handover "
+        "for systems and value for insurance itemisation."
+    )
+
+    assert decision["workflow"] == "qwen_workflow"
+    assert decision["requires_operator_approval"] is False
+    assert decision["risks"] == []
