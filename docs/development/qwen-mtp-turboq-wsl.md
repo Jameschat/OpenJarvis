@@ -10,6 +10,8 @@ This is an experimental Qwen 3.6 27B runtime lane for chasing higher token/sec o
 
 2026-05-26 tuning sweep: tested draft depths `3,4,5,6,8` across `tbq4_0/tbq4_0`, `q4_0/q4_0`, and `q5_0/q4_1` KV cache profiles using two 256-token Studio planning prompts plus a strict JSON check per profile. Best reliable profile was draft `3` with `q4_0/q4_0`, averaging 73.53 tok/s. `tbq4_0/tbq4_0` draft `3` averaged 70.91 tok/s. Higher draft depths were slower and some profiles wrapped JSON in code fences, so the promoted launcher now defaults to `q4_0/q4_0` and draft `3`.
 
+2026-05-26 chat template update: added Froggeric's fixed Qwen chat template at `configs/qwen/froggeric-chat-template.jinja` and wired the WSL launcher to `--chat-template-file /mnt/e/Claude/OpenJarvis/configs/qwen/froggeric-chat-template.jinja`. With the fixed template plus the tuned `q4_0/q4_0` profile, the 256-token Studio planning prompt measured 78.21 tok/s, strict JSON measured 88.12 tok/s, XML tool-request output measured 82.48 tok/s, and multi-turn recall measured 59.15 tok/s. This improves effective reliability and speed, but still does not turn real Studio prompts into a sustained 130-150 tok/s path.
+
 ## Goal
 
 Benchmark a WSL/Linux `llama.cpp-turboq-mtp` server on port `8084` against:
@@ -45,6 +47,7 @@ Recommended prototype flags:
 --cache-type-v q4_0
 --flash-attn on
 --jinja
+--chat-template-file /mnt/e/Claude/OpenJarvis/configs/qwen/froggeric-chat-template.jinja
 --reasoning off
 --no-cache-prompt
 --cache-ram 0

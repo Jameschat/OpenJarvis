@@ -2,6 +2,7 @@ param(
     [string]$WslDistro = "JarvisUbuntu",
     [string]$Server = "/root/llama.cpp-turboq-mtp/build/bin/llama-server",
     [string]$Model = "/mnt/e/Claude/models/Qwen3.6-27B-Q4_K_M-mtp.gguf",
+    [string]$ChatTemplate = "/mnt/e/Claude/OpenJarvis/configs/qwen/froggeric-chat-template.jinja",
     [int]$Port = 8084,
     [int]$ContextTokens = 4096,
     [int]$DraftMax = 3,
@@ -43,6 +44,7 @@ exec $Server \
   --spec-type mtp \
   --spec-draft-n-max $DraftMax \
   --jinja \
+  --chat-template-file $ChatTemplate \
   --reasoning off \
   --no-cache-prompt \
   --cache-ram 0 \
