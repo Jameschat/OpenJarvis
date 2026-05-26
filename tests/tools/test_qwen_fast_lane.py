@@ -169,6 +169,11 @@ def test_turboq_mtp_command_uses_wsl_experimental_defaults():
     assert "tbq4_0" in command
     assert "--cache-type-v" in command
     assert "--flash-attn" in command
+    assert "--reasoning" in command
+    assert "off" in command
+    assert "--reasoning-budget" in command
+    assert "--no-cache-prompt" in command
+    assert "--cache-ram" in command
     assert "--jinja" in command
 
 
@@ -181,5 +186,9 @@ def test_turboq_mtp_wsl_start_script_is_opt_in_and_separate():
     assert "-np 1" in script
     assert "--spec-type mtp" in script
     assert "--spec-draft-n-max $DraftMax" in script
+    assert "--reasoning off" in script
+    assert "--reasoning-budget 0" in script
+    assert "--no-cache-prompt" in script
+    assert "--cache-ram 0" in script
     assert "--cache-type-k $CacheTypeK" in script
     assert "8084" in script

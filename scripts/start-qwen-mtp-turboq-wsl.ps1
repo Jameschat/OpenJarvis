@@ -62,6 +62,10 @@ exec $TurboQServer \
   --spec-type mtp \
   --spec-draft-n-max $DraftMax \
   --jinja \
+  --reasoning off \
+  --reasoning-budget 0 \
+  --no-cache-prompt \
+  --cache-ram 0 \
   --no-mmap \
   --temp 0.6 \
   --top-k 20 \

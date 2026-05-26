@@ -4,7 +4,9 @@ This is an experimental Qwen 3.6 27B runtime lane for chasing higher token/sec o
 
 ## Current Status
 
-2026-05-26 smoke: `JarvisUbuntu` starts the CUDA-built `llama.cpp-turboq-mtp` fork on port `8084` with the existing `Qwen3.6-27B-MTP-Q4_K_M-Q8nextn.gguf` model. Health and a chat smoke passed. The benchmark script measured 65.56 tok/s on a 128-token Jarvis prompt versus Ollama at 3.25 tok/s, with BeeLlama/mainline endpoints offline for that run. Do not promote yet: the desired `Qwen3.6-27B-MTP-TBQ4.gguf` model is still missing and BeeLlama quality/throughput comparison is still pending.
+2026-05-26 smoke: `JarvisUbuntu` starts the CUDA-built `llama.cpp-turboq-mtp` fork on port `8084` with the existing `Qwen3.6-27B-MTP-Q4_K_M-Q8nextn.gguf` model. Health and a chat smoke passed. The benchmark script measured 65.56 tok/s on a 128-token Jarvis prompt versus Ollama at 3.25 tok/s, with BeeLlama/mainline endpoints offline for that run.
+
+2026-05-26 promotion check: do not promote yet. After forcing visible-output flags (`--reasoning off`, `--reasoning-budget 0`, `--no-cache-prompt`, `--cache-ram 0`), the server still timed out on a normal 8-bullet Studio planning prompt while BeeLlama DFlash completed. The desired `Qwen3.6-27B-MTP-TBQ4.gguf` model is still missing, and the existing `Qwen3.6-27B-MTP-Q4_K_M-Q8nextn.gguf` lane is not reliable enough for live Studio routing.
 
 ## Goal
 
@@ -41,6 +43,10 @@ Recommended prototype flags:
 --cache-type-v tbq4_0
 --flash-attn on
 --jinja
+--reasoning off
+--reasoning-budget 0
+--no-cache-prompt
+--cache-ram 0
 ```
 
 ## Start
