@@ -40,6 +40,14 @@ Recommended prototype flags:
 
 ## Start
 
+If WSL is not installed, run this once from an elevated Administrator PowerShell:
+
+```powershell
+scripts\setup-wsl-qwen-turboq-prereqs.ps1
+```
+
+Windows may require a reboot after enabling `Microsoft-Windows-Subsystem-Linux` and `VirtualMachinePlatform`.
+
 ```powershell
 scripts\start-qwen-mtp-turboq-wsl.ps1
 ```
