@@ -6,7 +6,7 @@ This is an experimental Qwen 3.6 27B runtime lane for chasing higher token/sec o
 
 2026-05-26 smoke: `JarvisUbuntu` starts the CUDA-built `llama.cpp-turboq-mtp` fork on port `8084` with the existing `Qwen3.6-27B-MTP-Q4_K_M-Q8nextn.gguf` model. Health and a chat smoke passed. The benchmark script measured 65.56 tok/s on a 128-token Jarvis prompt versus Ollama at 3.25 tok/s, with BeeLlama/mainline endpoints offline for that run.
 
-2026-05-26 promotion check: do not promote yet. After forcing visible-output flags (`--reasoning off`, `--reasoning-budget 0`, `--no-cache-prompt`, `--cache-ram 0`), the server still timed out on a normal 8-bullet Studio planning prompt while BeeLlama DFlash completed. The desired `Qwen3.6-27B-MTP-TBQ4.gguf` model is still missing, and the existing `Qwen3.6-27B-MTP-Q4_K_M-Q8nextn.gguf` lane is not reliable enough for live Studio routing.
+2026-05-26 promotion check: WSL MTP is viable only when it owns the GPU. The earlier timeouts/slow runs were caused by co-running BeeLlama and WSL MTP on the RTX 4090, leaving WSL only ~6.4 GB free VRAM and forcing both runtimes to contend for compute. With BeeLlama stopped and `Qwen3.6-27B-Q4_K_M-mtp.gguf` running alone, the same 256-token Studio planning prompt completed at 52.72, 71.32, and 71.92 tok/s. JSON, XML tool-request, and multi-turn checks passed at ~52-61 tok/s. `qwen3.6-27b-local` now routes to WSL MTP on `8084`; BeeLlama remains configured as fallback on `8082`.
 
 ## Goal
 
@@ -71,6 +71,15 @@ scripts\start-qwen-mtp-turboq-wsl.ps1 `
   -TurboQServer "~/llama.cpp-turboq-mtp/build/bin/llama-server" `
   -Model "/mnt/e/Claude/models/Qwen3.6-27B-MTP-TBQ4.gguf"
 ```
+
+The promoted Froggeric MTP lane uses a dedicated launcher:
+
+```powershell
+scripts\start-qwen-mtp-froggeric-wsl.ps1
+```
+
+Do not run BeeLlama and WSL MTP together for performance tests. They share the
+same RTX 4090, and co-running them produces misleading low token/sec numbers.
 
 ## Benchmark
 

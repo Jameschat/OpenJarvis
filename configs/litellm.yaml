@@ -14,8 +14,9 @@
 #   1. gpt-5.4-mini   (OpenAI direct — current production model)
 #   2. gpt-4o-mini    (OpenAI cheaper fallback — different cost tier, often
 #                      separate quota bucket)
-#   3. qwen3.6:27b via BeeLlama DFlash (local RTX 4090 fast lane)
-#   4. qwen3.6:27b via Ollama (local safety fallback)
+#   3. qwen3.6:27b via WSL MTP/Froggeric (local RTX 4090 fast lane)
+#   4. qwen3.6:27b via BeeLlama DFlash (local safety fallback)
+#   5. qwen3.6:27b via Ollama (local last-resort fallback)
 #
 # Anthropic skipped 2026-05-09 (no API key on box; CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST
 # uses the subscription, not API). Add when an Anthropic API key is provisioned.
@@ -33,16 +34,24 @@ model_list:
       model: openai/gpt-4o-mini
       api_key: os.environ/OPENAI_API_KEY
 
-  # Fallback tier 2 — local BeeLlama DFlash. Never rate-limited.
-  # Benchmarked 2026-05-25 on RTX 4090: ~61.6 t/s for 128 generated tokens
-  # versus mainline llama.cpp ~39.3 t/s on the same Q4_K_M target.
+  # Fallback tier 2 — local WSL MTP/Froggeric fast lane. Never rate-limited.
+  # Benchmarked 2026-05-26 on RTX 4090, isolated on GPU:
+  # ~52-72 t/s for 256-token Studio planning prompts. Do not co-run with
+  # BeeLlama during benchmarks; they contend for the same GPU.
   - model_name: qwen3.6-27b-local
+    litellm_params:
+      model: openai/qwen3.6-27b-local
+      api_base: http://localhost:8084/v1
+      api_key: sk-noop
+
+  # Local fallback if the WSL MTP lane is not started or proves unstable.
+  - model_name: qwen3.6-27b-beellama
     litellm_params:
       model: openai/qwen3.6-27b-local
       api_base: http://localhost:8082/v1
       api_key: sk-noop
 
-  # Local fallback if BeeLlama is not started or DFlash is unstable.
+  # Local fallback if the OpenAI-compatible local lanes are unavailable.
   - model_name: qwen3.6-27b-ollama
     litellm_params:
       model: ollama_chat/qwen3.6:27b
@@ -64,7 +73,8 @@ litellm_settings:
   fallbacks:
     - gpt-5.4-mini: ["gpt-4o-mini", "qwen3.6-27b-local"]
     - gpt-4o-mini: ["qwen3.6-27b-local"]
-    - qwen3.6-27b-local: ["qwen3.6-27b-ollama"]
+    - qwen3.6-27b-local: ["qwen3.6-27b-beellama", "qwen3.6-27b-ollama"]
+    - qwen3.6-27b-beellama: ["qwen3.6-27b-ollama"]
     # gpt-4o has no fallback — vision can't be replaced by qwen3 text-only.
 
   # Retry handling — LiteLLM will retry within the same tier before falling
