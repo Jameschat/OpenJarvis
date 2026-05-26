@@ -5,8 +5,8 @@ param(
     [int]$Port = 8084,
     [int]$ContextTokens = 4096,
     [int]$DraftMax = 3,
-    [string]$CacheTypeK = "tbq4_0",
-    [string]$CacheTypeV = "tbq4_0",
+    [string]$CacheTypeK = "q4_0",
+    [string]$CacheTypeV = "q4_0",
     [int]$WaitSeconds = 300
 )
 

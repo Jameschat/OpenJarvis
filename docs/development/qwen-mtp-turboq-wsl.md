@@ -8,6 +8,8 @@ This is an experimental Qwen 3.6 27B runtime lane for chasing higher token/sec o
 
 2026-05-26 promotion check: WSL MTP is viable only when it owns the GPU. The earlier timeouts/slow runs were caused by co-running BeeLlama and WSL MTP on the RTX 4090, leaving WSL only ~6.4 GB free VRAM and forcing both runtimes to contend for compute. With BeeLlama stopped and `Qwen3.6-27B-Q4_K_M-mtp.gguf` running alone, the same 256-token Studio planning prompt completed at 52.72, 71.32, and 71.92 tok/s. JSON, XML tool-request, and multi-turn checks passed at ~52-61 tok/s. `qwen3.6-27b-local` now routes to WSL MTP on `8084`; BeeLlama remains configured as fallback on `8082`.
 
+2026-05-26 tuning sweep: tested draft depths `3,4,5,6,8` across `tbq4_0/tbq4_0`, `q4_0/q4_0`, and `q5_0/q4_1` KV cache profiles using two 256-token Studio planning prompts plus a strict JSON check per profile. Best reliable profile was draft `3` with `q4_0/q4_0`, averaging 73.53 tok/s. `tbq4_0/tbq4_0` draft `3` averaged 70.91 tok/s. Higher draft depths were slower and some profiles wrapped JSON in code fences, so the promoted launcher now defaults to `q4_0/q4_0` and draft `3`.
+
 ## Goal
 
 Benchmark a WSL/Linux `llama.cpp-turboq-mtp` server on port `8084` against:
@@ -39,12 +41,11 @@ Recommended prototype flags:
 --spec-type mtp
 --spec-draft-n-max 3
 -np 1
---cache-type-k tbq4_0
---cache-type-v tbq4_0
+--cache-type-k q4_0
+--cache-type-v q4_0
 --flash-attn on
 --jinja
 --reasoning off
---reasoning-budget 0
 --no-cache-prompt
 --cache-ram 0
 ```
