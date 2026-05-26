@@ -1,5 +1,5 @@
 param(
-    [string]$WslDistro = "Ubuntu-24.04",
+    [string]$WslDistro = "JarvisUbuntu",
     [string]$TurboQServer = "~/llama.cpp-turboq-mtp/build/bin/llama-server",
     [string]$Model = "/mnt/e/Claude/models/Qwen3.6-27B-MTP-TBQ4.gguf",
     [int]$Port = 8084,
@@ -53,12 +53,13 @@ exec $TurboQServer \
   -m $Model \
   --host 0.0.0.0 \
   --port $Port \
+  -np 1 \
   --ctx-size $ContextTokens \
   -ngl 99 \
   --flash-attn on \
   --cache-type-k $CacheTypeK \
   --cache-type-v $CacheTypeV \
-  --spec-type draft-mtp \
+  --spec-type mtp \
   --spec-draft-n-max $DraftMax \
   --jinja \
   --no-mmap \

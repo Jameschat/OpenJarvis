@@ -2,6 +2,10 @@
 
 This is an experimental Qwen 3.6 27B runtime lane for chasing higher token/sec on an RTX 4090. It does not replace the current BeeLlama DFlash fast lane.
 
+## Current Status
+
+2026-05-26 smoke: `JarvisUbuntu` starts the CUDA-built `llama.cpp-turboq-mtp` fork on port `8084` with the existing `Qwen3.6-27B-MTP-Q4_K_M-Q8nextn.gguf` model. Health and a chat smoke passed. The benchmark script measured 65.56 tok/s on a 128-token Jarvis prompt versus Ollama at 3.25 tok/s, with BeeLlama/mainline endpoints offline for that run. Do not promote yet: the desired `Qwen3.6-27B-MTP-TBQ4.gguf` model is still missing and BeeLlama quality/throughput comparison is still pending.
+
 ## Goal
 
 Benchmark a WSL/Linux `llama.cpp-turboq-mtp` server on port `8084` against:
@@ -30,8 +34,9 @@ http://127.0.0.1:8084/v1
 Recommended prototype flags:
 
 ```text
---spec-type draft-mtp
+--spec-type mtp
 --spec-draft-n-max 3
+-np 1
 --cache-type-k tbq4_0
 --cache-type-v tbq4_0
 --flash-attn on
@@ -56,7 +61,7 @@ Override paths if your WSL checkout/model paths differ:
 
 ```powershell
 scripts\start-qwen-mtp-turboq-wsl.ps1 `
-  -WslDistro Ubuntu-24.04 `
+  -WslDistro JarvisUbuntu `
   -TurboQServer "~/llama.cpp-turboq-mtp/build/bin/llama-server" `
   -Model "/mnt/e/Claude/models/Qwen3.6-27B-MTP-TBQ4.gguf"
 ```

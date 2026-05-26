@@ -159,8 +159,10 @@ def test_turboq_mtp_command_uses_wsl_experimental_defaults():
     assert command[0] == "/home/jarvis/llama.cpp-turboq-mtp/build/bin/llama-server"
     assert "--port" in command
     assert "8084" in command
+    assert "-np" in command
+    assert "1" in command
     assert "--spec-type" in command
-    assert "draft-mtp" in command
+    assert "mtp" in command
     assert "--spec-draft-n-max" in command
     assert "3" in command
     assert "--cache-type-k" in command
@@ -176,7 +178,8 @@ def test_turboq_mtp_wsl_start_script_is_opt_in_and_separate():
     assert "EXPERIMENTAL" in script
     assert "llama.cpp-turboq-mtp" in script
     assert "Qwen3.6-27B-MTP-TBQ4.gguf" in script
-    assert "--spec-type draft-mtp" in script
+    assert "-np 1" in script
+    assert "--spec-type mtp" in script
     assert "--spec-draft-n-max $DraftMax" in script
     assert "--cache-type-k $CacheTypeK" in script
     assert "8084" in script
