@@ -189,6 +189,74 @@ def test_qwen_provider_writes_result_markdown(monkeypatch, tmp_path):
     assert dummy_reg.finished == [("task-qwen", 0, None)]
 
 
+def test_qwen_provider_executes_safe_tool_bridge_round(monkeypatch, tmp_path):
+    from openjarvis.tools import agent_runner, qwen_tool_bridge
+    from openjarvis.tools.agent_runner import Task
+
+    calls = []
+
+    class DummyMessage:
+        def __init__(self, content):
+            self.content = content
+
+    class DummyChoice:
+        def __init__(self, content):
+            self.message = DummyMessage(content)
+
+    class DummyCompletions:
+        def create(self, **kwargs):
+            calls.append(kwargs)
+            if len(calls) == 1:
+                return types.SimpleNamespace(
+                    choices=[
+                        DummyChoice(
+                            'Need context.\n```qwen_tool_requests\n{"requests":[{"id":"r1","tool":"recall_vault","args":{"query":"Networx"}}]}\n```'
+                        )
+                    ]
+                )
+            assert "QWEN TOOL RESULTS" in kwargs["messages"][0]["content"]
+            return types.SimpleNamespace(choices=[DummyChoice("Final answer using vault context.")])
+
+    class DummyClient:
+        def __init__(self, **kwargs):
+            self.chat = types.SimpleNamespace(completions=DummyCompletions())
+
+    class DummyRegistry:
+        def mark_running(self, task_id, workspace):
+            pass
+
+        def mark_finished(self, task_id, exit_code, error=None):
+            assert exit_code == 0
+
+    monkeypatch.setitem(sys.modules, "openai", types.SimpleNamespace(OpenAI=DummyClient))
+    monkeypatch.setattr(agent_runner, "RUNS_DIR", tmp_path)
+    monkeypatch.setattr(agent_runner, "_reg", DummyRegistry())
+    monkeypatch.setattr(agent_runner, "_build_brain_context", lambda: "")
+    monkeypatch.setattr(agent_runner, "_write_agent_task_note", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        qwen_tool_bridge,
+        "execute_tool_requests",
+        lambda requests: [{"id": "r1", "tool": "recall_vault", "ok": True, "hits": [{"path": "Projects/Networx.md"}]}],
+    )
+
+    task = Task(
+        id="task-qwen-tools",
+        title="Qwen tool bridge",
+        agent_id="qwen-researcher",
+        prompt="Use memory.",
+    )
+
+    agent_runner._run_qwen_task(
+        task,
+        {"id": "qwen-researcher", "role": "Research.", "model": "qwen3.6-27b-local"},
+    )
+
+    ws = tmp_path / "task-qwen-tools"
+    assert len(calls) == 2
+    assert "Final answer using vault context." in (ws / "RESULT.md").read_text(encoding="utf-8")
+    assert (ws / "QWEN_TOOL_RESULTS.json").exists()
+
+
 def test_qwen_project_tasks_write_task_scoped_result(monkeypatch, tmp_path):
     from openjarvis.tools import agent_runner
     from openjarvis.tools.agent_runner import Task

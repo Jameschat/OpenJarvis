@@ -2161,6 +2161,8 @@ def _run_qwen_task(task: Task, agent_spec: Dict[str, Any]) -> None:
     role = (agent_spec.get("role") or "Local Qwen agent.").strip()
     workspace_write = bool(agent_spec.get("workspace_write"))
     brain_block = _build_brain_context()
+    from openjarvis.tools import qwen_tool_bridge
+
     workspace_block = ""
     if workspace_write:
         workspace_block = (
@@ -2178,6 +2180,10 @@ def _run_qwen_task(task: Task, agent_spec: Dict[str, Any]) -> None:
             "Write a concrete, useful result for the operator. Do not claim "
             "you changed external systems or installed tools. If action is "
             "needed, provide a clear next-step plan and verification checks.",
+            "You have a safe Jarvis tool bridge for memory, research, CodeGraph "
+            "status, and Superpowers workflow guidance. Use it when it would "
+            "materially improve accuracy. The bridge is not raw shell access.",
+            qwen_tool_bridge.tool_manifest(),
             workspace_block,
             f"TASK:\n{task.prompt or ''}",
             brain_block,
@@ -2197,9 +2203,9 @@ def _run_qwen_task(task: Task, agent_spec: Dict[str, Any]) -> None:
             and not fake_openai
             and not _litellm_proxy_healthy(base_url)
         )
-        if use_direct_ollama:
-            content = _call_qwen_via_ollama(prompt, max_tokens=qwen_max_tokens, timeout=qwen_timeout)
-        else:
+        client = None
+        create_kwargs: Dict[str, Any] = {}
+        if not use_direct_ollama:
             try:
                 from openai import OpenAI
             except ImportError as exc:
@@ -2207,29 +2213,58 @@ def _run_qwen_task(task: Task, agent_spec: Dict[str, Any]) -> None:
 
             api_key = os.environ.get("OPENAI_API_KEY", "sk-noop")
             client = OpenAI(base_url=base_url, api_key=api_key)
-            create_kwargs: Dict[str, Any] = {}
             if model == "qwen3.6-27b-local":
                 create_kwargs["extra_body"] = {
                     "chat_template_kwargs": {"enable_thinking": False}
                 }
+
+        def _call_local_qwen(prompt_text: str, user_text: str = "Produce RESULT.md now.") -> str:
+            if use_direct_ollama:
+                return _call_qwen_via_ollama(
+                    prompt_text,
+                    max_tokens=qwen_max_tokens,
+                    timeout=qwen_timeout,
+                )
+            assert client is not None
             resp = client.chat.completions.create(
                 model=model,
                 messages=[
-                    {"role": "system", "content": prompt},
-                    {"role": "user", "content": "Produce RESULT.md now."},
+                    {"role": "system", "content": prompt_text},
+                    {"role": "user", "content": user_text},
                 ],
                 max_tokens=qwen_max_tokens,
                 timeout=qwen_timeout,
                 **create_kwargs,
             )
-            content = ""
-            if resp.choices:
-                message = resp.choices[0].message
-                content = message.content or ""
-                if not content:
-                    content = getattr(message, "reasoning_content", "") or ""
+            if not resp.choices:
+                return ""
+            message = resp.choices[0].message
+            return (message.content or getattr(message, "reasoning_content", "") or "").strip()
+
+        content = _call_local_qwen(prompt)
         if not content.strip():
             raise RuntimeError("qwen returned empty content")
+        tool_requests = qwen_tool_bridge.parse_tool_requests(content)
+        if tool_requests:
+            tool_results = qwen_tool_bridge.execute_tool_requests(tool_requests)
+            (ws / "QWEN_TOOL_RESULTS.json").write_text(
+                json.dumps({"requests": tool_requests, "results": tool_results}, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            prompt_with_tools = "\n\n".join(
+                part for part in (
+                    prompt,
+                    "FIRST QWEN PASS:\n" + content,
+                    qwen_tool_bridge.format_tool_results(tool_results),
+                )
+                if part
+            )
+            content = _call_local_qwen(
+                prompt_with_tools,
+                user_text="Use the tool results and produce final RESULT.md now.",
+            )
+            if not content.strip():
+                raise RuntimeError("qwen returned empty content after tool bridge")
 
         result_md = (
             f"# {task.title}\n\n"
