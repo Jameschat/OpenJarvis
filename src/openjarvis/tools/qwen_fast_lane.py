@@ -12,6 +12,7 @@ from typing import Literal
 
 DEFAULT_LLAMA_BASE_URL = "http://localhost:8081/v1"
 DEFAULT_BEELLAMA_BASE_URL = "http://localhost:8082/v1"
+DEFAULT_TURBOQ_MTP_BASE_URL = "http://localhost:8084/v1"
 DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434"
 PUBLIC_QWEN_ALIAS = "qwen3.6-27b-local"
 OLLAMA_QWEN_ALIAS = "qwen3.6-27b-ollama"
@@ -277,3 +278,53 @@ def build_beellama_dflash_quality_command(
         '{"preserve_thinking":true}',
     ])
     return command
+
+
+def build_turboq_mtp_command(
+    *,
+    turboq_server_path: str | Path,
+    model_path: str | Path,
+    host: str = "0.0.0.0",
+    port: int = 8084,
+    context_tokens: int = 65536,
+    gpu_layers: int = 99,
+    cache_type_k: str = "tbq4_0",
+    cache_type_v: str = "tbq4_0",
+    draft_max: int = 3,
+) -> list[str]:
+    """Return argv for the experimental TurboQuant/MTP Qwen server.
+
+    This is not the live Jarvis lane. It models the WSL/Linux prototype path
+    used to compare a custom llama.cpp TurboQuant+MTP fork against BeeLlama.
+    """
+    return [
+        str(turboq_server_path),
+        "-m",
+        str(model_path),
+        "--host",
+        host,
+        "--port",
+        str(port),
+        "--ctx-size",
+        str(context_tokens),
+        "-ngl",
+        str(gpu_layers),
+        "--flash-attn",
+        "on",
+        "--cache-type-k",
+        cache_type_k,
+        "--cache-type-v",
+        cache_type_v,
+        "--spec-type",
+        "draft-mtp",
+        "--spec-draft-n-max",
+        str(draft_max),
+        "--jinja",
+        "--no-mmap",
+        "--temp",
+        "0.6",
+        "--top-k",
+        "20",
+        "--top-p",
+        "1.0",
+    ]

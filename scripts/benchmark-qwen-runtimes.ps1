@@ -4,6 +4,7 @@ param(
     [int]$WarmupTokens = 32,
     [int]$ContextTokens = 4096,
     [int]$TimeoutSec = 900,
+    [string]$TurboQBaseUrl = "http://127.0.0.1:8084/v1",
     [string]$OutputPath = ""
 )
 
@@ -114,6 +115,7 @@ $results = @()
 $results += Invoke-OllamaBenchmark -Name "ollama:qwen3.6:27b"
 $results += Invoke-OpenAiBenchmark -Name "mainline-llama.cpp:8081" -BaseUrl "http://127.0.0.1:8081/v1" -Model "qwen3.6-27b-local"
 $results += Invoke-OpenAiBenchmark -Name "beellama-dflash:8082" -BaseUrl "http://127.0.0.1:8082/v1" -Model "qwen3.6-27b-local"
+$results += Invoke-OpenAiBenchmark -Name "wsl-turboq-mtp:8084" -BaseUrl $TurboQBaseUrl -Model "qwen3.6-27b-local"
 
 $results | Format-Table -AutoSize
 

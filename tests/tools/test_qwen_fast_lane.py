@@ -148,3 +148,35 @@ def test_beellama_quality_start_script_checks_q5_model_before_launch():
     assert "--cache-type-v\", \"q4_1\"" in script
     assert "--mlock" in script
     assert "--reasoning\", \"on\"" in script
+
+
+def test_turboq_mtp_command_uses_wsl_experimental_defaults():
+    command = qwen_fast_lane.build_turboq_mtp_command(
+        turboq_server_path="/home/jarvis/llama.cpp-turboq-mtp/build/bin/llama-server",
+        model_path="/mnt/e/Claude/models/Qwen3.6-27B-MTP-TBQ4.gguf",
+    )
+
+    assert command[0] == "/home/jarvis/llama.cpp-turboq-mtp/build/bin/llama-server"
+    assert "--port" in command
+    assert "8084" in command
+    assert "--spec-type" in command
+    assert "draft-mtp" in command
+    assert "--spec-draft-n-max" in command
+    assert "3" in command
+    assert "--cache-type-k" in command
+    assert "tbq4_0" in command
+    assert "--cache-type-v" in command
+    assert "--flash-attn" in command
+    assert "--jinja" in command
+
+
+def test_turboq_mtp_wsl_start_script_is_opt_in_and_separate():
+    script = Path("scripts/start-qwen-mtp-turboq-wsl.ps1").read_text(encoding="utf-8")
+
+    assert "EXPERIMENTAL" in script
+    assert "llama.cpp-turboq-mtp" in script
+    assert "Qwen3.6-27B-MTP-TBQ4.gguf" in script
+    assert "--spec-type draft-mtp" in script
+    assert "--spec-draft-n-max $DraftMax" in script
+    assert "--cache-type-k $CacheTypeK" in script
+    assert "8084" in script
