@@ -1272,6 +1272,53 @@ def _studio_plugins() -> List[Dict[str, Any]]:
     return plugins
 
 
+_STUDIO_QWEN_PROFILE_PATH = Path.home() / ".openjarvis" / "studio" / "qwen_profile.json"
+
+
+def _load_studio_qwen_profile() -> str:
+    profile = os.environ.get("OPENJARVIS_QWEN_PROFILE", "").strip().lower()
+    if not profile:
+        try:
+            data = json.loads(_STUDIO_QWEN_PROFILE_PATH.read_text(encoding="utf-8-sig"))
+            profile = str(data.get("active") or "").strip().lower()
+        except Exception:
+            profile = ""
+    if profile not in {"fast", "quality"}:
+        profile = "fast"
+    os.environ["OPENJARVIS_QWEN_PROFILE"] = profile
+    return profile
+
+
+def _save_studio_qwen_profile(profile: str) -> None:
+    _STUDIO_QWEN_PROFILE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    _STUDIO_QWEN_PROFILE_PATH.write_text(
+        json.dumps({"active": profile}, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    os.environ["OPENJARVIS_QWEN_PROFILE"] = profile
+
+
+def _studio_qwen_profile() -> Dict[str, Any]:
+    profile = _load_studio_qwen_profile()
+    profiles = {
+        "fast": {
+            "id": "fast",
+            "label": "Fast",
+            "model": "qwen3.6-27b-local",
+            "base_url": "http://127.0.0.1:8082/v1",
+            "summary": "Q4_K_M BeeLlama DFlash fast lane",
+        },
+        "quality": {
+            "id": "quality",
+            "label": "Quality",
+            "model": "qwen3.6-27b-quality",
+            "base_url": "http://127.0.0.1:8083/v1",
+            "summary": "Q5_K_S BeeLlama DFlash quality lane",
+        },
+    }
+    return {"active": profile, "profiles": profiles}
+
+
 def _studio_state() -> Dict[str, Any]:
     from openjarvis.tools.studio_store import StudioStore
     from openjarvis.tools import studio_runner
@@ -1286,6 +1333,7 @@ def _studio_state() -> Dict[str, Any]:
         "mode": "local-first",
         "escalation": "Claude/Codex standby",
     }
+    state["qwen_profile"] = _studio_qwen_profile()
     state["system"] = _system_health_snapshot()
     state["plugins"] = _studio_plugins()
     try:
@@ -1639,6 +1687,8 @@ class _Handler(SimpleHTTPRequestHandler):
                 self._json_response(500, {"error": "internal error", "ref": _err_ref()})
         elif self.path == "/studio/plugins":
             self._json_response(200, {"plugins": _studio_plugins()})
+        elif self.path == "/studio/qwen-profile":
+            self._json_response(200, _studio_qwen_profile())
         elif self.path == "/studio/automations":
             try:
                 from openjarvis.tools import agent_runner
@@ -1742,6 +1792,8 @@ class _Handler(SimpleHTTPRequestHandler):
             self._handle_studio_chat_create()
         elif self.path == "/studio/runs":
             self._handle_studio_run_create()
+        elif self.path == "/studio/qwen-profile":
+            self._handle_studio_qwen_profile()
         elif self.path.startswith("/studio/runs/") and self.path.endswith("/evidence"):
             self._handle_studio_run_evidence()
         # /claude_event handled at the open-routes top (skipped here)
@@ -1816,12 +1868,14 @@ class _Handler(SimpleHTTPRequestHandler):
             result = start_studio_run(project_id, chat_id, prompt, approved=bool(data.get("approved")))
             run = result.get("run") or {}
             status = run.get("status", "queued")
-            store.add_message(
-                chat_id,
-                "jarvis",
-                str(result.get("reply") or f"Studio run {status}: {result.get('decision', {}).get('reason', 'workflow selected')}"),
-                run_id=run.get("id"),
-            )
+            reply = result.get("reply")
+            if reply or status not in {"queued", "running"}:
+                store.add_message(
+                    chat_id,
+                    "jarvis",
+                    str(reply or f"Studio run {status}: {result.get('decision', {}).get('reason', 'workflow selected')}"),
+                    run_id=run.get("id"),
+                )
             self._json_response(200, result)
         except KeyError as exc:
             self._json_response(404, {"error": f"chat not found: {exc}"})
@@ -1854,6 +1908,20 @@ class _Handler(SimpleHTTPRequestHandler):
             self._json_response(400, {"error": str(exc)})
         except Exception:
             logger.exception("/studio/runs evidence failed")
+            self._json_response(500, {"error": "internal error", "ref": _err_ref()})
+
+    def _handle_studio_qwen_profile(self) -> None:
+        try:
+            data = self._read_json_body()
+            profile = str(data.get("profile") or "").strip().lower()
+            if profile not in {"fast", "quality"}:
+                return self._json_response(400, {"error": "profile must be fast or quality"})
+            _save_studio_qwen_profile(profile)
+            self._json_response(200, _studio_qwen_profile())
+        except ValueError as exc:
+            self._json_response(400, {"error": str(exc)})
+        except Exception:
+            logger.exception("/studio/qwen-profile failed")
             self._json_response(500, {"error": "internal error", "ref": _err_ref()})
 
     def _handle_provider_set(self) -> None:

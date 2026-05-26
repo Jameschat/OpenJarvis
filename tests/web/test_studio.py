@@ -82,3 +82,30 @@ def test_studio_polls_while_runs_are_active():
     assert "scheduleStudioRefresh" in html
     assert "hasActiveRuns" in html
     assert "setTimeout(scheduleStudioRefresh" in html
+
+
+def test_studio_has_typing_thinking_and_agent_colours():
+    html = (ROOT / "jarvis_web" / "studio.html").read_text(encoding="utf-8")
+
+    assert "typeJarvisBubble" in html
+    assert "thinking-indicator" in html
+    assert "Jarvis is thinking" in html
+    assert "agentColourClass" in html
+    assert "agent-qwen" in html
+    assert "agent-codex" in html
+    assert "agent-claude" in html
+
+
+def test_studio_has_qwen_profile_and_context_controls():
+    html = (ROOT / "jarvis_web" / "studio.html").read_text(encoding="utf-8")
+    source = (ROOT / "src" / "openjarvis" / "cli" / "brain_server.py").read_text(encoding="utf-8")
+
+    assert "/studio/qwen-profile" in html
+    assert 'data-profile="fast"' in html
+    assert 'data-profile="quality"' in html
+    assert "setQwenProfile" in html
+    assert 'id="studio-file-input"' in html
+    assert "composerAttachments" in html
+    assert "addFileContext" in html
+    assert "addTextContext" in html
+    assert "/studio/qwen-profile" in source

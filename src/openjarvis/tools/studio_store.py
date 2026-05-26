@@ -40,7 +40,7 @@ class StudioStore:
         if not path.exists():
             return fallback
         try:
-            return json.loads(path.read_text(encoding="utf-8"))
+            return json.loads(path.read_text(encoding="utf-8-sig"))
         except Exception:
             target = self.corrupt_dir / f"{path.stem}-{uuid.uuid4().hex[:8]}.json"
             shutil.move(str(path), str(target))

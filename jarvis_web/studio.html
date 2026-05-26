@@ -17,6 +17,7 @@
       --accent: #62e6ff;
       --green: #37e583;
       --shadow: 0 18px 60px rgba(0,0,0,0.35);
+      font-size: 14px;
       font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
     * { box-sizing: border-box; }
@@ -82,6 +83,7 @@
     @keyframes bootFill { from { width: 32%; } to { width: 96%; } }
     #jarvis-studio-root {
       height: 100vh;
+      height: 100dvh;
       display: grid;
       grid-template-columns: 304px minmax(0, 1fr) 344px;
       background: #171719;
@@ -96,25 +98,26 @@
     .sidebar-top { padding: 14px 12px 10px; }
     .side-command {
       width: 100%;
-      height: 40px;
+      height: 36px;
       display: flex;
       align-items: center;
       gap: 10px;
       border-radius: 8px;
       padding: 0 12px;
       color: #f8fafc;
+      font-size: 14px;
       font-weight: 650;
     }
     .side-command:hover, .side-command.active { background: rgba(255,255,255,0.08); }
     .side-section {
-      padding: 16px 12px 4px;
+      padding: 14px 12px 4px;
       color: #8b8b95;
-      font-size: 13px;
+      font-size: 12px;
     }
     .project-row, .chat-row {
       width: calc(100% - 12px);
       margin: 2px 6px;
-      min-height: 34px;
+      min-height: 31px;
       display: flex;
       align-items: center;
       gap: 8px;
@@ -127,7 +130,7 @@
     .row-meta {
       margin-left: auto;
       color: #9ca3af;
-      font-size: 12px;
+      font-size: 11px;
     }
     .sidebar-bottom {
       margin-top: auto;
@@ -136,6 +139,10 @@
     }
     .studio-main {
       min-width: 0;
+      min-height: 0;
+      height: 100vh;
+      height: 100dvh;
+      overflow: hidden;
       display: grid;
       grid-template-rows: 48px minmax(0, 1fr) auto;
       background: #181818;
@@ -150,6 +157,7 @@
     }
     .thread-title {
       font-weight: 700;
+      font-size: 14px;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -157,21 +165,26 @@
     .thread-head .dots { margin-left: auto; color: #aaa; }
     #studio-thread {
       overflow: auto;
-      padding: 32px clamp(18px, 8vw, 118px);
+      min-height: 0;
+      scrollbar-gutter: stable;
+      overscroll-behavior: contain;
+      padding: 24px clamp(18px, 8vw, 118px) 42px;
     }
     .message {
       max-width: 880px;
-      margin: 0 auto 24px;
+      margin: 0 auto 18px;
       display: grid;
-      gap: 10px;
+      gap: 7px;
     }
     .message.operator { justify-items: end; }
     .bubble {
       max-width: min(720px, 100%);
-      border-radius: 18px;
-      padding: 14px 16px;
-      line-height: 1.5;
+      border-radius: 14px;
+      padding: 11px 14px;
+      line-height: 1.42;
+      font-size: 14px;
       white-space: pre-wrap;
+      overflow-wrap: anywhere;
       background: #252528;
       color: #f7f7f8;
       box-shadow: var(--shadow);
@@ -185,51 +198,90 @@
       border: 1px solid var(--line);
       border-top-left-radius: 6px;
     }
+    .jarvis.typing .bubble::after {
+      content: "";
+      display: inline-block;
+      width: 7px;
+      height: 1em;
+      margin-left: 2px;
+      vertical-align: -2px;
+      background: #f7f7f8;
+      animation: caretBlink 0.9s steps(1) infinite;
+    }
+    @keyframes caretBlink {
+      0%, 48% { opacity: 1; }
+      49%, 100% { opacity: 0; }
+    }
+    .thinking-indicator .bubble {
+      color: #d7fbff;
+      border-color: rgba(98,230,255,0.28);
+      background: rgba(98,230,255,0.07);
+    }
+    .thinking-dots {
+      display: inline-flex;
+      gap: 4px;
+      margin-left: 8px;
+    }
+    .thinking-dots i {
+      width: 5px;
+      height: 5px;
+      border-radius: 99px;
+      background: var(--cyan);
+      animation: thinkingPulse 1s ease-in-out infinite;
+    }
+    .thinking-dots i:nth-child(2) { animation-delay: 0.16s; }
+    .thinking-dots i:nth-child(3) { animation-delay: 0.32s; }
+    @keyframes thinkingPulse {
+      0%, 80%, 100% { opacity: 0.25; transform: translateY(0); }
+      40% { opacity: 1; transform: translateY(-3px); }
+    }
     .message-time {
       color: var(--muted);
-      font-size: 11px;
+      font-size: 10px;
       line-height: 1;
       padding: 0 4px;
     }
     .operator .message-time { text-align: right; }
     .run-time {
       color: var(--muted);
-      font-size: 11px;
+      font-size: 10px;
       margin-left: auto;
       white-space: nowrap;
     }
     .run-strip {
       max-width: 880px;
-      margin: 0 auto 18px;
+      margin: 0 auto 14px;
       border: 1px solid rgba(98,230,255,0.18);
       background: rgba(98,230,255,0.05);
-      border-radius: 12px;
-      padding: 12px;
+      border-radius: 10px;
+      padding: 10px;
       display: grid;
       gap: 8px;
     }
     .run-top { display: flex; gap: 10px; align-items: center; }
     .run-status {
       color: var(--green);
-      font-size: 12px;
+      font-size: 11px;
       text-transform: uppercase;
       letter-spacing: 0;
     }
     .composer-wrap {
-      padding: 18px clamp(18px, 8vw, 118px) 24px;
+      padding: 12px clamp(18px, 8vw, 118px) 16px;
+      border-top: 1px solid rgba(255,255,255,0.04);
+      background: linear-gradient(180deg, rgba(24,24,24,0.84), #181818 22%);
     }
     .composer-box {
       max-width: 880px;
       margin: 0 auto;
-      border-radius: 18px;
+      border-radius: 14px;
       background: #2a2a2d;
       border: 1px solid var(--line);
       box-shadow: var(--shadow);
-      padding: 12px;
+      padding: 10px;
     }
     #studio-composer {
       width: 100%;
-      min-height: 72px;
+      min-height: 58px;
       resize: vertical;
       color: var(--text);
       background: transparent;
@@ -240,9 +292,10 @@
       display: flex;
       align-items: center;
       gap: 8px;
+      flex-wrap: wrap;
     }
     .pill-btn {
-      min-height: 34px;
+      min-height: 30px;
       border-radius: 999px;
       padding: 0 12px;
       background: rgba(255,255,255,0.07);
@@ -250,10 +303,53 @@
       border: 1px solid var(--line);
     }
     .pill-btn:hover { background: rgba(255,255,255,0.12); }
+    .profile-toggle {
+      display: inline-flex;
+      gap: 4px;
+      padding: 3px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.055);
+      border: 1px solid var(--line);
+    }
+    .profile-btn {
+      min-height: 26px;
+      border-radius: 999px;
+      padding: 0 10px;
+      color: #cfd3dc;
+      font-size: 12px;
+    }
+    .profile-btn.active {
+      background: rgba(98,230,255,0.18);
+      color: #e9fbff;
+      box-shadow: inset 0 0 0 1px rgba(98,230,255,0.25);
+    }
+    .context-status {
+      flex: 1 1 100%;
+      min-height: 16px;
+      color: var(--muted);
+      font-size: 11px;
+    }
+    .context-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-height: 24px;
+      max-width: 100%;
+      padding: 0 9px;
+      border-radius: 999px;
+      background: rgba(98,230,255,0.1);
+      border: 1px solid rgba(98,230,255,0.2);
+      color: #d9fbff;
+      font-size: 12px;
+    }
+    .context-chip button {
+      color: inherit;
+      opacity: 0.75;
+    }
     .send-btn {
       margin-left: auto;
-      width: 38px;
-      height: 38px;
+      width: 34px;
+      height: 34px;
       border-radius: 999px;
       display: grid;
       place-items: center;
@@ -269,14 +365,14 @@
       min-width: 0;
     }
     .context-head {
-      padding: 14px;
+      padding: 12px 14px;
       border-bottom: 1px solid var(--line);
       display: flex;
       align-items: center;
       gap: 10px;
     }
     .search-box {
-      margin: 12px 14px;
+      margin: 10px 14px;
       border: 1px solid var(--line);
       background: #202024;
       border-radius: 10px;
@@ -286,7 +382,7 @@
     }
     .search-box input {
       width: 100%;
-      height: 38px;
+      height: 34px;
       background: transparent;
       color: var(--text);
       border: 0;
@@ -302,12 +398,12 @@
     .context-card {
       border: 1px solid var(--line);
       background: #1b1b1f;
-      border-radius: 12px;
-      padding: 12px;
+      border-radius: 10px;
+      padding: 10px;
     }
     .context-kicker {
       color: var(--muted);
-      font-size: 11px;
+      font-size: 10px;
       text-transform: uppercase;
       letter-spacing: 0;
       margin-bottom: 8px;
@@ -318,10 +414,17 @@
       grid-template-columns: 1fr auto;
       gap: 8px;
       align-items: center;
-      padding: 8px;
-      border-radius: 10px;
+      padding: 7px 8px;
+      border-radius: 9px;
+      font-size: 13px;
       background: rgba(255,255,255,0.035);
+      border-left: 3px solid rgba(255,255,255,0.12);
     }
+    .agent-qwen { border-left-color: #62e6ff; background: rgba(98,230,255,0.07); }
+    .agent-codex { border-left-color: #a78bfa; background: rgba(167,139,250,0.07); }
+    .agent-claude { border-left-color: #f59e0b; background: rgba(245,158,11,0.07); }
+    .agent-python { border-left-color: #5ee0a1; background: rgba(94,224,161,0.07); }
+    .agent-other { border-left-color: rgba(255,255,255,0.22); }
     .state-dot {
       display: inline-block;
       width: 8px;
@@ -354,6 +457,7 @@
       .studio-sidebar.mobile-open, .studio-context.mobile-open { display: flex; min-height: 50vh; }
       .studio-main { min-height: 100vh; grid-template-rows: 48px minmax(55vh, 1fr) auto; }
       #studio-thread, .composer-wrap { padding-left: 14px; padding-right: 14px; }
+      #studio-thread { max-height: none; overflow: visible; }
     }
   </style>
 </head>
@@ -399,10 +503,15 @@
       <section class="composer-wrap">
         <div class="composer-box">
           <textarea id="studio-composer" placeholder="Ask Jarvis to plan, build, test, search memory, or run a local Qwen workflow..."></textarea>
+          <input id="studio-file-input" type="file" multiple hidden>
+          <div id="studio-context-status" class="context-status"></div>
           <div class="composer-actions">
             <button class="pill-btn" type="button" data-studio-action="attach-context">+ Context</button>
             <button class="pill-btn" type="button" data-studio-action="toggle-approved">Default permissions</button>
-            <button class="pill-btn" type="button" data-studio-action="open-agent-list">Qwen local</button>
+            <div class="profile-toggle" aria-label="Qwen profile">
+              <button class="profile-btn active" type="button" data-studio-action="set-qwen-profile" data-profile="fast">Fast</button>
+              <button class="profile-btn" type="button" data-studio-action="set-qwen-profile" data-profile="quality">Quality</button>
+            </div>
             <button class="send-btn" type="button" data-studio-action="send-message">↑</button>
           </div>
         </div>
@@ -446,12 +555,16 @@
       agentTask: "/agent_task",
       schedule: "/schedule",
       vault: "/vault/summary",
-      codegraph: "/codegraph/status"
+      codegraph: "/codegraph/status",
+      qwenProfile: "/studio/qwen-profile"
     };
     let studioState = { projects: [], chats: [], runs: [], approved: false };
     let activeProjectId = "openjarvis";
     let activeChatId = "";
     let studioRefreshTimer = null;
+    let composerAttachments = [];
+    const animatedMessageIds = new Set();
+    let lastRenderedLatestMessageKey = "";
 
     function el(id) { return document.getElementById(id); }
     function clear(node) { while (node && node.firstChild) node.removeChild(node.firstChild); }
@@ -461,6 +574,127 @@
       const date = new Date(value);
       if (Number.isNaN(date.getTime())) return "";
       return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    }
+
+    function typeJarvisBubble(article, bubble, text) {
+      if (!article || !bubble) return;
+      const content = String(text || "");
+      if (!content || content.length > 1800 || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        bubble.textContent = content;
+        return;
+      }
+      article.classList.add("typing");
+      bubble.textContent = "";
+      let index = 0;
+      const step = () => {
+        index = Math.min(content.length, index + 3);
+        bubble.textContent = content.slice(0, index);
+        article.scrollIntoView({ block: "end", behavior: "instant" });
+        if (index < content.length) {
+          window.setTimeout(step, 12);
+        } else {
+          article.classList.remove("typing");
+        }
+      };
+      step();
+    }
+
+    function agentColourClass(agent) {
+      const id = String((agent && (agent.id || agent.name || agent.provider)) || "").toLowerCase();
+      const provider = String((agent && agent.provider) || "").toLowerCase();
+      const claudeDepartmentAgents = new Set([
+        "architect",
+        "backend-dev",
+        "frontend-dev",
+        "qa-engineer",
+        "code-reviewer",
+        "docs-writer",
+      ]);
+      if (id.includes("qwen") || provider.includes("qwen")) return "agent-qwen";
+      if (id.includes("codex") || provider.includes("codex") || id.startsWith("gpt-")) return "agent-codex";
+      if (id.includes("claude") || provider.includes("claude") || claudeDepartmentAgents.has(id)) return "agent-claude";
+      if (provider.includes("python") || id.includes("python")) return "agent-python";
+      return "agent-other";
+    }
+
+    function setContextStatus(message) {
+      const root = el("studio-context-status");
+      if (!root) return;
+      root.textContent = message || "";
+    }
+
+    function renderAttachments() {
+      const root = el("studio-context-status");
+      if (!root) return;
+      clear(root);
+      if (!composerAttachments.length) return;
+      composerAttachments.forEach((attachment, index) => {
+        const chip = document.createElement("span");
+        chip.className = "context-chip";
+        chip.textContent = attachment.name;
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.textContent = "x";
+        remove.addEventListener("click", () => {
+          composerAttachments.splice(index, 1);
+          renderAttachments();
+        });
+        chip.appendChild(remove);
+        root.appendChild(chip);
+      });
+    }
+
+    function addTextContext(label, text) {
+      const content = String(text || "").trim();
+      if (!content) return;
+      composerAttachments.push({
+        type: "text",
+        name: label || "Pasted text",
+        content: content.slice(0, 12000)
+      });
+      renderAttachments();
+    }
+
+    async function addFileContext(files) {
+      const usable = Array.from(files || []).slice(0, 6);
+      if (!usable.length) return;
+      for (const file of usable) {
+        if (file.type && file.type.startsWith("image/")) {
+          composerAttachments.push({
+            type: "image",
+            name: file.name || "image",
+            content: `[image attached: ${file.name || file.type || "image"}]`
+          });
+        } else {
+          const text = await file.text().catch(() => "");
+          composerAttachments.push({
+            type: "file",
+            name: file.name || "file",
+            content: text.slice(0, 12000)
+          });
+        }
+      }
+      renderAttachments();
+    }
+
+    function promptWithAttachments(prompt) {
+      if (!composerAttachments.length) return prompt;
+      const context = composerAttachments.map((item) => {
+        return `### ${item.name}\n${item.content || ""}`;
+      }).join("\n\n");
+      return `${prompt}\n\nAttached context:\n${context}`;
+    }
+
+    function renderQwenProfile(profileState) {
+      const active = (profileState && profileState.active) || "fast";
+      document.querySelectorAll(".profile-btn").forEach((button) => {
+        button.classList.toggle("active", button.dataset.profile === active);
+      });
+      const profile = profileState && profileState.profiles && profileState.profiles[active];
+      const label = profile ? `${profile.label} profile` : `${active} profile`;
+      const modelLabel = el("studio-model-label");
+      if (modelLabel && profile) modelLabel.textContent = `${profile.model} · ${profile.label}`;
+      setContextStatus(`Qwen ${label}: ${profile ? profile.summary : "local profile"}`);
     }
 
     function drawBootRain() {
@@ -546,7 +780,11 @@
 
     function renderThread(chat) {
       const root = el("studio-thread");
+      const previousScrollTop = root.scrollTop;
+      const previousScrollHeight = root.scrollHeight;
+      const wasNearBottom = previousScrollHeight <= root.clientHeight + previousScrollTop + 96;
       clear(root);
+      const hasThinkingRun = hasActiveRuns();
       if (!chat || !chat.messages || chat.messages.length === 0) {
         const intro = document.createElement("article");
         intro.className = "message jarvis";
@@ -557,12 +795,30 @@
         root.appendChild(intro);
         return;
       }
+      const latestRealMessage = [...chat.messages].reverse().find((message) => {
+        const content = String(message.content || "");
+        return !content.startsWith("Studio run running:");
+      });
+      const latestMessageKey = latestRealMessage
+        ? (latestRealMessage.id || `${latestRealMessage.created_at || ""}:${String(latestRealMessage.content || "").slice(0, 40)}`)
+        : "";
+      const latestChanged = latestMessageKey && latestMessageKey !== lastRenderedLatestMessageKey;
+      let latestArticle = null;
       chat.messages.forEach((message) => {
+        const content = String(message.content || "");
+        if (content.startsWith("Studio run running:")) return;
         const article = document.createElement("article");
         article.className = `message ${message.role === "operator" ? "operator" : "jarvis"}`;
         const bubble = document.createElement("div");
         bubble.className = "bubble";
-        bubble.textContent = message.content || "";
+        const messageKey = message.id || `${message.created_at || ""}:${content.slice(0, 40)}`;
+        const isLatest = messageKey === latestMessageKey;
+        if (message.role !== "operator" && isLatest && !animatedMessageIds.has(messageKey)) {
+          animatedMessageIds.add(messageKey);
+          typeJarvisBubble(article, bubble, content);
+        } else {
+          bubble.textContent = content;
+        }
         article.appendChild(bubble);
         const messageTime = formatStudioTime(message.created_at);
         if (messageTime) {
@@ -573,8 +829,34 @@
           article.appendChild(stamp);
         }
         root.appendChild(article);
+        if (isLatest) latestArticle = article;
       });
-      root.scrollTop = root.scrollHeight;
+      if (hasThinkingRun) {
+        const article = document.createElement("article");
+        article.className = "message jarvis thinking-indicator";
+        const bubble = document.createElement("div");
+        bubble.className = "bubble";
+        bubble.append(document.createTextNode("Jarvis is thinking"));
+        const dots = document.createElement("span");
+        dots.className = "thinking-dots";
+        dots.setAttribute("aria-hidden", "true");
+        dots.innerHTML = "<i></i><i></i><i></i>";
+        bubble.appendChild(dots);
+        article.appendChild(bubble);
+        root.appendChild(article);
+        latestArticle = article;
+      }
+      lastRenderedLatestMessageKey = latestMessageKey;
+      if (latestChanged || hasThinkingRun || wasNearBottom) {
+        root.scrollTop = root.scrollHeight;
+        if (latestArticle) {
+          window.requestAnimationFrame(() => {
+            latestArticle.scrollIntoView({ block: "end", behavior: "instant" });
+          });
+        }
+      } else {
+        root.scrollTop = Math.max(0, previousScrollTop + root.scrollHeight - previousScrollHeight);
+      }
     }
 
     function renderRuns(runs) {
@@ -625,7 +907,7 @@
       ];
       agents.slice(0, 8).forEach((agent) => {
         const row = document.createElement("div");
-        row.className = "agent-row";
+        row.className = `agent-row ${agentColourClass(agent)}`;
         const name = document.createElement("span");
         name.textContent = agent.id || agent.name || "agent";
         const state = document.createElement("span");
@@ -651,6 +933,7 @@
       setText("studio-model-label", (state.model && state.model.alias) || "qwen3.6-27b-local");
       setText("studio-provider-label", state.provider || "auto");
       setText("studio-automation-count", (state.automations || []).length);
+      renderQwenProfile(state.qwen_profile);
       scheduleStudioRefresh();
     }
 
@@ -696,19 +979,23 @@
       const prompt = (composer.value || "").trim();
       if (!prompt) return;
       composer.value = "";
+      const submittedPrompt = promptWithAttachments(prompt);
+      composerAttachments = [];
+      renderAttachments();
       const optimistic = {
         ...studioState,
+        runs: [{ status: "running", prompt, created_at: new Date().toISOString() }, ...(studioState.runs || [])],
         chats: [{
           id: activeChatId || "pending",
           title: "Current session",
-          messages: [{ role: "operator", content: prompt }, { role: "jarvis", content: "Queued. Building memory context and selecting a workflow..." }]
+          messages: [{ role: "operator", content: prompt, created_at: new Date().toISOString() }]
         }]
       };
       renderState(optimistic);
       const result = await apiPost(API.runs, {
         project_id: activeProjectId,
         chat_id: activeChatId,
-        prompt,
+        prompt: submittedPrompt,
         approved: studioState.approved
       });
       activeChatId = result.run && result.run.chat_id ? result.run.chat_id : activeChatId;
@@ -739,6 +1026,12 @@
       });
     }
 
+    async function setQwenProfile(profile) {
+      const result = await apiPost(API.qwenProfile, { profile });
+      studioState.qwen_profile = result;
+      renderQwenProfile(result);
+    }
+
     document.addEventListener('click', async (event) => {
       const target = event.target.closest('[data-studio-action]');
       if (!target) return;
@@ -755,7 +1048,8 @@
         if (action === "refresh-state") await loadStudioState();
         if (action === "toggle-left") el("studio-sidebar").classList.toggle("mobile-open");
         if (action === "toggle-context") el("studio-context").classList.toggle("mobile-open");
-        if (action === "attach-context") await apiGet(API.vault);
+        if (action === "attach-context") el("studio-file-input").click();
+        if (action === "set-qwen-profile") await setQwenProfile(target.dataset.profile || "fast");
         if (action === "toggle-approved") { studioState.approved = !studioState.approved; target.textContent = studioState.approved ? "Approved run" : "Default permissions"; }
         if (action === "open-agent-list") renderAgents(studioState.orchestration || {});
         if (action === "send-message") await sendComposer();
@@ -769,6 +1063,27 @@
     });
     el("studio-composer").addEventListener("keydown", (event) => {
       if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) sendComposer();
+    });
+    el("studio-composer").addEventListener("paste", (event) => {
+      const files = event.clipboardData && event.clipboardData.files;
+      if (files && files.length) {
+        addFileContext(files);
+        return;
+      }
+      const text = event.clipboardData && event.clipboardData.getData("text");
+      if (text && text.length > 1200) {
+        event.preventDefault();
+        addTextContext("Pasted text", text);
+      }
+    });
+    el("studio-composer").addEventListener("drop", (event) => {
+      event.preventDefault();
+      addFileContext(event.dataTransfer && event.dataTransfer.files);
+    });
+    el("studio-composer").addEventListener("dragover", (event) => event.preventDefault());
+    el("studio-file-input").addEventListener("change", (event) => {
+      addFileContext(event.target.files);
+      event.target.value = "";
     });
     drawBootRain();
     loadStudioState();

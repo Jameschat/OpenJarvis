@@ -2092,7 +2092,7 @@ def _litellm_proxy_healthy(base_url: str) -> bool:
         return False
 
 
-def _call_qwen_via_ollama(prompt: str, *, max_tokens: int = 2500) -> str:
+def _call_qwen_via_ollama(prompt: str, *, max_tokens: int = 2500, timeout: int = 600) -> str:
     host = os.environ.get("OPENJARVIS_OLLAMA_HOST", "http://localhost:11434").rstrip("/")
     payload = {
         "model": "qwen3.6:27b",
@@ -2110,7 +2110,7 @@ def _call_qwen_via_ollama(prompt: str, *, max_tokens: int = 2500) -> str:
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=600) as resp:
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
         body = json.loads(resp.read().decode("utf-8"))
     message = body.get("message") or {}
     content = (message.get("content") or "").strip()
@@ -2120,6 +2120,18 @@ def _call_qwen_via_ollama(prompt: str, *, max_tokens: int = 2500) -> str:
     if thinking:
         return thinking
     raise RuntimeError("ollama qwen returned empty content")
+
+
+def _active_qwen_profile() -> str:
+    profile = os.environ.get("OPENJARVIS_QWEN_PROFILE", "").strip().lower()
+    if not profile:
+        profile_path = Path.home() / ".openjarvis" / "studio" / "qwen_profile.json"
+        try:
+            data = json.loads(profile_path.read_text(encoding="utf-8-sig"))
+            profile = str(data.get("active") or "").strip().lower()
+        except Exception:
+            profile = ""
+    return profile if profile in {"fast", "quality"} else "fast"
 
 
 def _run_qwen_task(task: Task, agent_spec: Dict[str, Any]) -> None:
@@ -2144,6 +2156,8 @@ def _run_qwen_task(task: Task, agent_spec: Dict[str, Any]) -> None:
     _reg.mark_running(task.id, str(ws))
 
     model = (agent_spec.get("model") or "qwen3.6-27b-local").strip()
+    if model == "qwen3.6-27b-local" and _active_qwen_profile() == "quality":
+        model = "qwen3.6-27b-quality"
     role = (agent_spec.get("role") or "Local Qwen agent.").strip()
     workspace_write = bool(agent_spec.get("workspace_write"))
     brain_block = _build_brain_context()
@@ -2173,6 +2187,9 @@ def _run_qwen_task(task: Task, agent_spec: Dict[str, Any]) -> None:
 
     started = time.time()
     try:
+        is_studio_task = bool(task.project_id and str(task.project_id).startswith("studio-"))
+        qwen_timeout = 90 if is_studio_task else 600
+        qwen_max_tokens = 900 if is_studio_task else 2500
         base_url = os.environ.get("OPENAI_BASE_URL", "http://localhost:4000")
         fake_openai = "openai" in sys.modules and not getattr(sys.modules["openai"], "__file__", None)
         use_direct_ollama = (
@@ -2181,7 +2198,7 @@ def _run_qwen_task(task: Task, agent_spec: Dict[str, Any]) -> None:
             and not _litellm_proxy_healthy(base_url)
         )
         if use_direct_ollama:
-            content = _call_qwen_via_ollama(prompt, max_tokens=2500)
+            content = _call_qwen_via_ollama(prompt, max_tokens=qwen_max_tokens, timeout=qwen_timeout)
         else:
             try:
                 from openai import OpenAI
@@ -2201,8 +2218,8 @@ def _run_qwen_task(task: Task, agent_spec: Dict[str, Any]) -> None:
                     {"role": "system", "content": prompt},
                     {"role": "user", "content": "Produce RESULT.md now."},
                 ],
-                max_tokens=2500,
-                timeout=600,
+                max_tokens=qwen_max_tokens,
+                timeout=qwen_timeout,
                 **create_kwargs,
             )
             content = ""

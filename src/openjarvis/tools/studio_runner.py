@@ -1,10 +1,31 @@
 from __future__ import annotations
 
 import json
+import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from openjarvis.tools import studio_context, studio_research, studio_store, studio_workflows
+
+STUDIO_RUN_STALE_AFTER_SECONDS = 300
+_MEMORY_STOPWORDS = {
+    "about",
+    "built",
+    "claude",
+    "codex",
+    "from",
+    "have",
+    "jarvis",
+    "know",
+    "memory",
+    "project",
+    "that",
+    "what",
+    "with",
+    "your",
+    "website",
+}
 
 
 _LIGHTWEIGHT_CHAT_PREFIXES = (
@@ -48,6 +69,94 @@ def _lightweight_chat_reply(prompt: str) -> str | None:
     return None
 
 
+def _looks_like_memory_question(prompt: str) -> bool:
+    text = " ".join((prompt or "").strip().lower().split())
+    if len(text) > 260:
+        return False
+    starters = (
+        "from memory",
+        "from your memory",
+        "using memory",
+        "using your memory",
+        "what do you know",
+        "what do we know",
+        "do you remember",
+        "what have we built",
+        "what did we build",
+        "tell me about",
+    )
+    return text.startswith(starters)
+
+
+def _context_direct_reply(prompt: str, context_pack: dict[str, Any]) -> str | None:
+    if not _looks_like_memory_question(prompt):
+        return None
+    markdown = str(context_pack.get("markdown") or "").strip()
+    if not markdown:
+        return "I do not have a useful saved memory for that yet."
+    useful_lines: list[str] = []
+    for raw in markdown.splitlines():
+        line = raw.strip()
+        if not line or line.startswith(("==", "###", "```")):
+            continue
+        if line.startswith(("- ", "Project:", "Query:", "## Vault hits", "## Episodic memory")):
+            useful_lines.append(line)
+        if len(useful_lines) >= 8:
+            break
+    if not useful_lines:
+        useful_lines = [markdown[:900]]
+    body = "\n".join(useful_lines)
+    return (
+        "From Jarvis memory/context, this is what I can see:\n\n"
+        f"{body}\n\n"
+        "I can dig deeper through the vault, CodeGraph, or live web research if you want a fuller project brief."
+    )
+
+
+def _fast_vault_memory_reply(prompt: str) -> str | None:
+    if not _looks_like_memory_question(prompt):
+        return None
+    words = [
+        word
+        for word in "".join(ch.lower() if ch.isalnum() else " " for ch in prompt).split()
+        if len(word) > 3 and word not in _MEMORY_STOPWORDS
+    ]
+    if not words:
+        return None
+    try:
+        from openjarvis.tools import obsidian_brain
+
+        root = Path(obsidian_brain.BRAIN_ROOT)
+    except Exception:
+        return None
+    if not root.exists():
+        return None
+    scored: list[tuple[int, str, str]] = []
+    for path in root.rglob("*.md"):
+        try:
+            rel = path.relative_to(root).as_posix()
+            haystack = f"{rel}\n{path.read_text(encoding='utf-8', errors='replace')[:20000]}"
+        except Exception:
+            continue
+        lower = haystack.lower()
+        score = sum(lower.count(word) for word in words)
+        if score <= 0:
+            continue
+        first = min((lower.find(word) for word in words if word in lower), default=0)
+        start = max(0, first - 160)
+        snippet = haystack[start : start + 620].replace("\n", " ").strip()
+        scored.append((score, rel, snippet))
+    if not scored:
+        return "I checked the local vault memory and did not find a saved Networx/project note matching that wording."
+    scored.sort(key=lambda item: item[0], reverse=True)
+    lines = ["From local vault memory, I found:"]
+    for score, rel, snippet in scored[:4]:
+        lines.append(f"- `{rel}`: {snippet}")
+    lines.append("")
+    lines.append("This was answered from local vault files, not the Qwen planner.")
+    return "\n".join(lines)
+
+
 def _queue_agent_task(
     *,
     title: str,
@@ -88,6 +197,15 @@ def _load_agent_task_index() -> dict[str, dict[str, Any]]:
     return {str(task.get("id")): task for task in tasks if isinstance(task, dict) and task.get("id")}
 
 
+def _iso_to_epoch(value: str | None) -> float | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return None
+
+
 def _read_task_result(task: dict[str, Any]) -> str:
     workspace = task.get("workspace")
     task_id = str(task.get("id") or "")
@@ -103,6 +221,8 @@ def _read_task_result(task: dict[str, Any]) -> str:
     for path in candidates:
         if path.exists():
             text = path.read_text(encoding="utf-8", errors="replace").strip()
+            if "## Result" in text:
+                text = text.split("## Result", 1)[1].strip()
             return text[:6000] + ("\n...[truncated]" if len(text) > 6000 else "")
     return ""
 
@@ -134,6 +254,37 @@ def sync_completed_run_outputs(store: studio_store.StudioStore | None = None) ->
             continue
         tasks = [task_index.get(task_id) for task_id in task_ids]
         if any(task is None or task.get("status") not in terminal for task in tasks):
+            known_tasks = [task for task in tasks if task is not None]
+            oldest = min(
+                (
+                    float(task.get("started_at") or 0)
+                    for task in known_tasks
+                    if task.get("started_at")
+                ),
+                default=_iso_to_epoch(str(run.get("updated_at") or "")) or 0,
+            )
+            if oldest and (time.time() - oldest) > STUDIO_RUN_STALE_AFTER_SECONDS:
+                updated = store.get_run(run["id"])
+                updated["status"] = "failed"
+                updated["updated_at"] = studio_store.utc_now()
+                store._write_json(store._run_path(updated["id"]), updated)
+                store.append_run_event(
+                    updated["id"],
+                    "run.timeout",
+                    "Studio background task timed out",
+                    {"tasks": task_ids, "timeout_seconds": STUDIO_RUN_STALE_AFTER_SECONDS},
+                )
+                if not _chat_has_result_message(store, updated["chat_id"], updated["id"]):
+                    store.add_message(
+                        updated["chat_id"],
+                        "jarvis",
+                        (
+                            "That Studio task timed out before Jarvis produced a usable result. "
+                            "I stopped the spinner so you can retry or ask for a narrower search."
+                        ),
+                        run_id=updated["id"],
+                    )
+                synced += 1
             continue
 
         failed = [task for task in tasks if task and task.get("status") != "done"]
@@ -153,7 +304,15 @@ def sync_completed_run_outputs(store: studio_store.StudioStore | None = None) ->
             result_parts = [_read_task_result(task) for task in tasks if task]
             result_text = "\n\n".join(part for part in result_parts if part).strip()
             if not result_text:
-                result_text = "Task failed." if status == "failed" else "Task completed."
+                if status == "failed":
+                    reason = "; ".join(
+                        str(task.get("error") or "").strip()
+                        for task in failed
+                        if task and task.get("error")
+                    )
+                    result_text = f"Task failed: {reason}" if reason else "Task failed."
+                else:
+                    result_text = "Task completed."
             store.add_message(updated["chat_id"], "jarvis", result_text, run_id=updated["id"])
         synced += 1
     return synced
@@ -197,6 +356,28 @@ def start_studio_run(
             },
             "reply": quick_reply,
         }
+    memory_reply = _fast_vault_memory_reply(prompt)
+    if memory_reply:
+        run = _persist_run_status(store, store.get_run(run["id"]), "completed")
+        store.append_run_event(
+            run["id"],
+            "run.completed",
+            "Answered memory question from local vault search",
+            {"mode": "fast_vault_memory"},
+        )
+        return {
+            "run": store.get_run(run["id"]),
+            "context": {"ok": True, "markdown": "", "warnings": []},
+            "research": {"ok": False, "markdown": ""},
+            "decision": {
+                **decision,
+                "workflow": "fast_vault_memory",
+                "reason": "Memory question answered by local vault search.",
+                "verification": {"required": False, "method": "vault search"},
+                "next_steps": [],
+            },
+            "reply": memory_reply,
+        }
     context_pack = studio_context.build_project_context_pack(prompt, project=project)
     store.append_run_event(
         run["id"],
@@ -210,6 +391,28 @@ def start_studio_run(
         decision["reason"],
         {"workflow": decision["workflow"]},
     )
+    context_reply = _context_direct_reply(prompt, context_pack)
+    if context_reply:
+        run = _persist_run_status(store, store.get_run(run["id"]), "completed")
+        store.append_run_event(
+            run["id"],
+            "run.completed",
+            "Answered memory/context question directly",
+            {"mode": "context_direct"},
+        )
+        return {
+            "run": store.get_run(run["id"]),
+            "context": context_pack,
+            "research": {"ok": False, "markdown": ""},
+            "decision": {
+                **decision,
+                "workflow": "context_direct",
+                "reason": "Memory/context question answered from Studio context pack.",
+                "verification": {"required": False, "method": "context reply"},
+                "next_steps": [],
+            },
+            "reply": context_reply,
+        }
     research_pack = {"ok": False, "markdown": ""}
     if decision["workflow"] == "qwen_workflow" or studio_research.should_prefetch_research(prompt):
         research_pack = studio_research.prefetch_research(prompt, limit=4)
