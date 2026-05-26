@@ -27,6 +27,10 @@ def test_studio_html_exists_and_wires_real_endpoints():
         'id="studio-composer"',
         'id="studio-agent-list"',
         'id="studio-context-panel"',
+        'id="studio-progress-list"',
+        'id="studio-output-list"',
+        'id="studio-browser-list"',
+        'id="studio-source-list"',
         "/studio/state",
         "/studio/projects",
         "/studio/chats",
@@ -109,3 +113,23 @@ def test_studio_has_qwen_profile_and_context_controls():
     assert "addFileContext" in html
     assert "addTextContext" in html
     assert "/studio/qwen-profile" in source
+
+
+def test_studio_has_codex_style_work_panel():
+    html = (ROOT / "jarvis_web" / "studio.html").read_text(encoding="utf-8")
+    source = (ROOT / "src" / "openjarvis" / "cli" / "brain_server.py").read_text(encoding="utf-8")
+
+    for marker in [
+        "renderProgressPanel",
+        "renderOutputsPanel",
+        "renderBrowserPanel",
+        "renderSourcesPanel",
+        "studio-progress-count",
+        "studio-output-count",
+        "studio-subagent-count",
+        "task_details",
+        "Code Review Graph",
+        "Web search",
+    ]:
+        assert marker in html
+    assert "enrich_runs_for_studio" in source

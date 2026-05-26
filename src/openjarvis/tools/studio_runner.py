@@ -227,6 +227,78 @@ def _read_task_result(task: dict[str, Any]) -> str:
     return ""
 
 
+def _task_output_files(task: dict[str, Any]) -> list[dict[str, Any]]:
+    workspace = task.get("workspace")
+    task_id = str(task.get("id") or "")
+    if not workspace:
+        return []
+    root = Path(str(workspace))
+    candidates = [
+        root / f"{task_id}.RESULT.md",
+        root / "RESULT.md",
+        root / "QWEN_TOOL_RESULTS.json",
+        root / "FILES_WRITTEN.json",
+        root / f"{task_id}.stdout.log",
+        root / "stdout.log",
+        root / f"{task_id}.stderr.log",
+        root / "stderr.log",
+    ]
+    seen: set[Path] = set()
+    outputs: list[dict[str, Any]] = []
+    for path in candidates:
+        try:
+            resolved = path.resolve()
+        except OSError:
+            resolved = path
+        if resolved in seen or not path.exists() or not path.is_file():
+            continue
+        seen.add(resolved)
+        outputs.append(
+            {
+                "name": path.name,
+                "path": str(path),
+                "kind": path.suffix.lstrip(".") or "file",
+                "size": path.stat().st_size,
+                "task_id": task_id,
+            }
+        )
+    return outputs
+
+
+def enrich_runs_for_studio(runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Attach lightweight task/output details for the Studio progress panel."""
+    task_index = _load_agent_task_index()
+    enriched: list[dict[str, Any]] = []
+    for run in runs:
+        copy = dict(run)
+        task_details: list[dict[str, Any]] = []
+        outputs: list[dict[str, Any]] = []
+        for task_id in [str(t) for t in copy.get("tasks", []) if t]:
+            task = task_index.get(task_id)
+            if not task:
+                task_details.append({"id": task_id, "status": "queued"})
+                continue
+            detail = {
+                "id": task_id,
+                "title": task.get("title") or task_id,
+                "agent_id": task.get("agent_id") or task.get("agent") or "",
+                "status": task.get("status") or "queued",
+                "workspace": task.get("workspace") or "",
+                "error": task.get("error") or "",
+                "created_at": task.get("created_at") or task.get("queued_at") or "",
+                "started_at": task.get("started_at") or "",
+                "finished_at": task.get("finished_at") or "",
+            }
+            task_outputs = _task_output_files(task)
+            detail["outputs"] = task_outputs
+            outputs.extend(task_outputs)
+            task_details.append(detail)
+        copy["task_details"] = task_details
+        copy["outputs"] = outputs[:12]
+        enriched.append(copy)
+    return enriched
+
+
 def _chat_has_result_message(store: studio_store.StudioStore, chat_id: str, run_id: str) -> bool:
     try:
         chat = store.get_chat(chat_id)

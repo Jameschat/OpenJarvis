@@ -392,7 +392,7 @@
       overflow: auto;
       padding: 0 14px 14px;
       display: grid;
-      gap: 12px;
+      gap: 10px;
       align-content: start;
     }
     .context-card {
@@ -407,6 +407,102 @@
       text-transform: uppercase;
       letter-spacing: 0;
       margin-bottom: 8px;
+    }
+    .context-title-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+    .context-title-row .context-kicker { margin-bottom: 0; }
+    .panel-count {
+      color: var(--muted);
+      font-size: 10px;
+      white-space: nowrap;
+    }
+    .progress-list,
+    .output-list,
+    .source-list,
+    .browser-list {
+      display: grid;
+      gap: 8px;
+    }
+    .progress-item {
+      display: grid;
+      grid-template-columns: 16px 1fr;
+      gap: 8px;
+      align-items: start;
+      color: #d7d7dc;
+      font-size: 12px;
+      line-height: 1.3;
+    }
+    .progress-dot {
+      width: 14px;
+      height: 14px;
+      border-radius: 999px;
+      border: 2px solid rgba(255,255,255,0.38);
+      display: grid;
+      place-items: center;
+      margin-top: 1px;
+      color: #0f1114;
+      font-size: 9px;
+      font-weight: 800;
+    }
+    .progress-item.done .progress-dot {
+      background: #c9c9cf;
+      border-color: #c9c9cf;
+    }
+    .progress-item.active .progress-dot {
+      border-color: var(--cyan);
+      box-shadow: 0 0 14px rgba(98,230,255,0.35);
+    }
+    .progress-item.blocked .progress-dot,
+    .progress-item.failed .progress-dot {
+      border-color: #ff7b7b;
+      background: rgba(255,123,123,0.12);
+    }
+    .progress-subtext {
+      color: var(--muted);
+      font-size: 10px;
+      margin-top: 2px;
+    }
+    .output-row,
+    .source-row,
+    .browser-row {
+      display: grid;
+      grid-template-columns: 18px minmax(0,1fr) auto;
+      gap: 8px;
+      align-items: center;
+      color: #dcdce2;
+      font-size: 12px;
+      min-width: 0;
+    }
+    .output-row span:nth-child(2),
+    .source-row span:nth-child(2),
+    .browser-row span:nth-child(2) {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .output-icon,
+    .source-icon,
+    .browser-icon {
+      color: #e9e9ef;
+      opacity: 0.9;
+      text-align: center;
+    }
+    .subagent-stats {
+      color: var(--muted);
+      font-size: 10px;
+      white-space: nowrap;
+    }
+    .subagent-stats .plus { color: var(--green); }
+    .subagent-stats .minus { color: #ff7b7b; }
+    .context-divider {
+      height: 1px;
+      background: var(--line);
+      margin: 4px 0;
     }
     .agent-list { display: grid; gap: 8px; }
     .agent-row {
@@ -528,16 +624,40 @@
       </div>
       <section id="studio-context-panel">
         <article class="context-card">
-          <div class="context-kicker">Agents</div>
+          <div class="context-title-row">
+            <div class="context-kicker">Progress</div>
+            <span class="panel-count" id="studio-progress-count">idle</span>
+          </div>
+          <div id="studio-progress-list" class="progress-list"></div>
+        </article>
+        <article class="context-card">
+          <div class="context-title-row">
+            <div class="context-kicker">Outputs</div>
+            <span class="panel-count" id="studio-output-count">0</span>
+          </div>
+          <div id="studio-output-list" class="output-list"></div>
+        </article>
+        <article class="context-card">
+          <div class="context-title-row">
+            <div class="context-kicker">Subagents</div>
+            <span class="panel-count" id="studio-subagent-count">0</span>
+          </div>
           <div id="studio-agent-list" class="agent-list"></div>
         </article>
         <article class="context-card">
-          <div class="context-kicker">Plugins</div>
-          <div id="studio-plugin-list"></div>
+          <div class="context-kicker">Browser</div>
+          <div id="studio-browser-list" class="browser-list"></div>
         </article>
         <article class="context-card">
-          <div class="context-kicker">Runs</div>
+          <div class="context-title-row">
+            <div class="context-kicker">Runs</div>
+            <span class="panel-count" id="studio-run-count">0</span>
+          </div>
           <div id="studio-run-list"></div>
+        </article>
+        <article class="context-card">
+          <div class="context-kicker">Sources</div>
+          <div id="studio-source-list" class="source-list"></div>
         </article>
       </section>
     </aside>
@@ -859,9 +979,112 @@
       }
     }
 
+    function latestRun(runs) {
+      const list = [...(runs || [])];
+      return list.sort((a, b) => new Date(b.updated_at || b.created_at || 0) - new Date(a.updated_at || a.created_at || 0))[0] || null;
+    }
+
+    function runHasEvent(run, type) {
+      return ((run && run.events) || []).some((event) => event.type === type);
+    }
+
+    function progressState(run, type) {
+      if (!run) return "pending";
+      if (type === "created") return runHasEvent(run, "run.created") ? "done" : "pending";
+      if (type === "context") return runHasEvent(run, "run.context_built") ? "done" : (run.status === "running" ? "active" : "pending");
+      if (type === "workflow") return runHasEvent(run, "run.workflow_selected") ? "done" : "pending";
+      if (type === "research") return runHasEvent(run, "run.research_prefetched") ? "done" : "pending";
+      if (type === "queued") return runHasEvent(run, "run.task_queued") ? (run.status === "running" ? "active" : "done") : "pending";
+      if (type === "completed") {
+        if (run.status === "failed") return "failed";
+        if (run.status === "blocked") return "blocked";
+        return run.status === "completed" ? "done" : "pending";
+      }
+      return "pending";
+    }
+
+    function renderProgressPanel(runs) {
+      const root = el("studio-progress-list");
+      if (!root) return;
+      clear(root);
+      const run = latestRun(runs);
+      const steps = run ? [
+        ["created", "Map request and create Studio run", run.prompt || run.id],
+        ["context", "Load project, vault, memory, and CodeGraph context", "Local context pack"],
+        ["workflow", "Select workflow and verification path", run.workflow || "direct"],
+        ["research", "Fetch web/GitHub research when needed", runHasEvent(run, "run.research_prefetched") ? "Research attached" : "Skipped unless requested"],
+        ["queued", "Route work to the Qwen agent loop", (run.task_details || [])[0]?.agent_id || "direct reply"],
+        ["completed", "Return answer and sync output files", run.status || "queued"],
+      ] : [
+        ["created", "Waiting for your next Jarvis request", "No active Studio run yet"],
+        ["context", "Context will attach automatically", "Vault, AgentMemory, CodeGraph"],
+        ["workflow", "Workflow will be selected per task", "Chat, plan, research, build"],
+      ];
+      steps.forEach(([type, label, detail]) => {
+        const state = progressState(run, type);
+        const item = document.createElement("div");
+        item.className = `progress-item ${state}`;
+        const dot = document.createElement("span");
+        dot.className = "progress-dot";
+        dot.textContent = state === "done" ? "✓" : state === "failed" ? "!" : "";
+        const text = document.createElement("div");
+        text.append(document.createTextNode(label));
+        const sub = document.createElement("div");
+        sub.className = "progress-subtext";
+        sub.textContent = detail || "";
+        text.appendChild(sub);
+        item.append(dot, text);
+        root.appendChild(item);
+      });
+      setText("studio-progress-count", run ? (run.status || "running") : "idle");
+    }
+
+    function outputIcon(output) {
+      const name = String((output && output.name) || "").toLowerCase();
+      if (name.endsWith(".md")) return "▤";
+      if (name.endsWith(".json")) return "{}";
+      if (name.endsWith(".log")) return "≡";
+      return "□";
+    }
+
+    function renderOutputsPanel(runs) {
+      const root = el("studio-output-list");
+      if (!root) return;
+      clear(root);
+      const run = latestRun(runs);
+      const outputs = [...((run && run.outputs) || [])];
+      if (run && !outputs.length) {
+        if (run.status === "completed") outputs.push({ name: "Studio chat reply", path: "Stored in this chat" });
+        if (run.status === "running") outputs.push({ name: "Waiting for Qwen output", path: "No file written yet" });
+      }
+      outputs.slice(0, 8).forEach((output) => {
+        const row = document.createElement("div");
+        row.className = "output-row";
+        const icon = document.createElement("span");
+        icon.className = "output-icon";
+        icon.textContent = outputIcon(output);
+        const name = document.createElement("span");
+        name.title = output.path || output.name || "";
+        name.textContent = output.name || "Output";
+        const meta = document.createElement("span");
+        meta.className = "row-meta";
+        meta.textContent = output.size ? `${Math.ceil(Number(output.size) / 1024)} KB` : "";
+        row.append(icon, name, meta);
+        root.appendChild(row);
+      });
+      if (!outputs.length) {
+        const row = document.createElement("div");
+        row.className = "progress-subtext";
+        row.textContent = "Outputs will appear when Jarvis finishes a run.";
+        root.appendChild(row);
+      }
+      setText("studio-output-count", outputs.length);
+    }
+
     function renderRuns(runs) {
       const root = el("studio-run-list");
       clear(root);
+      setText("studio-run-count", (runs || []).length);
       (runs || []).slice(0, 6).forEach((run) => {
         const card = document.createElement("div");
         card.className = "run-strip";
@@ -884,6 +1107,7 @@
 
     function renderPlugins(plugins) {
       const root = el("studio-plugin-list");
+      if (!root) return;
       clear(root);
       (plugins || []).forEach((plugin) => {
         const row = document.createElement("div");
@@ -897,6 +1121,54 @@
       });
     }
 
+    function renderBrowserPanel() {
+      const root = el("studio-browser-list");
+      if (!root) return;
+      clear(root);
+      const row = document.createElement("div");
+      row.className = "browser-row";
+      const icon = document.createElement("span");
+      icon.className = "browser-icon";
+      icon.textContent = "▶";
+      const target = document.createElement("span");
+      target.textContent = "J.A.R.V.I.S. Studio";
+      const host = document.createElement("span");
+      host.className = "row-meta";
+      host.textContent = window.location.host || "local";
+      row.append(icon, target, host);
+      root.appendChild(row);
+    }
+
+    function renderSourcesPanel(plugins, runs) {
+      const root = el("studio-source-list");
+      if (!root) return;
+      clear(root);
+      const run = latestRun(runs);
+      const pluginRows = (plugins || []).map((plugin) => ({
+        name: plugin.name || plugin.id,
+        status: plugin.status || "ready",
+      }));
+      const sources = [
+        ...pluginRows,
+        { name: "Code Review Graph", status: "available" },
+        { name: "Web search", status: runHasEvent(run, "run.research_prefetched") ? "used" : "available" },
+      ];
+      sources.slice(0, 7).forEach((source) => {
+        const row = document.createElement("div");
+        row.className = "source-row";
+        const icon = document.createElement("span");
+        icon.className = "source-icon";
+        icon.textContent = source.name.toLowerCase().includes("web") ? "◎" : "⌘";
+        const name = document.createElement("span");
+        name.textContent = source.name;
+        const status = document.createElement("span");
+        status.className = "row-meta";
+        status.textContent = source.status;
+        row.append(icon, name, status);
+        root.appendChild(row);
+      });
+    }
+
     function renderAgents(snapshot) {
       const root = el("studio-agent-list");
       clear(root);
@@ -905,13 +1177,35 @@
         { id: "qwen-builder", provider: "qwen3.6-27b-local", status: "ready" },
         { id: "qwen-tester", provider: "qwen3.6-27b-local", status: "ready" }
       ];
+      setText("studio-subagent-count", agents.length);
+      const latest = latestRun(studioState.runs || []);
+      const taskCounts = {};
+      ((latest && latest.task_details) || []).forEach((task) => {
+        const id = task.agent_id || "agent";
+        taskCounts[id] = taskCounts[id] || { done: 0, failed: 0, active: 0 };
+        if (task.status === "done") taskCounts[id].done += 1;
+        else if (task.status === "failed") taskCounts[id].failed += 1;
+        else taskCounts[id].active += 1;
+      });
       agents.slice(0, 8).forEach((agent) => {
         const row = document.createElement("div");
         row.className = `agent-row ${agentColourClass(agent)}`;
         const name = document.createElement("span");
         name.textContent = agent.id || agent.name || "agent";
         const state = document.createElement("span");
-        state.textContent = agent.status || agent.provider || "ready";
+        const stats = taskCounts[agent.id || agent.name || ""];
+        if (stats) {
+          state.className = "subagent-stats";
+          const plus = document.createElement("span");
+          plus.className = "plus";
+          plus.textContent = `+${stats.done}`;
+          const minus = document.createElement("span");
+          minus.className = "minus";
+          minus.textContent = `-${stats.failed}`;
+          state.append(plus, document.createTextNode(" "), minus);
+        } else {
+          state.textContent = agent.status || agent.provider || "ready";
+        }
         row.append(name, state);
         root.appendChild(row);
       });
@@ -926,8 +1220,11 @@
       renderProjects(projects);
       renderChats(chats);
       renderRuns(state.runs || []);
-      renderPlugins(state.plugins || []);
       renderAgents(state.orchestration || {});
+      renderProgressPanel(state.runs || []);
+      renderOutputsPanel(state.runs || []);
+      renderBrowserPanel();
+      renderSourcesPanel(state.plugins || [], state.runs || []);
       const activeChat = chats.find((chat) => chat.id === activeChatId);
       renderThread(activeChat);
       setText("studio-model-label", (state.model && state.model.alias) || "qwen3.6-27b-local");
@@ -1039,7 +1336,7 @@
       try {
         if (action === "new-chat") await createChat();
         if (action === "focus-search") el("studio-search").focus();
-        if (action === "show-plugins") renderPlugins((await apiGet("/studio/plugins")).plugins || []);
+        if (action === "show-plugins") renderSourcesPanel((await apiGet("/studio/plugins")).plugins || [], studioState.runs || []);
         if (action === "show-automations") renderRuns((await apiGet("/studio/automations")).automations || []);
         if (action === "open-operations") window.location.href = "/brain";
         if (action === "open-settings") window.location.href = "/brain#settings";

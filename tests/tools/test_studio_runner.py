@@ -236,6 +236,41 @@ def test_sync_completed_run_outputs_appends_agent_result(monkeypatch, tmp_path):
     assert any("Finished result." in m["content"] for m in chat["messages"])
 
 
+def test_enrich_runs_for_studio_includes_task_outputs(monkeypatch, tmp_path):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    (workspace / "task-123.RESULT.md").write_text("Finished result.", encoding="utf-8")
+    (workspace / "QWEN_TOOL_RESULTS.json").write_text("[]", encoding="utf-8")
+    state_path = tmp_path / "agent-state.json"
+    state_path.write_text(
+        json.dumps(
+            {
+                "tasks": [
+                    {
+                        "id": "task-123",
+                        "title": "Studio: test",
+                        "agent_id": "qwen-planner",
+                        "status": "done",
+                        "workspace": str(workspace),
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    from openjarvis.tools import agent_runner
+
+    monkeypatch.setattr(agent_runner, "STATE_FILE", state_path)
+
+    enriched = studio_runner.enrich_runs_for_studio(
+        [{"id": "run-1", "status": "completed", "tasks": ["task-123"]}]
+    )
+
+    assert enriched[0]["task_details"][0]["agent_id"] == "qwen-planner"
+    assert enriched[0]["outputs"][0]["name"] == "task-123.RESULT.md"
+    assert any(output["name"] == "QWEN_TOOL_RESULTS.json" for output in enriched[0]["outputs"])
+
+
 def test_sync_marks_stale_studio_runs_failed(monkeypatch, tmp_path):
     monkeypatch.setattr(studio_runner.studio_store, "STUDIO_ROOT", tmp_path / "studio")
     monkeypatch.setattr(studio_runner, "STUDIO_RUN_STALE_AFTER_SECONDS", 60)

@@ -1326,6 +1326,7 @@ def _studio_state() -> Dict[str, Any]:
     store = StudioStore()
     studio_runner.sync_completed_run_outputs(store)
     state = store.initial_state()
+    state["runs"] = studio_runner.enrich_runs_for_studio(state.get("runs", []))
     state["ok"] = True
     state["model"] = {
         "primary": "qwen3.6:27b",
