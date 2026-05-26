@@ -257,6 +257,71 @@ def test_qwen_provider_executes_safe_tool_bridge_round(monkeypatch, tmp_path):
     assert (ws / "QWEN_TOOL_RESULTS.json").exists()
 
 
+def test_qwen_provider_accepts_xml_style_tool_request_block(monkeypatch, tmp_path):
+    from openjarvis.tools import agent_runner, qwen_tool_bridge
+    from openjarvis.tools.agent_runner import Task
+
+    calls = []
+
+    class DummyMessage:
+        def __init__(self, content):
+            self.content = content
+
+    class DummyChoice:
+        def __init__(self, content):
+            self.message = DummyMessage(content)
+
+    class DummyCompletions:
+        def create(self, **kwargs):
+            calls.append(kwargs)
+            if len(calls) == 1:
+                return types.SimpleNamespace(
+                    choices=[
+                        DummyChoice(
+                            '<qwen_tool_requests>\n{"requests":[{"id":"r1","tool":"recall_vault","args":{"query":"qwen tokens per second"}}]}\n</qwen_tool_requests>'
+                        )
+                    ]
+                )
+            return types.SimpleNamespace(choices=[DummyChoice("Current local Qwen is about 60-76 tok/s.")])
+
+    class DummyClient:
+        def __init__(self, **kwargs):
+            self.chat = types.SimpleNamespace(completions=DummyCompletions())
+
+    class DummyRegistry:
+        def mark_running(self, task_id, workspace):
+            pass
+
+        def mark_finished(self, task_id, exit_code, error=None):
+            assert exit_code == 0
+
+    monkeypatch.setitem(sys.modules, "openai", types.SimpleNamespace(OpenAI=DummyClient))
+    monkeypatch.setattr(agent_runner, "RUNS_DIR", tmp_path)
+    monkeypatch.setattr(agent_runner, "_reg", DummyRegistry())
+    monkeypatch.setattr(agent_runner, "_build_brain_context", lambda: "")
+    monkeypatch.setattr(agent_runner, "_write_agent_task_note", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        qwen_tool_bridge,
+        "execute_tool_requests",
+        lambda requests: [{"id": "r1", "tool": "recall_vault", "ok": True, "hits": []}],
+    )
+
+    agent_runner._run_qwen_task(
+        Task(
+            id="task-qwen-xml-tools",
+            title="Qwen XML tool bridge",
+            agent_id="qwen-researcher",
+            prompt="How many tokens per second?",
+        ),
+        {"id": "qwen-researcher", "role": "Research.", "model": "qwen3.6-27b-local"},
+    )
+
+    result = (tmp_path / "task-qwen-xml-tools" / "RESULT.md").read_text(encoding="utf-8")
+    assert len(calls) == 2
+    assert "Current local Qwen is about 60-76 tok/s." in result
+    assert "<qwen_tool_requests>" not in result
+
+
 def test_qwen_project_tasks_write_task_scoped_result(monkeypatch, tmp_path):
     from openjarvis.tools import agent_runner
     from openjarvis.tools.agent_runner import Task

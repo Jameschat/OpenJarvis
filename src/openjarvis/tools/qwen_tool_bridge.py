@@ -6,10 +6,16 @@ from pathlib import Path
 from typing import Any
 
 
-_REQUEST_RE = re.compile(
-    r"```qwen_tool_requests\s*(?P<payload>\{.*?\})\s*```",
-    re.DOTALL | re.IGNORECASE,
-)
+_REQUEST_PATTERNS = [
+    re.compile(
+        r"```qwen_tool_requests\s*(?P<payload>\{.*?\})\s*```",
+        re.DOTALL | re.IGNORECASE,
+    ),
+    re.compile(
+        r"<qwen_tool_requests>\s*(?P<payload>\{.*?\})\s*</qwen_tool_requests>",
+        re.DOTALL | re.IGNORECASE,
+    ),
+]
 
 _SUPERPOWER_SKILLS = {
     "brainstorming": "Explore requirements and present a design before implementation.",
@@ -99,7 +105,11 @@ def tool_manifest() -> str:
 
 
 def parse_tool_requests(content: str) -> list[dict[str, Any]]:
-    match = _REQUEST_RE.search(content or "")
+    match = None
+    for pattern in _REQUEST_PATTERNS:
+        match = pattern.search(content or "")
+        if match:
+            break
     if not match:
         return []
     try:
