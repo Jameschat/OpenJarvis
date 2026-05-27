@@ -147,6 +147,54 @@ class StudioStore:
         path.unlink(missing_ok=True)
         return chat
 
+    def branch_chat(self, chat_id: str, message_id: str, content: str) -> dict[str, Any]:
+        source = self.get_chat(chat_id)
+        messages = source.get("messages", [])
+        branch_messages: list[dict[str, Any]] = []
+        source_message: dict[str, Any] | None = None
+        for message in messages:
+            if message.get("id") == message_id:
+                source_message = message
+                break
+            copied = dict(message)
+            copied["id"] = new_id("msg")
+            copied["chat_id"] = ""
+            branch_messages.append(copied)
+        if source_message is None:
+            raise KeyError(message_id)
+        if source_message.get("role") != "operator":
+            raise ValueError("only operator messages can be steered")
+        now = utc_now()
+        branch_id = new_id("chat")
+        for message in branch_messages:
+            message["chat_id"] = branch_id
+        branch_messages.append(
+            {
+                "id": new_id("msg"),
+                "chat_id": branch_id,
+                "role": "operator",
+                "content": content,
+                "created_at": now,
+                "run_id": None,
+                "steered_from_message_id": message_id,
+            }
+        )
+        branch = {
+            "id": branch_id,
+            "project_id": source.get("project_id") or "openjarvis",
+            "title": f"{source.get('title') or 'New chat'} - steer"[:120],
+            "created_at": now,
+            "updated_at": now,
+            "messages": branch_messages,
+            "branch": {
+                "source_chat_id": chat_id,
+                "source_message_id": message_id,
+                "created_at": now,
+            },
+        }
+        self._write_json(self._chat_path(branch_id), branch)
+        return branch
+
     def add_message(self, chat_id: str, role: str, content: str, *, run_id: str | None = None) -> dict[str, Any]:
         chat = self.get_chat(chat_id)
         message = {

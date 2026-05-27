@@ -246,6 +246,27 @@
       background: #303033;
       border-top-right-radius: 6px;
     }
+    .message-actions {
+      display: flex;
+      gap: 6px;
+      opacity: 0;
+      transition: opacity 0.14s ease;
+    }
+    .message:hover .message-actions { opacity: 1; }
+    .message-action {
+      min-height: 24px;
+      border-radius: 999px;
+      padding: 0 9px;
+      color: #c9ccd5;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid var(--line);
+      font-size: 11px;
+    }
+    .message-action:hover {
+      color: #ffffff;
+      background: rgba(98,230,255,0.12);
+      border-color: rgba(98,230,255,0.34);
+    }
     .jarvis .bubble {
       background: #1d1d20;
       border: 1px solid var(--line);
@@ -346,6 +367,28 @@
       align-items: center;
       gap: 8px;
       flex-wrap: wrap;
+    }
+    .steer-status {
+      display: none;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 8px;
+      padding: 7px 9px;
+      border-radius: 10px;
+      border: 1px solid rgba(98,230,255,0.24);
+      background: rgba(98,230,255,0.08);
+      color: #d7fbff;
+      font-size: 12px;
+    }
+    .steer-status.active { display: flex; }
+    .steer-status button {
+      color: #ffffff;
+      font-size: 11px;
+      border-radius: 999px;
+      padding: 3px 8px;
+      background: rgba(255,255,255,0.08);
+      border: 1px solid var(--line);
     }
     .pill-btn {
       min-height: 30px;
@@ -687,6 +730,7 @@
       <section id="studio-thread" aria-live="polite"></section>
       <section class="composer-wrap">
         <div class="composer-box">
+          <div id="studio-steer-status" class="steer-status"></div>
           <textarea id="studio-composer" placeholder="Ask Jarvis to plan, build, test, search memory, or run a local Qwen workflow..."></textarea>
           <input id="studio-file-input" type="file" multiple hidden>
           <div id="studio-context-status" class="context-status"></div>
@@ -779,6 +823,7 @@
     let activeChatId = "";
     let studioRefreshTimer = null;
     let composerAttachments = [];
+    let steeringState = null;
     const animatedMessageIds = new Set();
     let lastRenderedLatestMessageKey = "";
 
@@ -1068,6 +1113,19 @@
           bubble.textContent = content;
         }
         article.appendChild(bubble);
+        if (message.role === "operator") {
+          const actions = document.createElement("div");
+          actions.className = "message-actions";
+          const steer = document.createElement("button");
+          steer.className = "message-action";
+          steer.type = "button";
+          steer.dataset.studioAction = "steer-message";
+          steer.dataset.chatId = chat.id;
+          steer.dataset.messageId = message.id || "";
+          steer.textContent = "Steer";
+          actions.appendChild(steer);
+          article.appendChild(actions);
+        }
         const messageTime = formatStudioTime(message.created_at);
         if (messageTime) {
           const stamp = document.createElement("time");
@@ -1402,6 +1460,7 @@
       const activeChat = chats.find((chat) => chat.id === activeChatId);
       renderThread(activeChat);
       renderContextMeter(activeChat);
+      renderSteerStatus();
       setText("studio-model-label", (state.model && state.model.alias) || "qwen3.6-27b-local");
       setText("studio-provider-label", state.provider || "auto");
       setText("studio-automation-count", (state.automations || []).length);
@@ -1454,6 +1513,9 @@
       const submittedPrompt = promptWithAttachments(prompt);
       composerAttachments = [];
       renderAttachments();
+      const branchFrom = steeringState && steeringState.chatId === activeChatId
+        ? steeringState.messageId
+        : "";
       const optimistic = {
         ...studioState,
         runs: [{ status: "running", prompt, created_at: new Date().toISOString() }, ...(studioState.runs || [])],
@@ -1468,16 +1530,56 @@
         project_id: activeProjectId,
         chat_id: activeChatId,
         prompt: submittedPrompt,
+        branch_from_message_id: branchFrom,
         approved: studioState.approved
       });
       activeChatId = result.run && result.run.chat_id ? result.run.chat_id : activeChatId;
+      clearSteerState();
       await loadStudioState();
     }
 
     async function createChat() {
       const result = await apiPost(API.chats, { project_id: activeProjectId, title: "New chat" });
       activeChatId = result.chat.id;
+      clearSteerState();
       await loadStudioState();
+    }
+
+    function renderSteerStatus() {
+      const root = el("studio-steer-status");
+      if (!root) return;
+      clear(root);
+      if (!steeringState) {
+        root.classList.remove("active");
+        return;
+      }
+      root.classList.add("active");
+      const label = document.createElement("span");
+      label.textContent = "Steering from an earlier message. Sending will create a new branch.";
+      const cancel = document.createElement("button");
+      cancel.type = "button";
+      cancel.dataset.studioAction = "cancel-steer";
+      cancel.textContent = "Cancel";
+      root.append(label, cancel);
+    }
+
+    function clearSteerState() {
+      steeringState = null;
+      renderSteerStatus();
+    }
+
+    function startSteering(chatId, messageId) {
+      const chat = (studioState.chats || []).find((item) => item.id === chatId);
+      const message = chat && (chat.messages || []).find((item) => item.id === messageId);
+      if (!chat || !message || message.role !== "operator") return;
+      activeChatId = chatId;
+      steeringState = { chatId, messageId };
+      const composer = el("studio-composer");
+      composer.value = message.content || "";
+      composer.focus();
+      renderState(studioState);
+      renderSteerStatus();
+      setContextStatus("Steering enabled: edit this message and send to create a new branch.");
     }
 
     function closeChatMenus() {
@@ -1540,6 +1642,8 @@
         if (action === "open-settings") window.location.href = "/brain#settings";
         if (action === "select-project") { activeProjectId = target.dataset.projectId; activeChatId = ""; await loadStudioState(); }
         if (action === "select-chat") { activeChatId = target.dataset.chatId; renderState(studioState); }
+        if (action === "steer-message") startSteering(target.dataset.chatId, target.dataset.messageId);
+        if (action === "cancel-steer") clearSteerState();
         if (action === "toggle-chat-menu") {
           const row = target.closest(".chat-row");
           const wasOpen = row && row.classList.contains("menu-open");

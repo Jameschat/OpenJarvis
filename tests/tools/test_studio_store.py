@@ -86,3 +86,24 @@ def test_store_soft_deletes_chat_to_trash(tmp_path):
     deleted_files = list((tmp_path / "deleted" / "chats").glob("*.json"))
     assert len(deleted_files) == 1
     assert deleted_files[0].name.startswith(chat["id"])
+
+
+def test_store_branches_chat_from_user_message(tmp_path):
+    store = studio_store.StudioStore(tmp_path)
+    project = store.ensure_project("openjarvis", title="OpenJarvis")
+    chat = store.create_chat(project["id"], title="Original task")
+    first = store.add_message(chat["id"], "operator", "Build a plan")
+    store.add_message(chat["id"], "jarvis", "First answer")
+    second = store.add_message(chat["id"], "operator", "Make it faster")
+    store.add_message(chat["id"], "jarvis", "Second answer")
+
+    branch = store.branch_chat(chat["id"], second["id"], "Make it safer")
+
+    assert branch["id"] != chat["id"]
+    assert branch["title"] == "Original task - steer"
+    assert branch["branch"]["source_chat_id"] == chat["id"]
+    assert branch["branch"]["source_message_id"] == second["id"]
+    assert [message["content"] for message in branch["messages"]] == ["Build a plan", "First answer", "Make it safer"]
+    assert branch["messages"][0]["id"] != first["id"]
+    assert branch["messages"][-1]["role"] == "operator"
+    assert store.get_chat(chat["id"])["messages"][-1]["content"] == "Second answer"

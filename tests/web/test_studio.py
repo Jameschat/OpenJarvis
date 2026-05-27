@@ -152,3 +152,12 @@ def test_studio_has_chat_row_archive_delete_actions():
     assert "delete-chat" in html
     assert "/archive" in html
     assert "/delete" in html
+
+
+def test_studio_has_message_steering_controls():
+    html = (ROOT / "jarvis_web" / "studio.html").read_text(encoding="utf-8")
+
+    assert "steer-message" in html
+    assert "cancel-steer" in html
+    assert "branch_from_message_id" in html
+    assert "steeringState" in html

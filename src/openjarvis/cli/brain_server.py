@@ -1890,10 +1890,18 @@ class _Handler(SimpleHTTPRequestHandler):
                 return self._json_response(400, {"error": "prompt is required"})
             chats = store.list_chats(project_id)
             chat_id = str(data.get("chat_id") or (chats[0]["id"] if chats else ""))
-            if not chat_id:
+            branch_from_message_id = str(data.get("branch_from_message_id") or "").strip()
+            if branch_from_message_id:
+                if not chat_id:
+                    return self._json_response(400, {"error": "chat_id is required for steering"})
+                chat = store.branch_chat(chat_id, branch_from_message_id, prompt)
+                chat_id = chat["id"]
+                project_id = str(chat.get("project_id") or project_id)
+            elif not chat_id:
                 chat = store.create_chat(project_id, title=prompt[:80] or "New chat")
                 chat_id = chat["id"]
-            store.add_message(chat_id, "operator", prompt)
+            else:
+                store.add_message(chat_id, "operator", prompt)
             result = start_studio_run(project_id, chat_id, prompt, approved=bool(data.get("approved")))
             run = result.get("run") or {}
             status = run.get("status", "queued")
