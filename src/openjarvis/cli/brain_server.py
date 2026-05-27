@@ -1792,6 +1792,10 @@ class _Handler(SimpleHTTPRequestHandler):
             self._handle_agent_task()
         elif self.path == "/studio/chats":
             self._handle_studio_chat_create()
+        elif self.path.startswith("/studio/chats/") and self.path.endswith("/archive"):
+            self._handle_studio_chat_lifecycle("archive")
+        elif self.path.startswith("/studio/chats/") and self.path.endswith("/delete"):
+            self._handle_studio_chat_lifecycle("delete")
         elif self.path == "/studio/runs":
             self._handle_studio_run_create()
         elif self.path == "/studio/qwen-profile":
@@ -1848,6 +1852,29 @@ class _Handler(SimpleHTTPRequestHandler):
             self._json_response(400, {"error": str(exc)})
         except Exception:
             logger.exception("/studio/chats create failed")
+            self._json_response(500, {"error": "internal error", "ref": _err_ref()})
+
+    def _handle_studio_chat_lifecycle(self, action: str) -> None:
+        try:
+            from urllib.parse import unquote, urlparse
+            from openjarvis.tools.studio_store import StudioStore
+
+            parts = [part for part in urlparse(self.path).path.split("/") if part]
+            if len(parts) != 4 or parts[0] != "studio" or parts[1] != "chats":
+                return self._json_response(404, {"error": "chat action not found"})
+            chat_id = unquote(parts[2])
+            store = StudioStore()
+            if action == "archive":
+                chat = store.archive_chat(chat_id)
+            elif action == "delete":
+                chat = store.delete_chat(chat_id)
+            else:
+                return self._json_response(400, {"error": "unsupported chat action"})
+            self._json_response(200, {"chat": chat, "action": action})
+        except KeyError as exc:
+            self._json_response(404, {"error": f"chat not found: {exc}"})
+        except Exception:
+            logger.exception("/studio/chats lifecycle failed")
             self._json_response(500, {"error": "internal error", "ref": _err_ref()})
 
     def _handle_studio_run_create(self) -> None:

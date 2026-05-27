@@ -33,7 +33,8 @@ class StudioStore:
         self.chats_dir = self.root / "chats"
         self.runs_dir = self.root / "runs"
         self.corrupt_dir = self.root / "corrupt"
-        for path in (self.projects_dir, self.chats_dir, self.runs_dir, self.corrupt_dir):
+        self.deleted_chats_dir = self.root / "deleted" / "chats"
+        for path in (self.projects_dir, self.chats_dir, self.runs_dir, self.corrupt_dir, self.deleted_chats_dir):
             path.mkdir(parents=True, exist_ok=True)
 
     def _read_json(self, path: Path, fallback: Any) -> Any:
@@ -113,10 +114,38 @@ class StudioStore:
             raise KeyError(chat_id)
         return chat
 
-    def list_chats(self, project_id: str | None = None) -> list[dict[str, Any]]:
+    def list_chats(self, project_id: str | None = None, *, include_archived: bool = False) -> list[dict[str, Any]]:
         chats = [self._read_json(path, {}) for path in self.chats_dir.glob("*.json")]
-        chats = [c for c in chats if c.get("id") and (project_id is None or c.get("project_id") == project_id)]
+        chats = [
+            c
+            for c in chats
+            if c.get("id")
+            and c.get("status") != "deleted"
+            and (include_archived or c.get("status") != "archived")
+            and (project_id is None or c.get("project_id") == project_id)
+        ]
         return sorted(chats, key=lambda c: c.get("updated_at", ""), reverse=True)
+
+    def archive_chat(self, chat_id: str) -> dict[str, Any]:
+        chat = self.get_chat(chat_id)
+        now = utc_now()
+        chat["status"] = "archived"
+        chat["archived_at"] = now
+        chat["updated_at"] = now
+        self._write_json(self._chat_path(chat_id), chat)
+        return chat
+
+    def delete_chat(self, chat_id: str) -> dict[str, Any]:
+        path = self._chat_path(chat_id)
+        chat = self.get_chat(chat_id)
+        now = utc_now()
+        chat["status"] = "deleted"
+        chat["deleted_at"] = now
+        chat["updated_at"] = now
+        target = self.deleted_chats_dir / f"{path.stem}-{now.replace(':', '').replace('+', 'Z')}.json"
+        self._write_json(target, chat)
+        path.unlink(missing_ok=True)
+        return chat
 
     def add_message(self, chat_id: str, role: str, content: str, *, run_id: str | None = None) -> dict[str, Any]:
         chat = self.get_chat(chat_id)

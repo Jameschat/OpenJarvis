@@ -56,3 +56,33 @@ def test_store_quarantines_corrupt_json(tmp_path):
 
     assert state["projects"]
     assert list(tmp_path.glob("corrupt/*.json"))
+
+
+def test_store_archives_chat_out_of_default_list(tmp_path):
+    store = studio_store.StudioStore(tmp_path)
+    project = store.ensure_project("openjarvis", title="OpenJarvis")
+    keep = store.create_chat(project["id"], title="Keep")
+    archive = store.create_chat(project["id"], title="Archive me")
+
+    archived = store.archive_chat(archive["id"])
+
+    assert archived["status"] == "archived"
+    assert [chat["id"] for chat in store.list_chats(project["id"])] == [keep["id"]]
+    assert store.get_chat(archive["id"])["status"] == "archived"
+    assert archive["id"] in [chat["id"] for chat in store.list_chats(project["id"], include_archived=True)]
+
+
+def test_store_soft_deletes_chat_to_trash(tmp_path):
+    store = studio_store.StudioStore(tmp_path)
+    project = store.ensure_project("openjarvis", title="OpenJarvis")
+    chat = store.create_chat(project["id"], title="Remove me")
+    chat_path = store._chat_path(chat["id"])
+
+    deleted = store.delete_chat(chat["id"])
+
+    assert deleted["status"] == "deleted"
+    assert not chat_path.exists()
+    assert not store.list_chats(project["id"])
+    deleted_files = list((tmp_path / "deleted" / "chats").glob("*.json"))
+    assert len(deleted_files) == 1
+    assert deleted_files[0].name.startswith(chat["id"])

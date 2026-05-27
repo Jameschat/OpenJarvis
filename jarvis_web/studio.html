@@ -126,6 +126,59 @@
       color: #f0f0f2;
       text-align: left;
     }
+    .chat-row {
+      position: relative;
+      padding: 0 4px 0 8px;
+    }
+    .chat-select {
+      flex: 1;
+      min-width: 0;
+      height: 31px;
+      color: inherit;
+      text-align: left;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .chat-options-btn {
+      width: 28px;
+      height: 28px;
+      border-radius: 7px;
+      color: #b8bdc9;
+      font-weight: 800;
+      opacity: 0;
+    }
+    .chat-row:hover .chat-options-btn, .chat-row.active .chat-options-btn, .chat-row.menu-open .chat-options-btn {
+      opacity: 1;
+    }
+    .chat-options-btn:hover {
+      background: rgba(255,255,255,0.1);
+      color: #ffffff;
+    }
+    .chat-menu {
+      position: absolute;
+      top: 30px;
+      right: 4px;
+      z-index: 30;
+      min-width: 132px;
+      padding: 5px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #27272d;
+      box-shadow: 0 18px 42px rgba(0,0,0,0.45);
+      display: none;
+    }
+    .chat-row.menu-open .chat-menu { display: grid; gap: 3px; }
+    .chat-menu button {
+      min-height: 30px;
+      border-radius: 7px;
+      padding: 0 9px;
+      color: #f4f4f5;
+      text-align: left;
+      font-size: 12px;
+    }
+    .chat-menu button:hover { background: rgba(255,255,255,0.09); }
+    .chat-menu button.danger { color: #ffb4b4; }
     .project-row:hover, .chat-row:hover, .chat-row.active { background: rgba(255,255,255,0.08); }
     .row-meta {
       margin-left: auto;
@@ -930,14 +983,46 @@
     function renderChats(chats) {
       const root = el("studio-chats");
       clear(root);
+      if (!chats.length) {
+        const empty = document.createElement("div");
+        empty.className = "side-section";
+        empty.textContent = "No active chats";
+        root.appendChild(empty);
+        return;
+      }
       chats.forEach((chat) => {
-        const button = document.createElement("button");
-        button.className = `chat-row${chat.id === activeChatId ? " active" : ""}`;
-        button.type = "button";
-        button.dataset.studioAction = "select-chat";
-        button.dataset.chatId = chat.id;
-        button.textContent = chat.title || "New chat";
-        root.appendChild(button);
+        const row = document.createElement("div");
+        row.className = `chat-row${chat.id === activeChatId ? " active" : ""}`;
+        row.dataset.chatId = chat.id;
+        const select = document.createElement("button");
+        select.className = "chat-select";
+        select.type = "button";
+        select.dataset.studioAction = "select-chat";
+        select.dataset.chatId = chat.id;
+        select.textContent = chat.title || "New chat";
+        const options = document.createElement("button");
+        options.className = "chat-options-btn";
+        options.type = "button";
+        options.title = "Chat options";
+        options.dataset.studioAction = "toggle-chat-menu";
+        options.dataset.chatId = chat.id;
+        options.textContent = "...";
+        const menu = document.createElement("div");
+        menu.className = "chat-menu";
+        const archive = document.createElement("button");
+        archive.type = "button";
+        archive.dataset.studioAction = "archive-chat";
+        archive.dataset.chatId = chat.id;
+        archive.textContent = "Archive";
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.className = "danger";
+        remove.dataset.studioAction = "delete-chat";
+        remove.dataset.chatId = chat.id;
+        remove.textContent = "Delete";
+        menu.append(archive, remove);
+        row.append(select, options, menu);
+        root.appendChild(row);
       });
     }
 
@@ -1303,7 +1388,9 @@
       const projects = state.projects || [];
       const chats = state.chats || [];
       activeProjectId = projects[0] ? projects[0].id : activeProjectId;
-      activeChatId = activeChatId || (chats[0] ? chats[0].id : "");
+      if (!chats.some((chat) => chat.id === activeChatId)) {
+        activeChatId = chats[0] ? chats[0].id : "";
+      }
       renderProjects(projects);
       renderChats(chats);
       renderRuns(state.runs || []);
@@ -1393,6 +1480,25 @@
       await loadStudioState();
     }
 
+    function closeChatMenus() {
+      document.querySelectorAll(".chat-row.menu-open").forEach((row) => row.classList.remove("menu-open"));
+    }
+
+    async function archiveChat(chatId) {
+      if (!chatId) return;
+      await apiPost(`${API.chats}/${encodeURIComponent(chatId)}/archive`, {});
+      if (activeChatId === chatId) activeChatId = "";
+      await loadStudioState();
+    }
+
+    async function deleteChat(chatId) {
+      if (!chatId) return;
+      if (!window.confirm("Move this chat out of Studio? It will be kept in deleted chats.")) return;
+      await apiPost(`${API.chats}/${encodeURIComponent(chatId)}/delete`, {});
+      if (activeChatId === chatId) activeChatId = "";
+      await loadStudioState();
+    }
+
     async function searchStudio() {
       const query = el("studio-search").value || "";
       if (!query.trim()) return loadStudioState();
@@ -1419,9 +1525,13 @@
 
     document.addEventListener('click', async (event) => {
       const target = event.target.closest('[data-studio-action]');
-      if (!target) return;
+      if (!target) {
+        closeChatMenus();
+        return;
+      }
       const action = target.dataset.studioAction;
       try {
+        if (!["toggle-chat-menu"].includes(action)) closeChatMenus();
         if (action === "new-chat") await createChat();
         if (action === "focus-search") el("studio-search").focus();
         if (action === "show-plugins") renderSourcesPanel((await apiGet("/studio/plugins")).plugins || [], studioState.runs || []);
@@ -1430,6 +1540,14 @@
         if (action === "open-settings") window.location.href = "/brain#settings";
         if (action === "select-project") { activeProjectId = target.dataset.projectId; activeChatId = ""; await loadStudioState(); }
         if (action === "select-chat") { activeChatId = target.dataset.chatId; renderState(studioState); }
+        if (action === "toggle-chat-menu") {
+          const row = target.closest(".chat-row");
+          const wasOpen = row && row.classList.contains("menu-open");
+          closeChatMenus();
+          if (row && !wasOpen) row.classList.add("menu-open");
+        }
+        if (action === "archive-chat") await archiveChat(target.dataset.chatId);
+        if (action === "delete-chat") await deleteChat(target.dataset.chatId);
         if (action === "refresh-state") await loadStudioState();
         if (action === "toggle-left") el("studio-sidebar").classList.toggle("mobile-open");
         if (action === "toggle-context") el("studio-context").classList.toggle("mobile-open");

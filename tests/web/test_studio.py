@@ -142,3 +142,13 @@ def test_studio_shows_context_pressure_meter():
     assert "renderContextMeter" in html
     assert "context.percent" in html
     assert "handoff_recommended" in html
+
+
+def test_studio_has_chat_row_archive_delete_actions():
+    html = (ROOT / "jarvis_web" / "studio.html").read_text(encoding="utf-8")
+
+    assert "toggle-chat-menu" in html
+    assert "archive-chat" in html
+    assert "delete-chat" in html
+    assert "/archive" in html
+    assert "/delete" in html
