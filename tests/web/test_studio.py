@@ -133,3 +133,12 @@ def test_studio_has_codex_style_work_panel():
     ]:
         assert marker in html
     assert "enrich_runs_for_studio" in source
+
+
+def test_studio_shows_context_pressure_meter():
+    html = (ROOT / "jarvis_web" / "studio.html").read_text(encoding="utf-8")
+
+    assert 'id="studio-context-meter"' in html
+    assert "renderContextMeter" in html
+    assert "context.percent" in html
+    assert "handoff_recommended" in html

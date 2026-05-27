@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 from openjarvis.tools import studio_runner
 from openjarvis.tools.studio_store import StudioStore
@@ -348,3 +349,49 @@ def test_studio_store_reads_utf8_bom_json(tmp_path):
 
     assert store._read_json(path, {})["id"] == "bom"
     assert not list(store.corrupt_dir.glob("bom-*.json"))
+
+
+def test_enrich_chats_adds_context_character_pressure(monkeypatch, tmp_path):
+    monkeypatch.setattr(studio_runner.studio_store, "STUDIO_ROOT", tmp_path / "studio")
+    store = studio_runner.studio_store.StudioStore(tmp_path / "studio")
+    store.ensure_project("openjarvis", title="OpenJarvis")
+    chat = store.create_chat("openjarvis", title="Long chat")
+    store.add_message(chat["id"], "operator", "a" * 80)
+    chat = store.get_chat(chat["id"])
+
+    enriched = studio_runner.enrich_chats_with_context([chat], char_limit=100)
+
+    context = enriched[0]["context"]
+    assert context["used_chars"] == 80
+    assert context["limit_chars"] == 100
+    assert context["percent"] == 80
+    assert context["status"] == "warning"
+    assert context["handoff_recommended"] is False
+
+
+def test_context_handoff_writes_vault_note_once(monkeypatch, tmp_path):
+    monkeypatch.setattr(studio_runner.studio_store, "STUDIO_ROOT", tmp_path / "studio")
+    brain = tmp_path / "brain"
+    monkeypatch.setattr(studio_runner, "BRAIN_ROOT", brain)
+    store = studio_runner.studio_store.StudioStore(tmp_path / "studio")
+    store.ensure_project("openjarvis", title="OpenJarvis")
+    chat = store.create_chat("openjarvis", title="Deep project")
+    store.add_message(chat["id"], "operator", "Plan the project.")
+    store.add_message(chat["id"], "jarvis", "Assumptions, decisions, and next actions.")
+    chat = store.get_chat(chat["id"])
+
+    enriched = studio_runner.enrich_chats_with_context([chat], store=store, char_limit=40)
+
+    context = enriched[0]["context"]
+    assert context["status"] == "critical"
+    assert context["handoff_recommended"] is True
+    handoff = context["handoff"]
+    assert handoff["path"]
+    note = Path(handoff["path"])
+    assert note.exists()
+    assert "Jarvis Studio Context Handoff" in note.read_text(encoding="utf-8")
+    assert store.get_chat(chat["id"])["context_handoff"]["path"] == str(note)
+
+    enriched_again = studio_runner.enrich_chats_with_context([store.get_chat(chat["id"])], store=store, char_limit=40)
+    assert enriched_again[0]["context"]["handoff"]["path"] == str(note)
+    assert len(list((brain / "Sessions").glob("*.md"))) == 1

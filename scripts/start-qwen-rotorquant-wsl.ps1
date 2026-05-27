@@ -5,7 +5,7 @@ param(
     [string]$TurboQuantRepo = "/root/llama-cpp-turboquant",
     [string]$TurboQuantBranch = "feature/turboquant-kv-cache",
     [int]$Port = 8085,
-    [int]$ContextTokens = 182000,
+    [int]$ContextTokens = 200000,
     [int]$Threads = 24,
     [int]$BatchSize = 4092,
     [int]$UBatchSize = 1024,

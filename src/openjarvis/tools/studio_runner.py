@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 from datetime import datetime
 from pathlib import Path
@@ -9,6 +10,8 @@ from typing import Any
 from openjarvis.tools import studio_context, studio_research, studio_store, studio_workflows
 
 STUDIO_RUN_STALE_AFTER_SECONDS = 300
+STUDIO_CONTEXT_CHAR_LIMIT = int(os.environ.get("OPENJARVIS_STUDIO_CONTEXT_CHAR_LIMIT", "800000"))
+BRAIN_ROOT = Path(os.environ.get("OPENJARVIS_BRAIN_ROOT", r"E:\Claude\Obsidian\Claude\Brain"))
 _MEMORY_STOPWORDS = {
     "about",
     "built",
@@ -184,6 +187,113 @@ def _persist_run_status(
     run["updated_at"] = studio_store.utc_now()
     store._write_json(store._run_path(run["id"]), run)
     return store.get_run(run["id"])
+
+
+def _chat_used_chars(chat: dict[str, Any]) -> int:
+    total = 0
+    for message in chat.get("messages", []):
+        total += len(str(message.get("content") or ""))
+    return total
+
+
+def _context_status(percent: int) -> str:
+    if percent >= 90:
+        return "critical"
+    if percent >= 75:
+        return "warning"
+    return "normal"
+
+
+def _build_context_handoff_note(chat: dict[str, Any], pressure: dict[str, Any]) -> str:
+    messages = chat.get("messages", [])
+    recent = messages[-16:]
+    lines = [
+        "---",
+        "type: session",
+        "tags: [jarvis-studio, context-handoff]",
+        f"date: {studio_store.utc_now()[:10]}",
+        "---",
+        "",
+        "# Jarvis Studio Context Handoff",
+        "",
+        f"Chat: {chat.get('title') or chat.get('id')}",
+        f"Project: {chat.get('project_id') or 'openjarvis'}",
+        f"Context pressure: {pressure['percent']}% ({pressure['used_chars']} / {pressure['limit_chars']} chars)",
+        "",
+        "## Continue From Here",
+        "",
+        "Use this note as the starting memory for a new Studio chat when the current chat is close to full context.",
+        "",
+        "## Recent Session Messages",
+        "",
+    ]
+    for message in recent:
+        role = str(message.get("role") or "message").title()
+        content = str(message.get("content") or "").strip()
+        if len(content) > 1200:
+            content = content[:1200].rstrip() + "\n...[truncated]"
+        lines.extend([f"### {role}", "", content or "(empty)", ""])
+    lines.extend([
+        "## Next Action",
+        "",
+        "Open a new Jarvis Studio chat, reference this handoff, and continue with the latest unfinished request.",
+        "",
+    ])
+    return "\n".join(lines)
+
+
+def _write_context_handoff(store: studio_store.StudioStore, chat: dict[str, Any], pressure: dict[str, Any]) -> dict[str, Any]:
+    existing = chat.get("context_handoff")
+    if isinstance(existing, dict) and existing.get("path") and Path(str(existing["path"])).exists():
+        return existing
+    sessions_dir = BRAIN_ROOT / "Sessions"
+    sessions_dir.mkdir(parents=True, exist_ok=True)
+    slug = studio_store.slugify(str(chat.get("title") or chat.get("id") or "studio-chat"), "studio-chat")
+    stamp = studio_store.utc_now()[:10]
+    path = sessions_dir / f"{stamp} - Jarvis Studio context handoff - {slug}.md"
+    if path.exists():
+        path = sessions_dir / f"{stamp} - Jarvis Studio context handoff - {slug}-{chat.get('id', '')[-6:]}.md"
+    path.write_text(_build_context_handoff_note(chat, pressure), encoding="utf-8")
+    handoff = {
+        "path": str(path),
+        "created_at": studio_store.utc_now(),
+        "percent": pressure["percent"],
+        "used_chars": pressure["used_chars"],
+    }
+    chat["context_handoff"] = handoff
+    chat["updated_at"] = studio_store.utc_now()
+    store._write_json(store._chat_path(str(chat["id"])), chat)
+    return handoff
+
+
+def enrich_chats_with_context(
+    chats: list[dict[str, Any]],
+    *,
+    store: studio_store.StudioStore | None = None,
+    char_limit: int | None = None,
+) -> list[dict[str, Any]]:
+    """Attach context-window pressure and write a handoff near saturation."""
+    limit = max(1, int(char_limit or STUDIO_CONTEXT_CHAR_LIMIT))
+    enriched: list[dict[str, Any]] = []
+    for chat in chats:
+        copy = dict(chat)
+        used = _chat_used_chars(copy)
+        percent = min(100, int(round((used / limit) * 100)))
+        pressure = {
+            "used_chars": used,
+            "limit_chars": limit,
+            "remaining_chars": max(0, limit - used),
+            "percent": percent,
+            "status": _context_status(percent),
+            "handoff_recommended": percent >= 85,
+        }
+        if pressure["handoff_recommended"] and store is not None and copy.get("id"):
+            pressure["handoff"] = _write_context_handoff(store, copy, pressure)
+        elif isinstance(copy.get("context_handoff"), dict):
+            pressure["handoff"] = copy["context_handoff"]
+        copy["context"] = pressure
+        enriched.append(copy)
+    return enriched
 
 
 def _load_agent_task_index() -> dict[str, dict[str, Any]]:

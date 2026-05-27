@@ -206,7 +206,7 @@ def test_rotorquant_command_uses_long_context_coding_defaults():
     assert "--port" in command
     assert "8085" in command
     assert "--ctx-size" in command
-    assert "182000" in command
+    assert "200000" in command
     assert "--cache-type-k" in command
     assert "q8_0" in command
     assert "--cache-type-v" in command

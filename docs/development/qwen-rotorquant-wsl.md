@@ -18,7 +18,7 @@ current local Qwen route.
 - Branch target: `feature/turboquant-kv-cache`
 - Model ref: `majentik/Qwen3.6-35B-A3B-RotorQuant-GGUF-IQ4_XS`
 - Port: `8085`
-- Context target: `182000`
+- Context target: `200000`
 - KV cache: `q8_0` key, `turbo4` value
 - Sampling: `temp=0.6`, `top_p=0.95`, `top_k=20`, `min_p=0.0`,
   `presence_penalty=0.0`, `repeat_penalty=1.0`
@@ -47,6 +47,7 @@ Benchmark against all known Qwen lanes:
 E:\Claude\OpenJarvis\scripts\benchmark-qwen-runtimes.ps1 -ContextTokens 4096
 E:\Claude\OpenJarvis\scripts\benchmark-qwen-runtimes.ps1 -ContextTokens 65536
 E:\Claude\OpenJarvis\scripts\benchmark-qwen-runtimes.ps1 -ContextTokens 100000
+E:\Claude\OpenJarvis\scripts\benchmark-qwen-runtimes.ps1 -ContextTokens 200000
 ```
 
 ## Promotion Gate

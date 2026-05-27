@@ -401,6 +401,42 @@
       border-radius: 10px;
       padding: 10px;
     }
+    .context-meter {
+      display: grid;
+      gap: 7px;
+    }
+    .context-meter-row {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 10px;
+      font-size: 12px;
+    }
+    .context-meter-value {
+      color: var(--text);
+      font-weight: 800;
+      letter-spacing: 0;
+    }
+    .context-meter-track {
+      height: 8px;
+      border-radius: 999px;
+      background: #101013;
+      border: 1px solid var(--line);
+      overflow: hidden;
+    }
+    .context-meter-fill {
+      height: 100%;
+      width: 0%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, #61e7ff, #65f3bc);
+    }
+    .context-meter.warning .context-meter-fill { background: linear-gradient(90deg, #61e7ff, #f3d365); }
+    .context-meter.critical .context-meter-fill { background: linear-gradient(90deg, #f3d365, #ff7474); }
+    .context-meter-detail {
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.35;
+    }
     .context-kicker {
       color: var(--muted);
       font-size: 10px;
@@ -623,6 +659,13 @@
         <input id="studio-search" placeholder="Search chats, runs, memory links">
       </div>
       <section id="studio-context-panel">
+        <article class="context-card">
+          <div class="context-title-row">
+            <div class="context-kicker">Context Window</div>
+            <span class="panel-count" id="studio-context-meter-count">0%</span>
+          </div>
+          <div id="studio-context-meter" class="context-meter"></div>
+        </article>
         <article class="context-card">
           <div class="context-title-row">
             <div class="context-kicker">Progress</div>
@@ -1105,6 +1148,50 @@
       });
     }
 
+    function renderContextMeter(chat) {
+      const root = el("studio-context-meter");
+      if (!root) return;
+      clear(root);
+      const context = (chat && chat.context) || {
+        percent: 0,
+        status: "normal",
+        used_chars: 0,
+        limit_chars: 800000,
+        remaining_chars: 800000
+      };
+      const percent = Math.max(0, Math.min(100, Number(context.percent || 0)));
+      root.className = `context-meter ${context.status || "normal"}`;
+      setText("studio-context-meter-count", `${percent}%`);
+      const row = document.createElement("div");
+      row.className = "context-meter-row";
+      const label = document.createElement("span");
+      label.textContent = "Session context used";
+      const value = document.createElement("span");
+      value.className = "context-meter-value";
+      value.textContent = `${percent}%`;
+      row.append(label, value);
+      const track = document.createElement("div");
+      track.className = "context-meter-track";
+      const fill = document.createElement("div");
+      fill.className = "context-meter-fill";
+      fill.style.width = `${percent}%`;
+      track.append(fill);
+      const detail = document.createElement("div");
+      detail.className = "context-meter-detail";
+      const used = Number(context.used_chars || 0).toLocaleString();
+      const limit = Number(context.limit_chars || 0).toLocaleString();
+      detail.textContent = `${used} / ${limit} characters`;
+      root.append(row, track, detail);
+      if (context.handoff_recommended) {
+        const handoff = document.createElement("div");
+        handoff.className = "context-meter-detail";
+        handoff.textContent = context.handoff && context.handoff.path
+          ? "Handoff memory saved. Start a new chat when you want a clean continuation."
+          : "Handoff recommended soon.";
+        root.append(handoff);
+      }
+    }
+
     function renderPlugins(plugins) {
       const root = el("studio-plugin-list");
       if (!root) return;
@@ -1227,6 +1314,7 @@
       renderSourcesPanel(state.plugins || [], state.runs || []);
       const activeChat = chats.find((chat) => chat.id === activeChatId);
       renderThread(activeChat);
+      renderContextMeter(activeChat);
       setText("studio-model-label", (state.model && state.model.alias) || "qwen3.6-27b-local");
       setText("studio-provider-label", state.provider || "auto");
       setText("studio-automation-count", (state.automations || []).length);
