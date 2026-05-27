@@ -257,6 +257,74 @@ def test_qwen_provider_executes_safe_tool_bridge_round(monkeypatch, tmp_path):
     assert (ws / "QWEN_TOOL_RESULTS.json").exists()
 
 
+def test_qwen_provider_revises_weak_complex_answer(monkeypatch, tmp_path):
+    from openjarvis.tools import agent_runner
+    from openjarvis.tools.agent_runner import Task
+
+    calls = []
+
+    class DummyMessage:
+        def __init__(self, content):
+            self.content = content
+
+    class DummyChoice:
+        def __init__(self, content):
+            self.message = DummyMessage(content)
+
+    class DummyCompletions:
+        def create(self, **kwargs):
+            calls.append(kwargs)
+            if len(calls) == 1:
+                return types.SimpleNamespace(choices=[DummyChoice("I can help with that.")])
+            assert "Quality issues" in kwargs["messages"][0]["content"]
+            return types.SimpleNamespace(
+                choices=[
+                    DummyChoice(
+                        "Assumptions: local Qwen should stay safe.\n\n"
+                        "Verification: checked the requested workflow and no shell authority is needed.\n\n"
+                        "Next actions: create a plan, retrieve memory, execute the safe bridge, and escalate if confidence is low. "
+                        "This keeps the local model useful for routine project planning while preserving Claude/Codex backup for risky edits."
+                    )
+                ]
+            )
+
+    class DummyClient:
+        def __init__(self, **kwargs):
+            self.chat = types.SimpleNamespace(completions=DummyCompletions())
+
+    class DummyRegistry:
+        def mark_running(self, task_id, workspace):
+            pass
+
+        def mark_finished(self, task_id, exit_code, error=None):
+            assert exit_code == 0
+            assert error is None
+
+    monkeypatch.setitem(sys.modules, "openai", types.SimpleNamespace(OpenAI=DummyClient))
+    monkeypatch.setattr(agent_runner, "RUNS_DIR", tmp_path)
+    monkeypatch.setattr(agent_runner, "_reg", DummyRegistry())
+    monkeypatch.setattr(agent_runner, "_build_brain_context", lambda: "")
+    monkeypatch.setattr(agent_runner, "_write_agent_task_note", lambda *args, **kwargs: None)
+
+    task = Task(
+        id="task-qwen-quality-loop",
+        title="Quality loop",
+        agent_id="qwen-planner",
+        prompt="Plan a project workflow for Jarvis Studio.",
+    )
+
+    agent_runner._run_qwen_task(
+        task,
+        {"id": "qwen-planner", "role": "Plan.", "model": "qwen3.6-27b-local"},
+    )
+
+    result = (tmp_path / "task-qwen-quality-loop" / "RESULT.md").read_text(encoding="utf-8")
+    assert len(calls) == 2
+    assert "I can help with that." not in result
+    assert "Qwen Quality Gate" in result
+    assert "Status: passed" in result
+
+
 def test_qwen_provider_accepts_xml_style_tool_request_block(monkeypatch, tmp_path):
     from openjarvis.tools import agent_runner, qwen_tool_bridge
     from openjarvis.tools.agent_runner import Task

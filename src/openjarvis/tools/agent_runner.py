@@ -2161,7 +2161,7 @@ def _run_qwen_task(task: Task, agent_spec: Dict[str, Any]) -> None:
     role = (agent_spec.get("role") or "Local Qwen agent.").strip()
     workspace_write = bool(agent_spec.get("workspace_write"))
     brain_block = _build_brain_context()
-    from openjarvis.tools import qwen_tool_bridge
+    from openjarvis.tools import qwen_quality_loop, qwen_tool_bridge
 
     workspace_block = ""
     if workspace_write:
@@ -2244,8 +2244,10 @@ def _run_qwen_task(task: Task, agent_spec: Dict[str, Any]) -> None:
         content = _call_local_qwen(prompt)
         if not content.strip():
             raise RuntimeError("qwen returned empty content")
+        had_tool_results = False
         tool_requests = qwen_tool_bridge.parse_tool_requests(content)
         if tool_requests:
+            had_tool_results = True
             tool_results = qwen_tool_bridge.execute_tool_requests(tool_requests)
             (ws / "QWEN_TOOL_RESULTS.json").write_text(
                 json.dumps({"requests": tool_requests, "results": tool_results}, indent=2) + "\n",
@@ -2266,13 +2268,41 @@ def _run_qwen_task(task: Task, agent_spec: Dict[str, Any]) -> None:
             if not content.strip():
                 raise RuntimeError("qwen returned empty content after tool bridge")
 
+        quality = qwen_quality_loop.assess_qwen_output(
+            content,
+            task.prompt or "",
+            had_tool_results=had_tool_results,
+        )
+        if quality.needs_retry:
+            revision_prompt = "\n\n".join(
+                part
+                for part in (
+                    prompt,
+                    qwen_quality_loop.build_revision_prompt(task.prompt or "", content, quality),
+                )
+                if part
+            )
+            revised = _call_local_qwen(
+                revision_prompt,
+                user_text="Revise the answer and produce final RESULT.md now.",
+            )
+            if revised.strip():
+                content = revised
+            quality = qwen_quality_loop.assess_qwen_output(
+                content,
+                task.prompt or "",
+                had_tool_results=had_tool_results,
+                after_retry=True,
+            )
+
         result_md = (
             f"# {task.title}\n\n"
             f"Provider: qwen\n\n"
             f"Model: {model}\n\n"
             f"Agent: {task.agent_id}\n\n"
             "## Result\n\n"
-            f"{content.strip()}\n"
+            f"{content.strip()}\n\n"
+            f"{qwen_quality_loop.format_quality_report(quality)}"
         )
         result_path = ws / (f"{task.id}.RESULT.md" if task.project_id else "RESULT.md")
         result_path.write_text(result_md, encoding="utf-8")
