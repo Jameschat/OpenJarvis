@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import time
 from datetime import datetime
 from pathlib import Path
@@ -12,6 +13,17 @@ from openjarvis.tools import studio_context, studio_research, studio_store, stud
 STUDIO_RUN_STALE_AFTER_SECONDS = 300
 STUDIO_CONTEXT_CHAR_LIMIT = int(os.environ.get("OPENJARVIS_STUDIO_CONTEXT_CHAR_LIMIT", "800000"))
 BRAIN_ROOT = Path(os.environ.get("OPENJARVIS_BRAIN_ROOT", r"E:\Claude\Obsidian\Claude\Brain"))
+_FILE_ACTIVITY_IGNORES = {
+    "jarvis.bat",
+    "uv.lock",
+}
+_FILE_ACTIVITY_SECRET_PARTS = (
+    ".env",
+    ".key",
+    ".pem",
+    "secret",
+    "secrets",
+)
 _MEMORY_STOPWORDS = {
     "about",
     "built",
@@ -185,6 +197,153 @@ def _persist_run_status(
 ) -> dict[str, Any]:
     run["status"] = status
     run["updated_at"] = studio_store.utc_now()
+    store._write_json(store._run_path(run["id"]), run)
+    return store.get_run(run["id"])
+
+
+def _is_safe_activity_path(path: str) -> bool:
+    normal = path.replace("\\", "/").strip("/")
+    if not normal or normal.startswith("../") or "/../" in normal:
+        return False
+    name = normal.rsplit("/", 1)[-1].lower()
+    lower = normal.lower()
+    if name in _FILE_ACTIVITY_IGNORES:
+        return False
+    return not any(part in lower for part in _FILE_ACTIVITY_SECRET_PARTS)
+
+
+def _parse_numstat(text: str) -> list[dict[str, Any]]:
+    activity: list[dict[str, Any]] = []
+    for raw in text.splitlines():
+        parts = raw.split("\t")
+        if len(parts) < 3:
+            continue
+        additions_raw, deletions_raw, path = parts[0], parts[1], parts[2]
+        if " => " in path:
+            path = path.split(" => ", 1)[1].strip("{}")
+        if not _is_safe_activity_path(path):
+            continue
+        try:
+            additions = int(additions_raw)
+            deletions = int(deletions_raw)
+        except ValueError:
+            additions = 0
+            deletions = 0
+        activity.append(
+            {
+                "path": path.replace("\\", "/"),
+                "name": Path(path).name,
+                "additions": additions,
+                "deletions": deletions,
+                "status": "editing",
+            }
+        )
+    return activity
+
+
+def _merge_file_activity(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    merged: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        path = str(row.get("path") or "")
+        if not _is_safe_activity_path(path):
+            continue
+        target = merged.setdefault(
+            path,
+            {
+                "path": path,
+                "name": Path(path).name,
+                "additions": 0,
+                "deletions": 0,
+                "status": row.get("status") or "editing",
+            },
+        )
+        target["additions"] += int(row.get("additions") or 0)
+        target["deletions"] += int(row.get("deletions") or 0)
+    return sorted(
+        merged.values(),
+        key=lambda item: (int(item.get("additions") or 0) + int(item.get("deletions") or 0), str(item.get("path") or "")),
+        reverse=True,
+    )
+
+
+def _git_file_activity(repo_root: Path) -> list[dict[str, Any]]:
+    root = Path(repo_root)
+    if not root.exists():
+        return []
+    rows: list[dict[str, Any]] = []
+    for args in (
+        ["git", "-C", str(root), "diff", "--numstat", "--", "."],
+        ["git", "-C", str(root), "diff", "--cached", "--numstat", "--", "."],
+    ):
+        try:
+            completed = subprocess.run(
+                args,
+                check=False,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=8,
+            )
+        except (OSError, subprocess.SubprocessError):
+            continue
+        if completed.returncode == 0:
+            rows.extend(_parse_numstat(completed.stdout))
+    return _merge_file_activity(rows)
+
+
+def _subtract_file_activity(
+    current: list[dict[str, Any]],
+    baseline: list[dict[str, Any]] | None,
+) -> list[dict[str, Any]]:
+    base = {str(row.get("path") or ""): row for row in (baseline or []) if row.get("path")}
+    rows: list[dict[str, Any]] = []
+    for row in current:
+        path = str(row.get("path") or "")
+        if not _is_safe_activity_path(path):
+            continue
+        base_row = base.get(path, {})
+        additions = max(0, int(row.get("additions") or 0) - int(base_row.get("additions") or 0))
+        deletions = max(0, int(row.get("deletions") or 0) - int(base_row.get("deletions") or 0))
+        if additions == 0 and deletions == 0:
+            continue
+        rows.append(
+            {
+                "path": path,
+                "name": Path(path).name,
+                "additions": additions,
+                "deletions": deletions,
+                "status": row.get("status") or "editing",
+            }
+        )
+    return _merge_file_activity(rows)
+
+
+def _project_repo_root(project: dict[str, Any] | None = None) -> Path:
+    if project and project.get("repo_root"):
+        return Path(str(project["repo_root"]))
+    return studio_store.DEFAULT_REPO_ROOT
+
+
+def _capture_run_file_activity(run: dict[str, Any]) -> list[dict[str, Any]]:
+    root = Path(str(run.get("repo_root") or studio_store.DEFAULT_REPO_ROOT))
+    current = _git_file_activity(root)
+    return _subtract_file_activity(current, run.get("file_activity_baseline") or [])
+
+
+def _store_run_file_activity_baseline(
+    store: studio_store.StudioStore,
+    run: dict[str, Any],
+    repo_root: Path,
+) -> dict[str, Any]:
+    run["repo_root"] = str(repo_root)
+    run["file_activity_baseline"] = _git_file_activity(repo_root)
+    store._write_json(store._run_path(run["id"]), run)
+    return store.get_run(run["id"])
+
+
+def _store_run_final_file_activity(store: studio_store.StudioStore, run: dict[str, Any]) -> dict[str, Any]:
+    run["file_activity_final"] = _capture_run_file_activity(run)
     store._write_json(store._run_path(run["id"]), run)
     return store.get_run(run["id"])
 
@@ -405,6 +564,10 @@ def enrich_runs_for_studio(runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
             task_details.append(detail)
         copy["task_details"] = task_details
         copy["outputs"] = outputs[:12]
+        activity = _capture_run_file_activity(copy)
+        if not activity and isinstance(copy.get("file_activity_final"), list):
+            activity = copy["file_activity_final"]
+        copy["file_activity"] = activity[:12]
         enriched.append(copy)
     return enriched
 
@@ -472,6 +635,7 @@ def sync_completed_run_outputs(store: studio_store.StudioStore | None = None) ->
         failed = [task for task in tasks if task and task.get("status") != "done"]
         status = "failed" if failed else "completed"
         updated = store.get_run(run["id"])
+        updated["file_activity_final"] = _capture_run_file_activity(updated)
         updated["status"] = status
         updated["updated_at"] = studio_store.utc_now()
         store._write_json(store._run_path(updated["id"]), updated)
@@ -515,6 +679,7 @@ def start_studio_run(
     )
     decision = studio_workflows.select_workflow(prompt)
     run = store.create_run(project_id, chat_id, prompt, workflow=decision["workflow"])
+    run = _store_run_file_activity_baseline(store, run, _project_repo_root(project))
     store.append_run_event(run["id"], "run.created", "Studio run created")
     quick_reply = _lightweight_chat_reply(prompt)
     if quick_reply:

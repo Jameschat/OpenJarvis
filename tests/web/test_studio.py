@@ -135,6 +135,20 @@ def test_studio_has_codex_style_work_panel():
     assert "enrich_runs_for_studio" in source
 
 
+def test_studio_has_live_file_activity_panel():
+    html = (ROOT / "jarvis_web" / "studio.html").read_text(encoding="utf-8")
+
+    for marker in [
+        'id="studio-file-activity-list"',
+        "renderFileActivityPanel",
+        "file_activity",
+        "diff-add",
+        "diff-del",
+        "No file edits",
+    ]:
+        assert marker in html
+
+
 def test_studio_shows_context_pressure_meter():
     html = (ROOT / "jarvis_web" / "studio.html").read_text(encoding="utf-8")
 

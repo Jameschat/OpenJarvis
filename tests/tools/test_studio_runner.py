@@ -272,6 +272,27 @@ def test_enrich_runs_for_studio_includes_task_outputs(monkeypatch, tmp_path):
     assert any(output["name"] == "QWEN_TOOL_RESULTS.json" for output in enriched[0]["outputs"])
 
 
+def test_subtract_file_activity_hides_baseline_and_secrets():
+    current = [
+        {"path": "uv.lock", "additions": 12, "deletions": 2},
+        {"path": "jarvis_web/studio.html", "additions": 40, "deletions": 5},
+        {"path": "jarvis.bat", "additions": 99, "deletions": 1},
+    ]
+    baseline = [{"path": "uv.lock", "additions": 12, "deletions": 2}]
+
+    activity = studio_runner._subtract_file_activity(current, baseline)
+
+    assert activity == [
+        {
+            "path": "jarvis_web/studio.html",
+            "name": "studio.html",
+            "additions": 40,
+            "deletions": 5,
+            "status": "editing",
+        }
+    ]
+
+
 def test_sync_marks_stale_studio_runs_failed(monkeypatch, tmp_path):
     monkeypatch.setattr(studio_runner.studio_store, "STUDIO_ROOT", tmp_path / "studio")
     monkeypatch.setattr(studio_runner, "STUDIO_RUN_STALE_AFTER_SECONDS", 60)

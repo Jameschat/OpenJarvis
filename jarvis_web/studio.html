@@ -554,6 +554,7 @@
       white-space: nowrap;
     }
     .progress-list,
+    .file-activity-list,
     .output-list,
     .source-list,
     .browser-list {
@@ -631,6 +632,38 @@
     }
     .subagent-stats .plus { color: var(--green); }
     .subagent-stats .minus { color: #ff7b7b; }
+    .file-activity-row {
+      display: grid;
+      grid-template-columns: minmax(0,1fr) auto;
+      gap: 8px;
+      align-items: center;
+      color: #e5e7eb;
+      font-size: 12px;
+      min-width: 0;
+    }
+    .file-activity-row span:first-child {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .file-activity-row.editing span:first-child::before {
+      content: "";
+      display: inline-block;
+      width: 7px;
+      height: 7px;
+      margin-right: 7px;
+      border-radius: 99px;
+      background: var(--green);
+      box-shadow: 0 0 12px rgba(55,229,131,0.45);
+    }
+    .diff-stats {
+      display: inline-flex;
+      gap: 6px;
+      white-space: nowrap;
+      font-variant-numeric: tabular-nums;
+    }
+    .diff-add { color: var(--green); }
+    .diff-del { color: #ff7b7b; }
     .context-divider {
       height: 1px;
       background: var(--line);
@@ -769,6 +802,13 @@
             <span class="panel-count" id="studio-progress-count">idle</span>
           </div>
           <div id="studio-progress-list" class="progress-list"></div>
+        </article>
+        <article class="context-card">
+          <div class="context-title-row">
+            <div class="context-kicker">File Activity</div>
+            <span class="panel-count" id="studio-file-activity-count">idle</span>
+          </div>
+          <div id="studio-file-activity-list" class="file-activity-list"></div>
         </article>
         <article class="context-card">
           <div class="context-title-row">
@@ -1267,6 +1307,40 @@
       setText("studio-output-count", outputs.length);
     }
 
+    function renderFileActivityPanel(runs) {
+      const root = el("studio-file-activity-list");
+      if (!root) return;
+      clear(root);
+      const run = latestRun(runs);
+      const rows = [...((run && run.file_activity) || [])];
+      rows.slice(0, 8).forEach((activity) => {
+        const row = document.createElement("div");
+        row.className = `file-activity-row ${activity.status || "editing"}`;
+        const name = document.createElement("span");
+        name.title = activity.path || activity.name || "";
+        const verb = run && run.status === "running" ? "Editing" : "Edited";
+        name.textContent = `${verb} ${activity.name || activity.path || "file"}`;
+        const stats = document.createElement("span");
+        stats.className = "diff-stats";
+        const add = document.createElement("span");
+        add.className = "diff-add";
+        add.textContent = `+${Number(activity.additions || 0)}`;
+        const del = document.createElement("span");
+        del.className = "diff-del";
+        del.textContent = `-${Number(activity.deletions || 0)}`;
+        stats.append(add, del);
+        row.append(name, stats);
+        root.appendChild(row);
+      });
+      if (!rows.length) {
+        const row = document.createElement("div");
+        row.className = "progress-subtext";
+        row.textContent = "No file edits";
+        root.appendChild(row);
+      }
+      setText("studio-file-activity-count", rows.length ? `${rows.length} files` : "none");
+    }
+
     function renderRuns(runs) {
       const root = el("studio-run-list");
       clear(root);
@@ -1454,6 +1528,7 @@
       renderRuns(state.runs || []);
       renderAgents(state.orchestration || {});
       renderProgressPanel(state.runs || []);
+      renderFileActivityPanel(state.runs || []);
       renderOutputsPanel(state.runs || []);
       renderBrowserPanel();
       renderSourcesPanel(state.plugins || [], state.runs || []);
