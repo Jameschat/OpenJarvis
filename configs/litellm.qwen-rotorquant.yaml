@@ -1,0 +1,36 @@
+# Optional Qwen RotorQuant deep-context LiteLLM config.
+#
+# Prototype only. Start scripts/start-qwen-rotorquant-wsl.ps1 on port 8085,
+# then point a test LiteLLM instance at this config. Do not replace the live
+# qwen3.6-27b-local route until RotorQuant beats the current WSL MTP lane on
+# Studio planning, memory recall, JSON/tool-call reliability, and multi-turn
+# long-context prompts.
+
+model_list:
+  - model_name: qwen3.6-35b-a3b-rotorquant
+    litellm_params:
+      model: openai/qwen3.6-35b-a3b-rotorquant
+      api_base: http://localhost:8085/v1
+      api_key: sk-noop
+
+  - model_name: qwen3.6-27b-local
+    litellm_params:
+      model: openai/qwen3.6-27b-local
+      api_base: http://localhost:8084/v1
+      api_key: sk-noop
+
+  - model_name: qwen3.6-27b-ollama
+    litellm_params:
+      model: ollama_chat/qwen3.6:27b
+      api_base: http://localhost:11434
+
+litellm_settings:
+  fallbacks:
+    - qwen3.6-35b-a3b-rotorquant: ["qwen3.6-27b-local", "qwen3.6-27b-ollama"]
+    - qwen3.6-27b-local: ["qwen3.6-27b-ollama"]
+  num_retries: 1
+  request_timeout: 600
+  drop_params: true
+
+general_settings:
+  store_model_in_db: false

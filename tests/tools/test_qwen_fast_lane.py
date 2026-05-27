@@ -192,3 +192,65 @@ def test_turboq_mtp_wsl_start_script_is_opt_in_and_separate():
     assert "--cache-ram 0" in script
     assert "--cache-type-k $CacheTypeK" in script
     assert "8084" in script
+
+
+def test_rotorquant_command_uses_long_context_coding_defaults():
+    command = qwen_fast_lane.build_rotorquant_command(
+        turboquant_server_path="/root/llama-cpp-turboquant/build/bin/llama-server",
+        model_ref="majentik/Qwen3.6-35B-A3B-RotorQuant-GGUF-IQ4_XS",
+    )
+
+    assert command[0] == "/root/llama-cpp-turboquant/build/bin/llama-server"
+    assert "-hf" in command
+    assert "majentik/Qwen3.6-35B-A3B-RotorQuant-GGUF-IQ4_XS" in command
+    assert "--port" in command
+    assert "8085" in command
+    assert "--ctx-size" in command
+    assert "182000" in command
+    assert "--cache-type-k" in command
+    assert "q8_0" in command
+    assert "--cache-type-v" in command
+    assert "turbo4" in command
+    assert "--threads" in command
+    assert "24" in command
+    assert "--batch-size" in command
+    assert "4092" in command
+    assert "--ubatch-size" in command
+    assert "1024" in command
+    assert "--no-context-shift" in command
+    assert "--jinja" in command
+    assert "--temp" in command
+    assert "0.6" in command
+    assert "--top-p" in command
+    assert "0.95" in command
+    assert "--repeat-penalty" in command
+    assert "1.0" in command
+
+
+def test_rotorquant_litellm_config_is_separate_deep_context_alias(tmp_path: Path):
+    config_path = tmp_path / "litellm.qwen-rotorquant.yaml"
+
+    qwen_fast_lane.write_litellm_rotorquant_config(config_path)
+
+    data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    model_names = [item["model_name"] for item in data["model_list"]]
+
+    assert "qwen3.6-35b-a3b-rotorquant" in model_names
+    assert "qwen3.6-27b-local" in model_names
+    rotor = next(item for item in data["model_list"] if item["model_name"] == "qwen3.6-35b-a3b-rotorquant")
+    assert rotor["litellm_params"]["api_base"] == "http://localhost:8085/v1"
+    assert {"qwen3.6-35b-a3b-rotorquant": ["qwen3.6-27b-local", "qwen3.6-27b-ollama"]} in data["litellm_settings"]["fallbacks"]
+
+
+def test_rotorquant_wsl_start_script_is_opt_in_and_separate():
+    script = Path("scripts/start-qwen-rotorquant-wsl.ps1").read_text(encoding="utf-8")
+
+    assert "EXPERIMENTAL" in script
+    assert "llama-cpp-turboquant" in script
+    assert "Qwen3.6-35B-A3B-RotorQuant-GGUF-IQ4_XS" in script
+    assert "feature/turboquant-kv-cache" in script
+    assert "--ctx-size $ContextTokens" in script
+    assert "--cache-type-k $CacheTypeK" in script
+    assert "--cache-type-v $CacheTypeV" in script
+    assert "--no-context-shift" in script
+    assert "8085" in script

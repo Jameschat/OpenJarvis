@@ -13,8 +13,10 @@ from typing import Literal
 DEFAULT_LLAMA_BASE_URL = "http://localhost:8081/v1"
 DEFAULT_BEELLAMA_BASE_URL = "http://localhost:8082/v1"
 DEFAULT_TURBOQ_MTP_BASE_URL = "http://localhost:8084/v1"
+DEFAULT_ROTORQUANT_BASE_URL = "http://localhost:8085/v1"
 DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434"
 PUBLIC_QWEN_ALIAS = "qwen3.6-27b-local"
+ROTORQUANT_QWEN_ALIAS = "qwen3.6-35b-a3b-rotorquant"
 OLLAMA_QWEN_ALIAS = "qwen3.6-27b-ollama"
 OLLAMA_QWEN_MODEL = "qwen3.6:27b"
 
@@ -60,6 +62,55 @@ def write_litellm_beellama_config(
             ollama_base_url=ollama_base_url,
             runtime_name="BeeLlama DFlash",
         ),
+        encoding="utf-8",
+    )
+    return path
+
+
+def write_litellm_rotorquant_config(
+    path: Path,
+    *,
+    rotorquant_base_url: str = DEFAULT_ROTORQUANT_BASE_URL,
+    qwen27_base_url: str = DEFAULT_TURBOQ_MTP_BASE_URL,
+    ollama_base_url: str = DEFAULT_OLLAMA_BASE_URL,
+) -> Path:
+    """Write an opt-in config for the 35B-A3B RotorQuant deep-context lane."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        f"""# Optional Qwen RotorQuant deep-context LiteLLM config.
+#
+# Prototype only. Use this to benchmark Qwen3.6-35B-A3B RotorQuant/IQ4_XS on
+# a separate OpenAI-compatible server before promoting it to the live alias.
+
+model_list:
+  - model_name: {ROTORQUANT_QWEN_ALIAS}
+    litellm_params:
+      model: openai/{ROTORQUANT_QWEN_ALIAS}
+      api_base: {rotorquant_base_url}
+      api_key: sk-noop
+
+  - model_name: {PUBLIC_QWEN_ALIAS}
+    litellm_params:
+      model: openai/{PUBLIC_QWEN_ALIAS}
+      api_base: {qwen27_base_url}
+      api_key: sk-noop
+
+  - model_name: {OLLAMA_QWEN_ALIAS}
+    litellm_params:
+      model: ollama_chat/{OLLAMA_QWEN_MODEL}
+      api_base: {ollama_base_url}
+
+litellm_settings:
+  fallbacks:
+    - {ROTORQUANT_QWEN_ALIAS}: ["{PUBLIC_QWEN_ALIAS}", "{OLLAMA_QWEN_ALIAS}"]
+    - {PUBLIC_QWEN_ALIAS}: ["{OLLAMA_QWEN_ALIAS}"]
+  num_retries: 1
+  request_timeout: 600
+  drop_params: true
+
+general_settings:
+  store_model_in_db: false
+""",
         encoding="utf-8",
     )
     return path
@@ -335,5 +386,63 @@ def build_turboq_mtp_command(
         "--top-k",
         "20",
         "--top-p",
+        "1.0",
+    ]
+
+
+def build_rotorquant_command(
+    *,
+    turboquant_server_path: str | Path,
+    model_ref: str,
+    host: str = "0.0.0.0",
+    port: int = 8085,
+    context_tokens: int = 182000,
+    gpu_layers: int = 99,
+    threads: int = 24,
+    batch_size: int = 4092,
+    ubatch_size: int = 1024,
+    cache_type_k: str = "q8_0",
+    cache_type_v: str = "turbo4",
+) -> list[str]:
+    """Return argv for the experimental 35B-A3B RotorQuant long-context lane."""
+    return [
+        str(turboquant_server_path),
+        "-hf",
+        model_ref,
+        "--host",
+        host,
+        "--port",
+        str(port),
+        "--ctx-size",
+        str(context_tokens),
+        "-ngl",
+        str(gpu_layers),
+        "--flash-attn",
+        "on",
+        "--threads",
+        str(threads),
+        "--batch-size",
+        str(batch_size),
+        "--ubatch-size",
+        str(ubatch_size),
+        "--cache-type-k",
+        cache_type_k,
+        "--cache-type-v",
+        cache_type_v,
+        "--parallel",
+        "1",
+        "--no-context-shift",
+        "--jinja",
+        "--temp",
+        "0.6",
+        "--top-p",
+        "0.95",
+        "--top-k",
+        "20",
+        "--min-p",
+        "0.0",
+        "--presence-penalty",
+        "0.0",
+        "--repeat-penalty",
         "1.0",
     ]
