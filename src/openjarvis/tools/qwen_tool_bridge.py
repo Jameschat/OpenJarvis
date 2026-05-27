@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
 import re
+import tomllib
 from pathlib import Path
 from typing import Any
 
@@ -83,6 +85,12 @@ def tool_manifest() -> str:
             "tier": "procedure",
             "args": {"name": sorted(_SUPERPOWER_SKILLS)},
             "description": "Load a Superpowers workflow summary as operating guidance.",
+        },
+        {
+            "tool": "skill_guidance",
+            "tier": "procedure",
+            "args": {"name": "installed Jarvis skill name, e.g. ui-ux-pro-max"},
+            "description": "Load an installed Jarvis skill's operating guidance for the current task.",
         },
         {
             "tool": "request_escalation",
@@ -187,6 +195,8 @@ def _execute_one(request: dict[str, Any]) -> dict[str, Any]:
             return _tool_use_call(request_id, tool, args, {"query", "limit"})
         if tool == "superpower_workflow":
             return _superpower_workflow(request_id, args)
+        if tool == "skill_guidance":
+            return _skill_guidance(request_id, args)
         if tool == "request_escalation":
             return {
                 "id": request_id,
@@ -304,5 +314,81 @@ def _superpower_workflow(request_id: str, args: dict[str, Any]) -> dict[str, Any
         "ok": True,
         "name": name,
         "summary": _SUPERPOWER_SKILLS[name],
+        "excerpt": excerpt,
+    }
+
+
+def _skills_root() -> Path:
+    override = os.environ.get("OPENJARVIS_SKILLS_DIR")
+    if override:
+        return Path(override)
+    return Path.home() / ".openjarvis" / "skills"
+
+
+def _installed_skill_names(root: Path) -> list[str]:
+    if not root.exists():
+        return []
+    return sorted(path.name for path in root.iterdir() if path.is_dir())
+
+
+def _skill_guidance(request_id: str, args: dict[str, Any]) -> dict[str, Any]:
+    name = str(args.get("name") or "").strip()
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+", name):
+        return {
+            "id": request_id,
+            "tool": "skill_guidance",
+            "ok": False,
+            "error": "invalid skill name",
+        }
+
+    root = _skills_root()
+    skill_dir = (root / name).resolve()
+    try:
+        skill_dir.relative_to(root.resolve())
+    except ValueError:
+        return {
+            "id": request_id,
+            "tool": "skill_guidance",
+            "ok": False,
+            "error": "invalid skill path",
+        }
+    if not skill_dir.is_dir():
+        return {
+            "id": request_id,
+            "tool": "skill_guidance",
+            "ok": False,
+            "error": "skill not found",
+            "installed": _installed_skill_names(root),
+        }
+
+    metadata_path = skill_dir / "skill.toml"
+    metadata_name = "skill.toml"
+    if not metadata_path.exists():
+        metadata_path = skill_dir / f"{name}.toml"
+        metadata_name = f"{name}.toml"
+
+    description = ""
+    tags: list[str] = []
+    if metadata_path.exists():
+        data = tomllib.loads(metadata_path.read_text(encoding="utf-8", errors="replace"))
+        skill_meta = data.get("skill") if isinstance(data.get("skill"), dict) else {}
+        description = str(skill_meta.get("description") or "")
+        raw_tags = skill_meta.get("tags")
+        if isinstance(raw_tags, list):
+            tags = [str(tag) for tag in raw_tags]
+
+    skill_md = skill_dir / "SKILL.md"
+    excerpt = ""
+    if skill_md.exists():
+        excerpt = skill_md.read_text(encoding="utf-8", errors="replace")[:6000]
+
+    return {
+        "id": request_id,
+        "tool": "skill_guidance",
+        "ok": True,
+        "name": name,
+        "description": description,
+        "tags": tags,
+        "metadata_path": metadata_name if metadata_path.exists() else "",
         "excerpt": excerpt,
     }
