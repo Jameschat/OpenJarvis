@@ -45,6 +45,18 @@ def test_beellama_quality_litellm_config_is_valid_and_separate():
     assert {"qwen3.6-27b-quality": ["qwen3.6-27b-local", "qwen3.6-27b-ollama"]} in data["litellm_settings"]["fallbacks"]
 
 
+def test_default_litellm_config_exposes_studio_quality_alias():
+    config_path = Path("configs/litellm.yaml")
+
+    data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    model_names = [item["model_name"] for item in data["model_list"]]
+
+    assert "qwen3.6-27b-quality" in model_names
+    assert {"qwen3.6-27b-quality": ["qwen3.6-27b-local", "qwen3.6-27b-beellama", "qwen3.6-27b-ollama"]} in data[
+        "litellm_settings"
+    ]["fallbacks"]
+
+
 def test_fastlane_server_command_uses_llama_cpp_speculative_defaults():
     command = qwen_fast_lane.build_llama_server_command(
         llama_server_path=Path("C:/llama/llama-server.exe"),

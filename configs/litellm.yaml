@@ -51,6 +51,14 @@ model_list:
       api_base: http://localhost:8082/v1
       api_key: sk-noop
 
+  # Optional Studio quality lane. If the dedicated quality server on 8083 is
+  # not running, LiteLLM falls through to the live local/backup routes below.
+  - model_name: qwen3.6-27b-quality
+    litellm_params:
+      model: openai/qwen3.6-27b-quality
+      api_base: http://localhost:8083/v1
+      api_key: sk-noop
+
   # Local fallback if the OpenAI-compatible local lanes are unavailable.
   - model_name: qwen3.6-27b-ollama
     litellm_params:
@@ -73,6 +81,7 @@ litellm_settings:
   fallbacks:
     - gpt-5.4-mini: ["gpt-4o-mini", "qwen3.6-27b-local"]
     - gpt-4o-mini: ["qwen3.6-27b-local"]
+    - qwen3.6-27b-quality: ["qwen3.6-27b-local", "qwen3.6-27b-beellama", "qwen3.6-27b-ollama"]
     - qwen3.6-27b-local: ["qwen3.6-27b-beellama", "qwen3.6-27b-ollama"]
     - qwen3.6-27b-beellama: ["qwen3.6-27b-ollama"]
     # gpt-4o has no fallback — vision can't be replaced by qwen3 text-only.

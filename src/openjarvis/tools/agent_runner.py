@@ -2156,7 +2156,8 @@ def _run_qwen_task(task: Task, agent_spec: Dict[str, Any]) -> None:
     _reg.mark_running(task.id, str(ws))
 
     model = (agent_spec.get("model") or "qwen3.6-27b-local").strip()
-    if model == "qwen3.6-27b-local" and _active_qwen_profile() == "quality":
+    requested_quality_profile = model == "qwen3.6-27b-local" and _active_qwen_profile() == "quality"
+    if requested_quality_profile:
         model = "qwen3.6-27b-quality"
     role = (agent_spec.get("role") or "Local Qwen agent.").strip()
     workspace_write = bool(agent_spec.get("workspace_write"))
@@ -2214,7 +2215,7 @@ def _run_qwen_task(task: Task, agent_spec: Dict[str, Any]) -> None:
 
             api_key = os.environ.get("OPENAI_API_KEY", "sk-noop")
             client = OpenAI(base_url=base_url, api_key=api_key)
-            if model == "qwen3.6-27b-local":
+            if model in {"qwen3.6-27b-local", "qwen3.6-27b-quality"}:
                 create_kwargs["extra_body"] = {
                     "chat_template_kwargs": {"enable_thinking": False}
                 }
@@ -2227,16 +2228,30 @@ def _run_qwen_task(task: Task, agent_spec: Dict[str, Any]) -> None:
                     timeout=qwen_timeout,
                 )
             assert client is not None
-            resp = client.chat.completions.create(
-                model=model,
-                messages=[
-                    {"role": "system", "content": prompt_text},
-                    {"role": "user", "content": user_text},
-                ],
-                max_tokens=qwen_max_tokens,
-                timeout=qwen_timeout,
-                **create_kwargs,
-            )
+            messages = [
+                {"role": "system", "content": prompt_text},
+                {"role": "user", "content": user_text},
+            ]
+            try:
+                resp = client.chat.completions.create(
+                    model=model,
+                    messages=messages,
+                    max_tokens=qwen_max_tokens,
+                    timeout=qwen_timeout,
+                    **create_kwargs,
+                )
+            except Exception as exc:
+                message = str(exc).lower()
+                if requested_quality_profile and "invalid model name" in message:
+                    resp = client.chat.completions.create(
+                        model="qwen3.6-27b-local",
+                        messages=messages,
+                        max_tokens=qwen_max_tokens,
+                        timeout=qwen_timeout,
+                        **create_kwargs,
+                    )
+                else:
+                    raise
             if not resp.choices:
                 return ""
             message = resp.choices[0].message
