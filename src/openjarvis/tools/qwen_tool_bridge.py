@@ -3,9 +3,11 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 import tomllib
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 
 _REQUEST_PATTERNS = [
@@ -67,6 +69,24 @@ def tool_manifest() -> str:
             "tier": "read",
             "args": {},
             "description": "Inspect whether CodeGraph is installed/indexed for OpenJarvis.",
+        },
+        {
+            "tool": "repo_read",
+            "tier": "read",
+            "args": {"path": "repo-relative path", "max_chars": "optional 1000..20000"},
+            "description": "Safely read/search non-secret project files from the OpenJarvis repo.",
+        },
+        {
+            "tool": "repo_search",
+            "tier": "read",
+            "args": {"query": "string", "glob": "optional file glob", "limit": "1..20"},
+            "description": "Safely read/search non-secret project files from the OpenJarvis repo.",
+        },
+        {
+            "tool": "browser_visual_check",
+            "tier": "verify",
+            "args": {"url": "local Jarvis page URL", "full_page": "optional boolean"},
+            "description": "Open a local Jarvis page and capture a screenshot/text excerpt for visual QA.",
         },
         {
             "tool": "web_search",
@@ -189,6 +209,12 @@ def _execute_one(request: dict[str, Any]) -> dict[str, Any]:
             return _mem_search(request_id, args)
         if tool == "codegraph_status":
             return _codegraph_status(request_id)
+        if tool == "repo_read":
+            return _repo_read(request_id, args)
+        if tool == "repo_search":
+            return _repo_search(request_id, args)
+        if tool == "browser_visual_check":
+            return _browser_visual_check(request_id, args)
         if tool == "web_search":
             return _tool_use_call(request_id, tool, args, {"query", "limit"})
         if tool == "github_search":
@@ -262,6 +288,167 @@ def _codegraph_status(request_id: str) -> dict[str, Any]:
         "indexed": db.exists(),
         "index_size_mb": round(db.stat().st_size / 1024 / 1024, 2) if db.exists() else 0,
         "mcp_configured": "codegraph" in mcp.read_text(encoding="utf-8", errors="replace") if mcp.exists() else False,
+    }
+
+
+_SECRET_PATH_RE = re.compile(
+    r"(^|/)(jarvis\.bat|\.env(\..*)?|.*secret.*|.*token.*|.*key.*|.*\.pem|.*\.pfx|.*\.p12)$",
+    re.IGNORECASE,
+)
+
+
+def _repo_root() -> Path:
+    override = os.environ.get("OPENJARVIS_QWEN_REPO_ROOT")
+    if override:
+        return Path(override).resolve()
+    return Path(r"E:\Claude\OpenJarvis").resolve()
+
+
+def _resolve_repo_path(raw_path: str) -> tuple[Path | None, str, dict[str, Any] | None]:
+    rel = str(raw_path or "").replace("\\", "/").strip()
+    if not rel or rel.startswith("/") or ":" in rel or ".." in Path(rel).parts:
+        return None, rel, {"ok": False, "error": "path escapes repo root"}
+    if _SECRET_PATH_RE.search(rel):
+        return None, rel, {
+            "ok": False,
+            "blocked": True,
+            "reason": "secret-like paths are not exposed to Qwen safe repo inspection",
+        }
+    root = _repo_root()
+    target = (root / rel).resolve()
+    try:
+        target.relative_to(root)
+    except ValueError:
+        return None, rel, {"ok": False, "error": "path escapes repo root"}
+    return target, rel, None
+
+
+def _repo_read(request_id: str, args: dict[str, Any]) -> dict[str, Any]:
+    target, rel, error = _resolve_repo_path(str(args.get("path") or ""))
+    if error:
+        return {"id": request_id, "tool": "repo_read", **error}
+    assert target is not None
+    if not target.is_file():
+        return {
+            "id": request_id,
+            "tool": "repo_read",
+            "ok": False,
+            "error": "file not found",
+            "path": rel,
+        }
+    if target.stat().st_size > 1_000_000:
+        return {
+            "id": request_id,
+            "tool": "repo_read",
+            "ok": False,
+            "error": "file too large",
+            "path": rel,
+        }
+    max_chars = max(1000, min(int(args.get("max_chars") or 12000), 20000))
+    content = target.read_text(encoding="utf-8", errors="replace")[:max_chars]
+    return {
+        "id": request_id,
+        "tool": "repo_read",
+        "ok": True,
+        "path": rel,
+        "truncated": len(content) == max_chars,
+        "content": content,
+    }
+
+
+def _repo_search(request_id: str, args: dict[str, Any]) -> dict[str, Any]:
+    query = str(args.get("query") or "").strip()
+    if not query:
+        return {"id": request_id, "tool": "repo_search", "ok": False, "error": "query required"}
+    glob = str(args.get("glob") or "*").strip() or "*"
+    limit = max(1, min(int(args.get("limit") or 10), 20))
+    root = _repo_root()
+    matches: list[dict[str, Any]] = []
+    for path in root.rglob(glob):
+        if len(matches) >= limit:
+            break
+        if not path.is_file():
+            continue
+        try:
+            rel = path.relative_to(root).as_posix()
+        except ValueError:
+            continue
+        if _SECRET_PATH_RE.search(rel) or ".git/" in rel or "__pycache__/" in rel:
+            continue
+        try:
+            if path.stat().st_size > 1_000_000:
+                continue
+            lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+            for lineno, line in enumerate(lines, start=1):
+                if query.lower() in line.lower():
+                    matches.append({"path": rel, "line_number": lineno, "line": line[:500]})
+                    if len(matches) >= limit:
+                        break
+        except OSError:
+            continue
+    return {
+        "id": request_id,
+        "tool": "repo_search",
+        "ok": True,
+        "query": query,
+        "matches": matches,
+    }
+
+
+def _visual_check_dir() -> Path:
+    override = os.environ.get("OPENJARVIS_QWEN_VISUAL_CHECK_DIR")
+    if override:
+        return Path(override)
+    return Path.home() / ".openjarvis" / "qwen_visual_checks"
+
+
+def _is_local_jarvis_url(url: str) -> bool:
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"}:
+        return False
+    host = (parsed.hostname or "").lower()
+    return host in {"localhost", "127.0.0.1", "::1"}
+
+
+def _browser_visual_check(request_id: str, args: dict[str, Any]) -> dict[str, Any]:
+    url = str(args.get("url") or "").strip()
+    if not _is_local_jarvis_url(url):
+        return {
+            "id": request_id,
+            "tool": "browser_visual_check",
+            "ok": False,
+            "blocked": True,
+            "reason": "browser_visual_check is limited to local Jarvis pages",
+        }
+    out_dir = _visual_check_dir()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    screenshot_path = out_dir / f"qwen-visual-{int(time.time() * 1000)}.png"
+    result = _browser_visual_check_impl(
+        url,
+        screenshot_path,
+        bool(args.get("full_page", False)),
+    )
+    return {"id": request_id, "tool": "browser_visual_check", **result}
+
+
+def _browser_visual_check_impl(url: str, screenshot_path: Path, full_page: bool) -> dict[str, Any]:
+    import openjarvis.tools.browser  # noqa: F401
+    from openjarvis.core.registry import ToolRegistry
+
+    nav_cls = ToolRegistry.get("browser_navigate")
+    shot_cls = ToolRegistry.get("browser_screenshot")
+    nav_tool = nav_cls() if isinstance(nav_cls, type) else nav_cls
+    shot_tool = shot_cls() if isinstance(shot_cls, type) else shot_cls
+    nav = nav_tool.execute(url=url, wait_for="domcontentloaded")
+    shot = shot_tool.execute(path=str(screenshot_path), full_page=full_page)
+    return {
+        "ok": bool(getattr(nav, "success", False) and getattr(shot, "success", False)),
+        "url": url,
+        "title": (getattr(nav, "metadata", {}) or {}).get("title", ""),
+        "text_excerpt": (getattr(nav, "content", "") or "")[:1200],
+        "screenshot_path": str(screenshot_path),
+        "navigation": getattr(nav, "content", "")[:300],
+        "screenshot": getattr(shot, "content", "")[:300],
     }
 
 

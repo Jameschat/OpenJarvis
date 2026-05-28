@@ -2182,9 +2182,13 @@ def _run_qwen_task(task: Task, agent_spec: Dict[str, Any]) -> None:
             "you changed external systems or installed tools. If action is "
             "needed, provide a clear next-step plan and verification checks.",
             "You have a safe Jarvis tool bridge for memory, research, CodeGraph "
-            "status, installed Jarvis skills, and Superpowers workflow guidance. "
+            "status, non-secret repo inspection, local browser visual checks, "
+            "installed Jarvis skills, and Superpowers workflow guidance. "
             "Use it when it would "
             "materially improve accuracy. The bridge is not raw shell access.",
+            "For UI/web work, request browser_visual_check against the local "
+            "Jarvis page after proposing or creating changes. For code tasks, "
+            "use repo_search/repo_read before making claims about files.",
             qwen_tool_bridge.tool_manifest(),
             workspace_block,
             f"TASK:\n{task.prompt or ''}",
