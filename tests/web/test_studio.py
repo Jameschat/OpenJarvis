@@ -156,6 +156,10 @@ def test_studio_shows_context_pressure_meter():
     assert "renderContextMeter" in html
     assert "context.percent" in html
     assert "handoff_recommended" in html
+    assert "context.continuation" in html
+    assert "Continuation chat created" in html
+    assert "continuationId" in html
+    assert 'context.status === "critical"' in html
 
 
 def test_studio_has_chat_row_archive_delete_actions():

@@ -107,3 +107,28 @@ def test_store_branches_chat_from_user_message(tmp_path):
     assert branch["messages"][0]["id"] != first["id"]
     assert branch["messages"][-1]["role"] == "operator"
     assert store.get_chat(chat["id"])["messages"][-1]["content"] == "Second answer"
+
+
+def test_store_creates_context_continuation_chat_once(tmp_path):
+    store = studio_store.StudioStore(tmp_path)
+    project = store.ensure_project("openjarvis", title="OpenJarvis")
+    chat = store.create_chat(project["id"], title="Deep project")
+    store.add_message(chat["id"], "operator", "Plan the inventory app")
+
+    continuation = store.create_context_continuation_chat(
+        chat["id"],
+        handoff_path="E:/Claude/Obsidian/Claude/Brain/Sessions/handoff.md",
+        handoff_excerpt="Recent decisions and next action.",
+    )
+    again = store.create_context_continuation_chat(
+        chat["id"],
+        handoff_path="E:/Claude/Obsidian/Claude/Brain/Sessions/handoff.md",
+        handoff_excerpt="Recent decisions and next action.",
+    )
+
+    assert again["id"] == continuation["id"]
+    assert continuation["title"] == "Deep project - continuation"
+    assert continuation["continuation"]["source_chat_id"] == chat["id"]
+    assert continuation["continuation"]["handoff_path"].endswith("handoff.md")
+    assert "Recent decisions and next action." in continuation["messages"][0]["content"]
+    assert store.get_chat(chat["id"])["context_continuation"]["chat_id"] == continuation["id"]

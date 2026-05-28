@@ -195,6 +195,62 @@ class StudioStore:
         self._write_json(self._chat_path(branch_id), branch)
         return branch
 
+    def create_context_continuation_chat(
+        self,
+        chat_id: str,
+        *,
+        handoff_path: str,
+        handoff_excerpt: str,
+    ) -> dict[str, Any]:
+        source = self.get_chat(chat_id)
+        existing = source.get("context_continuation")
+        if isinstance(existing, dict) and existing.get("chat_id"):
+            try:
+                return self.get_chat(str(existing["chat_id"]))
+            except KeyError:
+                pass
+
+        now = utc_now()
+        continuation_id = new_id("chat")
+        title = f"{source.get('title') or 'New chat'} - continuation"[:120]
+        intro = (
+            "Continue this Jarvis Studio session from saved context.\n\n"
+            f"Handoff note: {handoff_path}\n\n"
+            "Saved handoff excerpt:\n"
+            f"{handoff_excerpt.strip() or '(empty handoff)'}"
+        )
+        continuation = {
+            "id": continuation_id,
+            "project_id": source.get("project_id") or "openjarvis",
+            "title": title,
+            "created_at": now,
+            "updated_at": now,
+            "messages": [
+                {
+                    "id": new_id("msg"),
+                    "chat_id": continuation_id,
+                    "role": "jarvis",
+                    "content": intro,
+                    "created_at": now,
+                    "run_id": None,
+                }
+            ],
+            "continuation": {
+                "source_chat_id": chat_id,
+                "handoff_path": handoff_path,
+                "created_at": now,
+            },
+        }
+        source["context_continuation"] = {
+            "chat_id": continuation_id,
+            "handoff_path": handoff_path,
+            "created_at": now,
+        }
+        source["updated_at"] = now
+        self._write_json(self._chat_path(continuation_id), continuation)
+        self._write_json(self._chat_path(chat_id), source)
+        return continuation
+
     def add_message(self, chat_id: str, role: str, content: str, *, run_id: str | None = None) -> dict[str, Any]:
         chat = self.get_chat(chat_id)
         message = {

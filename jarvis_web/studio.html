@@ -1402,9 +1402,11 @@
       if (context.handoff_recommended) {
         const handoff = document.createElement("div");
         handoff.className = "context-meter-detail";
-        handoff.textContent = context.handoff && context.handoff.path
-          ? "Handoff memory saved. Start a new chat when you want a clean continuation."
-          : "Handoff recommended soon.";
+        handoff.textContent = context.continuation && context.continuation.chat_id
+          ? "Continuation chat created with saved handoff memory."
+          : context.handoff && context.handoff.path
+            ? "Handoff memory saved. Continuation will be created at critical pressure."
+            : "Handoff recommended soon.";
         root.append(handoff);
       }
     }
@@ -1588,6 +1590,15 @@
       const submittedPrompt = promptWithAttachments(prompt);
       composerAttachments = [];
       renderAttachments();
+      const currentChat = (studioState.chats || []).find((chat) => chat.id === activeChatId);
+      const continuationId = currentChat
+        && currentChat.context
+        && currentChat.context.status === "critical"
+        && currentChat.context.continuation
+        && currentChat.context.continuation.chat_id;
+      if (continuationId) {
+        activeChatId = continuationId;
+      }
       const branchFrom = steeringState && steeringState.chatId === activeChatId
         ? steeringState.messageId
         : "";

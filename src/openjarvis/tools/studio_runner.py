@@ -425,6 +425,35 @@ def _write_context_handoff(store: studio_store.StudioStore, chat: dict[str, Any]
     return handoff
 
 
+def _read_handoff_excerpt(path: str, *, limit: int = 6000) -> str:
+    try:
+        text = Path(path).read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        return ""
+    return text[:limit]
+
+
+def _ensure_context_continuation(
+    store: studio_store.StudioStore,
+    chat: dict[str, Any],
+    handoff: dict[str, Any],
+) -> dict[str, Any]:
+    existing = chat.get("context_continuation")
+    if isinstance(existing, dict) and existing.get("chat_id"):
+        return existing
+    handoff_path = str(handoff.get("path") or "")
+    continuation = store.create_context_continuation_chat(
+        str(chat["id"]),
+        handoff_path=handoff_path,
+        handoff_excerpt=_read_handoff_excerpt(handoff_path),
+    )
+    return {
+        "chat_id": continuation["id"],
+        "handoff_path": handoff_path,
+        "created_at": continuation.get("created_at"),
+    }
+
+
 def enrich_chats_with_context(
     chats: list[dict[str, Any]],
     *,
@@ -450,6 +479,15 @@ def enrich_chats_with_context(
             pressure["handoff"] = _write_context_handoff(store, copy, pressure)
         elif isinstance(copy.get("context_handoff"), dict):
             pressure["handoff"] = copy["context_handoff"]
+        if (
+            pressure["status"] == "critical"
+            and store is not None
+            and copy.get("id")
+            and isinstance(pressure.get("handoff"), dict)
+        ):
+            pressure["continuation"] = _ensure_context_continuation(store, copy, pressure["handoff"])
+        elif isinstance(copy.get("context_continuation"), dict):
+            pressure["continuation"] = copy["context_continuation"]
         copy["context"] = pressure
         enriched.append(copy)
     return enriched

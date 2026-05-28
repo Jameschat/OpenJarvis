@@ -416,3 +416,28 @@ def test_context_handoff_writes_vault_note_once(monkeypatch, tmp_path):
     enriched_again = studio_runner.enrich_chats_with_context([store.get_chat(chat["id"])], store=store, char_limit=40)
     assert enriched_again[0]["context"]["handoff"]["path"] == str(note)
     assert len(list((brain / "Sessions").glob("*.md"))) == 1
+
+
+def test_critical_context_creates_continuation_chat_once(monkeypatch, tmp_path):
+    monkeypatch.setattr(studio_runner.studio_store, "STUDIO_ROOT", tmp_path / "studio")
+    brain = tmp_path / "brain"
+    monkeypatch.setattr(studio_runner, "BRAIN_ROOT", brain)
+    store = studio_runner.studio_store.StudioStore(tmp_path / "studio")
+    store.ensure_project("openjarvis", title="OpenJarvis")
+    chat = store.create_chat("openjarvis", title="Long build")
+    store.add_message(chat["id"], "operator", "a" * 100)
+    chat = store.get_chat(chat["id"])
+
+    enriched = studio_runner.enrich_chats_with_context([chat], store=store, char_limit=100)
+
+    context = enriched[0]["context"]
+    continuation = context["continuation"]
+    assert context["status"] == "critical"
+    assert continuation["chat_id"]
+    continuation_chat = store.get_chat(continuation["chat_id"])
+    assert continuation_chat["continuation"]["source_chat_id"] == chat["id"]
+    assert "Jarvis Studio Context Handoff" in continuation_chat["messages"][0]["content"]
+
+    enriched_again = studio_runner.enrich_chats_with_context([store.get_chat(chat["id"])], store=store, char_limit=100)
+    assert enriched_again[0]["context"]["continuation"]["chat_id"] == continuation["chat_id"]
+    assert len([c for c in store.list_chats("openjarvis") if c.get("continuation")]) == 1
