@@ -1239,7 +1239,7 @@
         ["context", "Load project, vault, memory, and CodeGraph context", "Local context pack"],
         ["workflow", "Select workflow and verification path", run.workflow || "direct"],
         ["research", "Fetch web/GitHub research when needed", runHasEvent(run, "run.research_prefetched") ? "Research attached" : "Skipped unless requested"],
-        ["queued", "Route work to the Qwen agent loop", (run.task_details || [])[0]?.agent_id || "direct reply"],
+        ["queued", "Route work to the Qwen agent loop", run.progress_summary || (run.task_details || [])[0]?.agent_id || "direct reply"],
         ["completed", "Return answer and sync output files", run.status || "queued"],
       ] : [
         ["created", "Waiting for your next Jarvis request", "No active Studio run yet"],
@@ -1298,6 +1298,13 @@
         row.append(icon, name, meta);
         root.appendChild(row);
       });
+      const liveTask = run && (run.task_details || []).find((task) => task.live_preview);
+      if (liveTask) {
+        const row = document.createElement("div");
+        row.className = "progress-subtext";
+        row.textContent = liveTask.live_preview;
+        root.appendChild(row);
+      }
       if (!outputs.length) {
         const row = document.createElement("div");
         row.className = "progress-subtext";
@@ -1502,6 +1509,11 @@
         const stats = taskCounts[agent.id || agent.name || ""];
         if (stats) {
           state.className = "subagent-stats";
+          row.title = ((latest && latest.task_details) || [])
+            .filter((task) => (task.agent_id || "agent") === (agent.id || agent.name || ""))
+            .map((task) => task.progress_summary || task.live_preview || task.status || "")
+            .filter(Boolean)
+            .join("\n");
           const plus = document.createElement("span");
           plus.className = "plus";
           plus.textContent = `+${stats.done}`;

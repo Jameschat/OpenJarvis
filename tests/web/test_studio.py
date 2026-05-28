@@ -128,6 +128,8 @@ def test_studio_has_codex_style_work_panel():
         "studio-output-count",
         "studio-subagent-count",
         "task_details",
+        "progress_summary",
+        "live_preview",
         "Code Review Graph",
         "Web search",
     ]:

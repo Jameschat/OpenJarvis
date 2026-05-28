@@ -272,6 +272,44 @@ def test_enrich_runs_for_studio_includes_task_outputs(monkeypatch, tmp_path):
     assert any(output["name"] == "QWEN_TOOL_RESULTS.json" for output in enriched[0]["outputs"])
 
 
+def test_enrich_runs_for_studio_includes_live_task_progress(monkeypatch, tmp_path):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    (workspace / "stdout.log").write_text("Step 1 complete\nPlanning edit proposal\n", encoding="utf-8")
+    state_path = tmp_path / "agent-state.json"
+    state_path.write_text(
+        json.dumps(
+            {
+                "tasks": [
+                    {
+                        "id": "task-live",
+                        "title": "Studio: live",
+                        "agent_id": "qwen-planner",
+                        "status": "running",
+                        "workspace": str(workspace),
+                        "started_at": 1000,
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    from openjarvis.tools import agent_runner
+
+    monkeypatch.setattr(agent_runner, "STATE_FILE", state_path)
+    monkeypatch.setattr(studio_runner.time, "time", lambda: 1065)
+
+    enriched = studio_runner.enrich_runs_for_studio(
+        [{"id": "run-1", "status": "running", "tasks": ["task-live"]}]
+    )
+
+    task = enriched[0]["task_details"][0]
+    assert task["elapsed_seconds"] == 65
+    assert task["progress_summary"] == "qwen-planner running for 65s"
+    assert "Planning edit proposal" in task["live_preview"]
+    assert enriched[0]["progress_summary"] == "qwen-planner running for 65s"
+
+
 def test_subtract_file_activity_hides_baseline_and_secrets():
     current = [
         {"path": "uv.lock", "additions": 12, "deletions": 2},

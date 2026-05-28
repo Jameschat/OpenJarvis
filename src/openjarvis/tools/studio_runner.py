@@ -572,6 +572,54 @@ def _task_output_files(task: dict[str, Any]) -> list[dict[str, Any]]:
     return outputs
 
 
+def _read_live_task_preview(task: dict[str, Any]) -> str:
+    workspace = task.get("workspace")
+    if not workspace:
+        return ""
+    root = Path(str(workspace))
+    candidates = [
+        root / f"{task.get('id', '')}.stdout.log",
+        root / "stdout.log",
+        root / f"{task.get('id', '')}.stderr.log",
+        root / "stderr.log",
+        root / "QWEN_TOOL_RESULTS.json",
+    ]
+    for path in candidates:
+        if not path.exists() or not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace").strip()
+        if text:
+            return text[-1200:]
+    return ""
+
+
+def _task_progress_detail(task: dict[str, Any]) -> dict[str, Any]:
+    status = str(task.get("status") or "queued")
+    agent_id = str(task.get("agent_id") or task.get("agent") or "agent")
+    started_raw = task.get("started_at") or 0
+    elapsed = 0
+    try:
+        started = float(started_raw)
+        if started > 0 and status == "running":
+            elapsed = max(0, int(time.time() - started))
+    except (TypeError, ValueError):
+        elapsed = 0
+
+    if status == "running":
+        summary = f"{agent_id} running for {elapsed}s" if elapsed else f"{agent_id} running"
+    elif status in {"done", "completed"}:
+        summary = f"{agent_id} completed"
+    elif status in {"failed", "cancelled"}:
+        summary = f"{agent_id} {status}"
+    else:
+        summary = f"{agent_id} {status}"
+    return {
+        "elapsed_seconds": elapsed,
+        "progress_summary": summary,
+        "live_preview": _read_live_task_preview(task),
+    }
+
+
 def enrich_runs_for_studio(runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Attach lightweight task/output details for the Studio progress panel."""
     task_index = _load_agent_task_index()
@@ -596,11 +644,16 @@ def enrich_runs_for_studio(runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "started_at": task.get("started_at") or "",
                 "finished_at": task.get("finished_at") or "",
             }
+            detail.update(_task_progress_detail(task))
             task_outputs = _task_output_files(task)
             detail["outputs"] = task_outputs
             outputs.extend(task_outputs)
             task_details.append(detail)
         copy["task_details"] = task_details
+        copy["progress_summary"] = next(
+            (detail.get("progress_summary") for detail in task_details if detail.get("progress_summary")),
+            "",
+        )
         copy["outputs"] = outputs[:12]
         activity = _capture_run_file_activity(copy)
         if not activity and isinstance(copy.get("file_activity_final"), list):
