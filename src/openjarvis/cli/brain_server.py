@@ -14,6 +14,7 @@ import subprocess
 import threading
 import time
 import webbrowser
+from datetime import datetime, timezone
 from http.server import HTTPServer, SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
@@ -999,6 +1000,7 @@ def _round_gb(mb: int | float | None) -> float | None:
 def _system_health_snapshot() -> Dict[str, Any]:
     """Return a lightweight live hardware snapshot for the HUD."""
     health: Dict[str, Any] = {
+        "sampled_at": datetime.now(timezone.utc).isoformat(),
         "gpu": {
             "online": False,
             "name": "",

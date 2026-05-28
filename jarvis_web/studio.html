@@ -798,6 +798,13 @@
         </article>
         <article class="context-card">
           <div class="context-title-row">
+            <div class="context-kicker">System Health</div>
+            <span class="panel-count" id="studio-system-count">live</span>
+          </div>
+          <div id="studio-system-list" class="source-list"></div>
+        </article>
+        <article class="context-card">
+          <div class="context-title-row">
             <div class="context-kicker">Progress</div>
             <span class="panel-count" id="studio-progress-count">idle</span>
           </div>
@@ -1475,6 +1482,56 @@
       });
     }
 
+    function formatHealthValue(value, suffix) {
+      if (value === null || value === undefined || value === "") return "pending";
+      return `${value}${suffix || ""}`;
+    }
+
+    function renderSystemPanel(system) {
+      const root = el("studio-system-list");
+      if (!root) return;
+      clear(root);
+      const gpu = (system && system.gpu) || {};
+      const rows = [
+        {
+          name: gpu.online ? (gpu.name || "GPU") : "GPU",
+          status: gpu.online
+            ? `${formatHealthValue(gpu.util_percent, "%")} / ${formatHealthValue(gpu.memory_percent, "%")} VRAM`
+            : "offline",
+        },
+        {
+          name: "VRAM",
+          status: gpu.online
+            ? `${gpu.memory_used_gb || "?"} / ${gpu.memory_total_gb || "?"} GB`
+            : "nvidia-smi unavailable",
+        },
+        {
+          name: "CPU",
+          status: formatHealthValue(system && system.cpu_percent, "%"),
+        },
+        {
+          name: "RAM",
+          status: `${formatHealthValue(system && system.ram_percent, "%")} / ${system && system.ram_used_gb ? system.ram_used_gb : "?"} / ${system && system.ram_total_gb ? system.ram_total_gb : "?"} GB`,
+        },
+      ];
+      rows.forEach((source) => {
+        const row = document.createElement("div");
+        row.className = "source-row";
+        const icon = document.createElement("span");
+        icon.className = "source-icon";
+        icon.textContent = source.name === "GPU" || source.name.includes("RTX") ? "GPU" : "*";
+        const name = document.createElement("span");
+        name.textContent = source.name;
+        const status = document.createElement("span");
+        status.className = "row-meta";
+        status.textContent = source.status;
+        row.append(icon, name, status);
+        root.appendChild(row);
+      });
+      const sampled = system && system.sampled_at ? formatStudioTime(system.sampled_at) : "";
+      setText("studio-system-count", sampled ? `live ${sampled}` : "live");
+    }
+
     function renderBrowserPanel() {
       const root = el("studio-browser-list");
       if (!root) return;
@@ -1582,6 +1639,7 @@
       renderChats(chats);
       renderRuns(state.runs || []);
       renderAgents(state.orchestration || {});
+      renderSystemPanel(state.system || {});
       renderProgressPanel(state.runs || []);
       renderFileActivityPanel(state.runs || []);
       renderPatchProposalsPanel(state.qwen_patch_proposals || []);

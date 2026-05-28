@@ -115,6 +115,25 @@ def test_studio_has_qwen_profile_and_context_controls():
     assert "/studio/qwen-profile" in source
 
 
+def test_studio_has_live_system_health_panel():
+    html = (ROOT / "jarvis_web" / "studio.html").read_text(encoding="utf-8")
+    source = (ROOT / "src" / "openjarvis" / "cli" / "brain_server.py").read_text(encoding="utf-8")
+
+    for marker in [
+        'id="studio-system-list"',
+        'id="studio-system-count"',
+        "renderSystemPanel",
+        "state.system",
+        "gpu.util_percent",
+        "gpu.memory_percent",
+        "cpu_percent",
+        "ram_percent",
+        "sampled_at",
+    ]:
+        assert marker in html
+    assert '"sampled_at"' in source
+
+
 def test_studio_has_codex_style_work_panel():
     html = (ROOT / "jarvis_web" / "studio.html").read_text(encoding="utf-8")
     source = (ROOT / "src" / "openjarvis" / "cli" / "brain_server.py").read_text(encoding="utf-8")
