@@ -2268,19 +2268,25 @@ def _run_qwen_task(task: Task, agent_spec: Dict[str, Any]) -> None:
         if not content.strip():
             raise RuntimeError("qwen returned empty content")
         had_tool_results = False
+        all_tool_requests: list[dict[str, Any]] = []
+        all_tool_results: list[dict[str, Any]] = []
         tool_requests = qwen_tool_bridge.parse_tool_requests(content)
-        if tool_requests:
+        tool_rounds = 0
+        while tool_requests and tool_rounds < 3:
+            tool_rounds += 1
             had_tool_results = True
             tool_results = qwen_tool_bridge.execute_tool_requests(tool_requests)
+            all_tool_requests.extend(tool_requests)
+            all_tool_results.extend(tool_results)
             (ws / "QWEN_TOOL_RESULTS.json").write_text(
-                json.dumps({"requests": tool_requests, "results": tool_results}, indent=2) + "\n",
+                json.dumps({"requests": all_tool_requests, "results": all_tool_results}, indent=2) + "\n",
                 encoding="utf-8",
             )
             prompt_with_tools = "\n\n".join(
                 part for part in (
                     prompt,
                     "FIRST QWEN PASS:\n" + content,
-                    qwen_tool_bridge.format_tool_results(tool_results),
+                    qwen_tool_bridge.format_tool_results(all_tool_results),
                 )
                 if part
             )
@@ -2290,6 +2296,14 @@ def _run_qwen_task(task: Task, agent_spec: Dict[str, Any]) -> None:
             )
             if not content.strip():
                 raise RuntimeError("qwen returned empty content after tool bridge")
+            tool_requests = qwen_tool_bridge.parse_tool_requests(content)
+        if tool_requests:
+            content = (
+                "The local Qwen run reached the safe tool-loop limit before producing a final "
+                "answer. Escalation is needed so Codex/Claude can inspect the gathered context "
+                "and continue without looping.\n\n"
+                f"{qwen_tool_bridge.format_tool_results(all_tool_results)}"
+            )
 
         quality = qwen_quality_loop.assess_qwen_output(
             content,

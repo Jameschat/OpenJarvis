@@ -1,4 +1,5 @@
 from collections import Counter
+import json
 import sys
 import types
 
@@ -388,6 +389,115 @@ def test_qwen_provider_accepts_xml_style_tool_request_block(monkeypatch, tmp_pat
     assert len(calls) == 2
     assert "Current local Qwen is about 60-76 tok/s." in result
     assert "<qwen_tool_requests>" not in result
+
+
+def test_qwen_provider_executes_multiple_safe_tool_bridge_rounds(monkeypatch, tmp_path):
+    from openjarvis.tools import agent_runner, qwen_tool_bridge
+    from openjarvis.tools.agent_runner import Task
+
+    calls = []
+    executed = []
+    parsed = []
+
+    class DummyMessage:
+        def __init__(self, content):
+            self.content = content
+
+    class DummyChoice:
+        def __init__(self, content):
+            self.message = DummyMessage(content)
+
+    class DummyCompletions:
+        def create(self, **kwargs):
+            calls.append(kwargs)
+            if len(calls) == 1:
+                return types.SimpleNamespace(
+                    choices=[
+                        DummyChoice(
+                            '<qwen_tool_requests>{"requests":[{"id":"r1","tool":"recall_vault","args":{"query":"Networx"}}]}</qwen_tool_requests>'
+                        )
+                    ]
+                )
+            if len(calls) == 2:
+                assert "vault hit" in kwargs["messages"][0]["content"]
+                return types.SimpleNamespace(
+                    choices=[
+                        DummyChoice(
+                            '```qwen_tool_requests\n{"requests":[{"id":"r2","tool":"repo_search","args":{"query":"Networx"}}]}\n```'
+                        )
+                    ]
+                )
+            if "repo hit" in kwargs["messages"][0]["content"]:
+                return types.SimpleNamespace(
+                    choices=[
+                        DummyChoice(
+                            "Assumptions: Networx context came from vault memory and repository search.\n\n"
+                            "Verification: used recall_vault first, then repo_search, and combined both tool results.\n\n"
+                            "Next actions: use the memory hit for project background, inspect the repo hit before any edit, "
+                            "and escalate to Codex if production code changes are required. This answer is final and does "
+                            "not need another tool request."
+                        )
+                    ]
+                )
+            return types.SimpleNamespace(choices=[DummyChoice("Unexpected revision without second tool result.")])
+
+    class DummyClient:
+        def __init__(self, **kwargs):
+            self.chat = types.SimpleNamespace(completions=DummyCompletions())
+
+    class DummyRegistry:
+        def mark_running(self, task_id, workspace):
+            pass
+
+        def mark_finished(self, task_id, exit_code, error=None):
+            assert exit_code == 0
+
+    def fake_execute(requests):
+        executed.extend(requests)
+        if requests[0]["id"] == "r1":
+            return [{"id": "r1", "tool": "recall_vault", "ok": True, "summary": "vault hit"}]
+        return [{"id": "r2", "tool": "repo_search", "ok": True, "summary": "repo hit"}]
+
+    monkeypatch.setitem(sys.modules, "openai", types.SimpleNamespace(OpenAI=DummyClient))
+    monkeypatch.setattr(agent_runner, "RUNS_DIR", tmp_path)
+    monkeypatch.setattr(agent_runner, "_reg", DummyRegistry())
+    monkeypatch.setattr(agent_runner, "_build_brain_context", lambda: "")
+    monkeypatch.setattr(agent_runner, "_write_agent_task_note", lambda *args, **kwargs: None)
+    monkeypatch.setattr(qwen_tool_bridge, "execute_tool_requests", fake_execute)
+
+    def recording_parse(content):
+        if "qwen_tool_requests" not in content:
+            requests = []
+        elif "recall_vault" in content:
+            requests = [{"id": "r1", "tool": "recall_vault", "args": {"query": "Networx"}}]
+        elif "repo_search" in content:
+            requests = [{"id": "r2", "tool": "repo_search", "args": {"query": "Networx"}}]
+        else:
+            requests = []
+        parsed.append(requests)
+        return requests
+
+    monkeypatch.setattr(qwen_tool_bridge, "parse_tool_requests", recording_parse)
+
+    agent_runner._run_qwen_task(
+        Task(
+            id="task-qwen-multi-tools",
+            title="Qwen multi tool bridge",
+            agent_id="qwen-researcher",
+            prompt="Research Networx from memory and repo.",
+        ),
+        {"id": "qwen-researcher", "role": "Research.", "model": "qwen3.6-27b-local"},
+    )
+
+    ws = tmp_path / "task-qwen-multi-tools"
+    result = (ws / "RESULT.md").read_text(encoding="utf-8")
+    tool_log = json.loads((ws / "QWEN_TOOL_RESULTS.json").read_text(encoding="utf-8"))
+    assert len(calls) == 3
+    assert [request[0]["id"] if request else "" for request in parsed[:3]] == ["r1", "r2", ""]
+    assert [request["id"] for request in executed] == ["r1", "r2"]
+    assert "combined both tool results" in result
+    assert "<qwen_tool_requests>" not in result
+    assert [result["id"] for result in tool_log["results"]] == ["r1", "r2"]
 
 
 def test_qwen_project_tasks_write_task_scoped_result(monkeypatch, tmp_path):
