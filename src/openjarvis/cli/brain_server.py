@@ -1097,6 +1097,80 @@ def _system_health_snapshot() -> Dict[str, Any]:
     return health
 
 
+def _port_is_open(host: str, port: int, timeout_s: float = 0.2) -> bool:
+    try:
+        with socket.create_connection((host, port), timeout=timeout_s):
+            return True
+    except OSError:
+        return False
+
+
+def _qwen_runtime_status() -> Dict[str, Any]:
+    """Return the active Qwen lane and latest promotion verdict for Studio.
+
+    This is deliberately read-only. Experimental lanes can be installed and
+    benchmarked without becoming live candidates until their verdict changes.
+    """
+    lanes = [
+        {
+            "id": "wsl-mtp-froggeric",
+            "label": "WSL MTP Froggeric",
+            "alias": "qwen3.6-27b-local",
+            "port": 8084,
+            "role": "active",
+            "context_tokens": 4096,
+            "benchmark": {
+                "short_tok_s": 58.34,
+                "studio_json_tok_s": 76.31,
+                "tool_xml_tok_s": 58.44,
+            },
+            "verdict": "keep",
+            "notes": "Current Jarvis lane; best Studio planning result in latest run.",
+        },
+        {
+            "id": "vllm-int4-mtp",
+            "label": "vLLM INT4 MTP",
+            "alias": "qwen3.6-27b-vllm",
+            "port": 8086,
+            "role": "experimental",
+            "context_tokens": 32768,
+            "benchmark": {
+                "short_tok_s": 40.03,
+                "studio_json_tok_s": 34.26,
+                "tool_xml_tok_s": 61.04,
+            },
+            "verdict": "reject",
+            "notes": "32K works only with CUDA graphs disabled; 200K did not fit on 24GB.",
+        },
+        {
+            "id": "rotorquant-35b-a3b",
+            "label": "35B-A3B RotorQuant",
+            "alias": "qwen3.6-35b-a3b-rotorquant",
+            "port": 8085,
+            "role": "prototype",
+            "context_tokens": 200000,
+            "benchmark": {
+                "short_tok_s": 154.69,
+                "long_completion_tok_s": 11.46,
+                "long_total_tok_s": 6223.0,
+            },
+            "verdict": "hold",
+            "notes": "Very fast short output, but speculative decoding was not active.",
+        },
+    ]
+    for lane in lanes:
+        lane["online"] = _port_is_open("127.0.0.1", int(lane["port"]))
+    active = next((lane for lane in lanes if lane["role"] == "active"), lanes[0])
+    return {
+        "active_lane": active["id"],
+        "active_alias": active["alias"],
+        "active_online": bool(active.get("online")),
+        "promotion_verdict": "Keep WSL MTP/Froggeric on 8084; do not promote vLLM yet.",
+        "lanes": lanes,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 def _markets_pro_analyze(body: Dict[str, Any]) -> Dict[str, Any]:
     """Decode posted image + run chart_analyst + return inline result."""
     from openjarvis.markets import chart_analyst
@@ -1345,6 +1419,7 @@ def _studio_state() -> Dict[str, Any]:
     except Exception:
         state["qwen_patch_proposals"] = []
     state["system"] = _system_health_snapshot()
+    state["qwen_runtime"] = _qwen_runtime_status()
     state["plugins"] = _studio_plugins()
     try:
         state["orchestration"] = orch_bridge.get_snapshot()

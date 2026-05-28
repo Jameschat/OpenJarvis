@@ -805,6 +805,13 @@
         </article>
         <article class="context-card">
           <div class="context-title-row">
+            <div class="context-kicker">Qwen Runtime</div>
+            <span class="panel-count" id="studio-qwen-runtime-count">local</span>
+          </div>
+          <div id="studio-qwen-runtime-list" class="source-list"></div>
+        </article>
+        <article class="context-card">
+          <div class="context-title-row">
             <div class="context-kicker">Progress</div>
             <span class="panel-count" id="studio-progress-count">idle</span>
           </div>
@@ -1532,6 +1539,48 @@
       setText("studio-system-count", sampled ? `live ${sampled}` : "live");
     }
 
+    function renderQwenRuntimePanel(runtime) {
+      const root = el("studio-qwen-runtime-list");
+      if (!root) return;
+      clear(root);
+      const lanes = (runtime && runtime.lanes) || [];
+      const activeLane = runtime && runtime.active_lane;
+      const verdict = runtime && runtime.promotion_verdict;
+      lanes.slice(0, 4).forEach((lane) => {
+        const row = document.createElement("div");
+        row.className = "source-row";
+        row.title = lane.notes || "";
+        const icon = document.createElement("span");
+        icon.className = "source-icon";
+        icon.textContent = lane.online ? "●" : "○";
+        const name = document.createElement("span");
+        name.textContent = lane.label || lane.id || "Qwen lane";
+        const status = document.createElement("span");
+        status.className = "row-meta";
+        const speed = lane.benchmark && lane.benchmark.studio_json_tok_s
+          ? `${lane.benchmark.studio_json_tok_s} tok/s`
+          : lane.benchmark && lane.benchmark.short_tok_s
+            ? `${lane.benchmark.short_tok_s} tok/s`
+            : "not measured";
+        status.textContent = `${lane.verdict || "watch"} · ${speed}`;
+        row.append(icon, name, status);
+        root.appendChild(row);
+      });
+      if (verdict) {
+        const row = document.createElement("div");
+        row.className = "source-row";
+        const icon = document.createElement("span");
+        icon.className = "source-icon";
+        icon.textContent = "!";
+        const name = document.createElement("span");
+        name.textContent = verdict;
+        row.append(icon, name);
+        root.appendChild(row);
+      }
+      const online = runtime && runtime.active_online ? "online" : "offline";
+      setText("studio-qwen-runtime-count", activeLane ? `${activeLane} · ${online}` : "local");
+    }
+
     function renderBrowserPanel() {
       const root = el("studio-browser-list");
       if (!root) return;
@@ -1640,6 +1689,7 @@
       renderRuns(state.runs || []);
       renderAgents(state.orchestration || {});
       renderSystemPanel(state.system || {});
+      renderQwenRuntimePanel(state.qwen_runtime || {});
       renderProgressPanel(state.runs || []);
       renderFileActivityPanel(state.runs || []);
       renderPatchProposalsPanel(state.qwen_patch_proposals || []);

@@ -134,6 +134,25 @@ def test_studio_has_live_system_health_panel():
     assert '"sampled_at"' in source
 
 
+def test_studio_has_qwen_runtime_verdict_panel():
+    html = (ROOT / "jarvis_web" / "studio.html").read_text(encoding="utf-8")
+    source = (ROOT / "src" / "openjarvis" / "cli" / "brain_server.py").read_text(encoding="utf-8")
+
+    for marker in [
+        'id="studio-qwen-runtime-list"',
+        'id="studio-qwen-runtime-count"',
+        "renderQwenRuntimePanel",
+        "state.qwen_runtime",
+        "active_lane",
+        "promotion_verdict",
+        "wsl-mtp-froggeric",
+        "vllm-int4-mtp",
+    ]:
+        assert marker in html or marker in source
+    assert "def _qwen_runtime_status" in source
+    assert 'state["qwen_runtime"]' in source
+
+
 def test_studio_has_codex_style_work_panel():
     html = (ROOT / "jarvis_web" / "studio.html").read_text(encoding="utf-8")
     source = (ROOT / "src" / "openjarvis" / "cli" / "brain_server.py").read_text(encoding="utf-8")
