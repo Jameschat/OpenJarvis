@@ -433,6 +433,89 @@ def test_sync_marks_stale_studio_runs_failed(monkeypatch, tmp_path):
     assert any("timed out" in m["content"].lower() for m in chat["messages"])
 
 
+def test_sync_marks_orphaned_studio_runs_failed(monkeypatch, tmp_path):
+    monkeypatch.setattr(studio_runner.studio_store, "STUDIO_ROOT", tmp_path / "studio")
+    monkeypatch.setattr(studio_runner, "STUDIO_RUN_STALE_AFTER_SECONDS", 60)
+    store = studio_runner.studio_store.StudioStore(tmp_path / "studio")
+    store.ensure_project("openjarvis", title="OpenJarvis")
+    chat = store.create_chat("openjarvis", title="Chat")
+    run = store.create_run("openjarvis", chat["id"], "Never started", workflow="execute")
+    run["status"] = "running"
+    run["tasks"] = ["task-missing"]
+    run["updated_at"] = "2026-05-26T05:00:00+00:00"
+    store._write_json(store._run_path(run["id"]), run)
+
+    state_path = tmp_path / "agent-state.json"
+    state_path.write_text(json.dumps({"tasks": []}), encoding="utf-8")
+    from openjarvis.tools import agent_runner
+
+    monkeypatch.setattr(agent_runner, "STATE_FILE", state_path)
+    monkeypatch.setattr(studio_runner.time, "time", lambda: 1779771901)
+
+    studio_runner.sync_completed_run_outputs(store)
+
+    updated = store.get_run(run["id"])
+    chat = store.get_chat(chat["id"])
+    assert updated["status"] == "failed"
+    assert any(e["type"] == "run.timeout" for e in updated["events"])
+    assert any("timed out" in m["content"].lower() for m in chat["messages"])
+
+
+def test_sync_marks_never_started_studio_task_failed(monkeypatch, tmp_path):
+    monkeypatch.setattr(studio_runner.studio_store, "STUDIO_ROOT", tmp_path / "studio")
+    monkeypatch.setattr(studio_runner, "STUDIO_RUN_STALE_AFTER_SECONDS", 60)
+    store = studio_runner.studio_store.StudioStore(tmp_path / "studio")
+    store.ensure_project("openjarvis", title="OpenJarvis")
+    chat = store.create_chat("openjarvis", title="Chat")
+    run = store.create_run("openjarvis", chat["id"], "Queued forever", workflow="execute")
+    run["status"] = "queued"
+    run["tasks"] = ["task-queued"]
+    run["updated_at"] = "2026-05-26T05:00:00+00:00"
+    store._write_json(store._run_path(run["id"]), run)
+
+    agent_state = {"tasks": [{"id": "task-queued", "status": "queued", "workspace": ""}]}
+    state_path = tmp_path / "agent-state.json"
+    state_path.write_text(json.dumps(agent_state), encoding="utf-8")
+    from openjarvis.tools import agent_runner
+
+    monkeypatch.setattr(agent_runner, "STATE_FILE", state_path)
+    monkeypatch.setattr(studio_runner.time, "time", lambda: 1779771901)
+
+    studio_runner.sync_completed_run_outputs(store)
+
+    updated = store.get_run(run["id"])
+    assert updated["status"] == "failed"
+    assert any(e["type"] == "run.timeout" for e in updated["events"])
+
+
+def test_sync_marks_stale_run_without_tasks_failed(monkeypatch, tmp_path):
+    monkeypatch.setattr(studio_runner.studio_store, "STUDIO_ROOT", tmp_path / "studio")
+    monkeypatch.setattr(studio_runner, "STUDIO_RUN_STALE_AFTER_SECONDS", 60)
+    store = studio_runner.studio_store.StudioStore(tmp_path / "studio")
+    store.ensure_project("openjarvis", title="OpenJarvis")
+    chat = store.create_chat("openjarvis", title="Chat")
+    run = store.create_run("openjarvis", chat["id"], "No task spawned", workflow="execute")
+    run["status"] = "running"
+    run["tasks"] = []
+    run["updated_at"] = "2026-05-26T05:00:00+00:00"
+    store._write_json(store._run_path(run["id"]), run)
+
+    state_path = tmp_path / "agent-state.json"
+    state_path.write_text(json.dumps({"tasks": []}), encoding="utf-8")
+    from openjarvis.tools import agent_runner
+
+    monkeypatch.setattr(agent_runner, "STATE_FILE", state_path)
+    monkeypatch.setattr(studio_runner.time, "time", lambda: 1779771901)
+
+    studio_runner.sync_completed_run_outputs(store)
+
+    updated = store.get_run(run["id"])
+    chat = store.get_chat(chat["id"])
+    assert updated["status"] == "failed"
+    assert any(e["type"] == "run.timeout" for e in updated["events"])
+    assert any("timed out" in m["content"].lower() for m in chat["messages"])
+
+
 def test_sync_failed_run_reports_agent_error(monkeypatch, tmp_path):
     monkeypatch.setattr(studio_runner.studio_store, "STUDIO_ROOT", tmp_path / "studio")
     store = studio_runner.studio_store.StudioStore(tmp_path / "studio")

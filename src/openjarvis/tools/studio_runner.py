@@ -749,6 +749,33 @@ def _chat_has_result_message(store: studio_store.StudioStore, chat_id: str, run_
     return False
 
 
+def _mark_studio_run_timed_out(
+    store: studio_store.StudioStore,
+    run: dict[str, Any],
+    task_ids: list[str],
+) -> None:
+    updated = store.get_run(run["id"])
+    updated["status"] = "failed"
+    updated["updated_at"] = studio_store.utc_now()
+    store._write_json(store._run_path(updated["id"]), updated)
+    store.append_run_event(
+        updated["id"],
+        "run.timeout",
+        "Studio background task timed out",
+        {"tasks": task_ids, "timeout_seconds": STUDIO_RUN_STALE_AFTER_SECONDS},
+    )
+    if not _chat_has_result_message(store, updated["chat_id"], updated["id"]):
+        store.add_message(
+            updated["chat_id"],
+            "jarvis",
+            (
+                "That Studio task timed out before Jarvis produced a usable result. "
+                "I stopped the spinner so you can retry or ask for a narrower search."
+            ),
+            run_id=updated["id"],
+        )
+
+
 def sync_completed_run_outputs(store: studio_store.StudioStore | None = None) -> int:
     """Pull completed background agent task outputs back into Studio chats."""
     store = store or studio_store.StudioStore()
@@ -760,6 +787,10 @@ def sync_completed_run_outputs(store: studio_store.StudioStore | None = None) ->
             continue
         task_ids = [str(t) for t in run.get("tasks", []) if t]
         if not task_ids:
+            oldest = _iso_to_epoch(str(run.get("updated_at") or run.get("created_at") or "")) or 0
+            if oldest and (time.time() - oldest) > STUDIO_RUN_STALE_AFTER_SECONDS:
+                _mark_studio_run_timed_out(store, run, task_ids)
+                synced += 1
             continue
         tasks = [task_index.get(task_id) for task_id in task_ids]
         if any(task is None or task.get("status") not in terminal for task in tasks):
@@ -773,26 +804,7 @@ def sync_completed_run_outputs(store: studio_store.StudioStore | None = None) ->
                 default=_iso_to_epoch(str(run.get("updated_at") or "")) or 0,
             )
             if oldest and (time.time() - oldest) > STUDIO_RUN_STALE_AFTER_SECONDS:
-                updated = store.get_run(run["id"])
-                updated["status"] = "failed"
-                updated["updated_at"] = studio_store.utc_now()
-                store._write_json(store._run_path(updated["id"]), updated)
-                store.append_run_event(
-                    updated["id"],
-                    "run.timeout",
-                    "Studio background task timed out",
-                    {"tasks": task_ids, "timeout_seconds": STUDIO_RUN_STALE_AFTER_SECONDS},
-                )
-                if not _chat_has_result_message(store, updated["chat_id"], updated["id"]):
-                    store.add_message(
-                        updated["chat_id"],
-                        "jarvis",
-                        (
-                            "That Studio task timed out before Jarvis produced a usable result. "
-                            "I stopped the spinner so you can retry or ask for a narrower search."
-                        ),
-                        run_id=updated["id"],
-                    )
+                _mark_studio_run_timed_out(store, run, task_ids)
                 synced += 1
             continue
 
