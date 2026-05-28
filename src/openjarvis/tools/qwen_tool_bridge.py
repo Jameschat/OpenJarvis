@@ -83,6 +83,15 @@ def tool_manifest() -> str:
             "description": "Safely read/search non-secret project files from the OpenJarvis repo.",
         },
         {
+            "tool": "repo_patch_proposal",
+            "tier": "approval",
+            "args": {
+                "rationale": "string",
+                "files": [{"path": "repo-relative path", "content": "full proposed file content"}],
+            },
+            "description": "Save a validated edit proposal for Codex/operator approval; does not apply changes.",
+        },
+        {
             "tool": "browser_visual_check",
             "tier": "verify",
             "args": {"url": "local Jarvis page URL", "full_page": "optional boolean"},
@@ -126,8 +135,9 @@ def tool_manifest() -> str:
         "`qwen_tool_requests` containing JSON:\n"
         "{\"requests\":[{\"id\":\"r1\",\"tool\":\"recall_vault\",\"args\":{\"query\":\"...\"}}]}\n\n"
         "Jarvis will execute read/research/procedure tools only. Shell commands, installs, "
-        "repo edits, browser control, Codex plugins, and Claude skills are blocked unless "
-        "you request escalation. Available safe tools:\n"
+        "direct repo edits, browser control, Codex plugins, and Claude skills are blocked unless "
+        "you request escalation. repo_patch_proposal only saves a proposal; it does not apply "
+        "changes. Available safe tools:\n"
         f"{json.dumps(safe_tools, indent=2)}"
     )
 
@@ -213,6 +223,8 @@ def _execute_one(request: dict[str, Any]) -> dict[str, Any]:
             return _repo_read(request_id, args)
         if tool == "repo_search":
             return _repo_search(request_id, args)
+        if tool == "repo_patch_proposal":
+            return _repo_patch_proposal(request_id, args)
         if tool == "browser_visual_check":
             return _browser_visual_check(request_id, args)
         if tool == "web_search":
@@ -392,6 +404,109 @@ def _repo_search(request_id: str, args: dict[str, Any]) -> dict[str, Any]:
         "ok": True,
         "query": query,
         "matches": matches,
+    }
+
+
+def _patch_proposal_dir() -> Path:
+    override = os.environ.get("OPENJARVIS_QWEN_PATCH_PROPOSAL_DIR")
+    if override:
+        return Path(override)
+    return Path.home() / ".openjarvis" / "qwen_patch_proposals"
+
+
+def _repo_patch_proposal(request_id: str, args: dict[str, Any]) -> dict[str, Any]:
+    raw_files = args.get("files")
+    if not isinstance(raw_files, list) or not raw_files:
+        return {
+            "id": request_id,
+            "tool": "repo_patch_proposal",
+            "ok": False,
+            "error": "files must be a non-empty list",
+        }
+    if len(raw_files) > 12:
+        return {
+            "id": request_id,
+            "tool": "repo_patch_proposal",
+            "ok": False,
+            "error": "too many files in one proposal",
+        }
+
+    validated: list[dict[str, Any]] = []
+    total_bytes = 0
+    for item in raw_files:
+        if not isinstance(item, dict):
+            continue
+        target, rel, error = _resolve_repo_path(str(item.get("path") or ""))
+        if error:
+            return {"id": request_id, "tool": "repo_patch_proposal", **error}
+        content = item.get("content")
+        if not isinstance(content, str):
+            return {
+                "id": request_id,
+                "tool": "repo_patch_proposal",
+                "ok": False,
+                "error": f"content required for {rel}",
+            }
+        encoded_len = len(content.encode("utf-8"))
+        if encoded_len > 300_000:
+            return {
+                "id": request_id,
+                "tool": "repo_patch_proposal",
+                "ok": False,
+                "error": f"proposed content too large for {rel}",
+            }
+        total_bytes += encoded_len
+        if total_bytes > 750_000:
+            return {
+                "id": request_id,
+                "tool": "repo_patch_proposal",
+                "ok": False,
+                "error": "proposal too large",
+            }
+        assert target is not None
+        current = ""
+        exists = target.exists()
+        if exists and target.is_file() and target.stat().st_size <= 300_000:
+            current = target.read_text(encoding="utf-8", errors="replace")
+        validated.append(
+            {
+                "path": rel,
+                "content": content,
+                "exists": exists,
+                "current_preview": current[:1200],
+                "proposed_bytes": encoded_len,
+            }
+        )
+    if not validated:
+        return {
+            "id": request_id,
+            "tool": "repo_patch_proposal",
+            "ok": False,
+            "error": "no valid files in proposal",
+        }
+
+    proposal_id = f"qwen-proposal-{int(time.time() * 1000)}"
+    out_dir = _patch_proposal_dir()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    proposal_path = out_dir / f"{proposal_id}.json"
+    payload = {
+        "id": proposal_id,
+        "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "repo_root": str(_repo_root()),
+        "rationale": str(args.get("rationale") or "").strip(),
+        "apply_requires_approval": True,
+        "files": validated,
+    }
+    proposal_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    return {
+        "id": request_id,
+        "tool": "repo_patch_proposal",
+        "ok": True,
+        "proposal_id": proposal_id,
+        "proposal_path": str(proposal_path),
+        "changed_files": [file["path"] for file in validated],
+        "apply_requires_approval": True,
+        "message": "Edit proposal saved. Codex/operator approval is required before applying it.",
     }
 
 

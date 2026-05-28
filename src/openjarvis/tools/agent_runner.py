@@ -2189,6 +2189,9 @@ def _run_qwen_task(task: Task, agent_spec: Dict[str, Any]) -> None:
             "For UI/web work, request browser_visual_check against the local "
             "Jarvis page after proposing or creating changes. For code tasks, "
             "use repo_search/repo_read before making claims about files.",
+            "When a code change is needed, request repo_patch_proposal with "
+            "full proposed file content; Jarvis will not apply it until "
+            "Codex/operator approval.",
             qwen_tool_bridge.tool_manifest(),
             workspace_block,
             f"TASK:\n{task.prompt or ''}",

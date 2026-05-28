@@ -1,3 +1,7 @@
+import json
+from pathlib import Path
+
+
 def test_qwen_tool_manifest_exposes_installed_jarvis_skill_guidance():
     from openjarvis.tools import qwen_tool_bridge
 
@@ -24,6 +28,15 @@ def test_qwen_tool_manifest_exposes_local_browser_visual_check():
 
     assert "browser_visual_check" in manifest
     assert "local Jarvis page" in manifest
+
+
+def test_qwen_tool_manifest_exposes_patch_proposal():
+    from openjarvis.tools import qwen_tool_bridge
+
+    manifest = qwen_tool_bridge.tool_manifest()
+
+    assert "repo_patch_proposal" in manifest
+    assert "validated edit proposal" in manifest
 
 
 def test_qwen_skill_guidance_loads_installed_skill(monkeypatch, tmp_path):
@@ -197,3 +210,58 @@ def test_qwen_browser_visual_check_runs_local_probe(monkeypatch, tmp_path):
     assert results[0]["ok"] is True
     assert results[0]["title"] == "Jarvis Studio"
     assert results[0]["screenshot_path"].endswith(".png")
+
+
+def test_qwen_repo_patch_proposal_writes_auditable_plan(monkeypatch, tmp_path):
+    from openjarvis.tools import qwen_tool_bridge
+
+    repo = tmp_path / "repo"
+    proposals = tmp_path / "proposals"
+    (repo / "src").mkdir(parents=True)
+    (repo / "src" / "app.py").write_text("print('old')\n", encoding="utf-8")
+    monkeypatch.setenv("OPENJARVIS_QWEN_REPO_ROOT", str(repo))
+    monkeypatch.setenv("OPENJARVIS_QWEN_PATCH_PROPOSAL_DIR", str(proposals))
+
+    results = qwen_tool_bridge.execute_tool_requests(
+        [
+            {
+                "id": "r1",
+                "tool": "repo_patch_proposal",
+                "args": {
+                    "rationale": "Update greeting",
+                    "files": [{"path": "src/app.py", "content": "print('new')\n"}],
+                },
+            }
+        ]
+    )
+
+    result = results[0]
+    assert result["ok"] is True
+    assert result["apply_requires_approval"] is True
+    assert result["changed_files"] == ["src/app.py"]
+    assert (repo / "src" / "app.py").read_text(encoding="utf-8") == "print('old')\n"
+    proposal = json.loads(Path(result["proposal_path"]).read_text(encoding="utf-8"))
+    assert proposal["rationale"] == "Update greeting"
+    assert proposal["files"][0]["path"] == "src/app.py"
+    assert proposal["files"][0]["content"] == "print('new')\n"
+
+
+def test_qwen_repo_patch_proposal_rejects_secret_path(monkeypatch, tmp_path):
+    from openjarvis.tools import qwen_tool_bridge
+
+    monkeypatch.setenv("OPENJARVIS_QWEN_REPO_ROOT", str(tmp_path))
+
+    results = qwen_tool_bridge.execute_tool_requests(
+        [
+            {
+                "id": "r1",
+                "tool": "repo_patch_proposal",
+                "args": {
+                    "files": [{"path": "jarvis.bat", "content": "OPENAI_API_KEY=secret"}],
+                },
+            }
+        ]
+    )
+
+    assert results[0]["ok"] is False
+    assert results[0]["blocked"] is True
