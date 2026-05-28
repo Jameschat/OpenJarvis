@@ -265,3 +265,101 @@ def test_qwen_repo_patch_proposal_rejects_secret_path(monkeypatch, tmp_path):
 
     assert results[0]["ok"] is False
     assert results[0]["blocked"] is True
+
+
+def test_apply_patch_proposal_requires_exact_approval(monkeypatch, tmp_path):
+    from openjarvis.tools import qwen_tool_bridge
+
+    repo = tmp_path / "repo"
+    proposals = tmp_path / "proposals"
+    (repo / "src").mkdir(parents=True)
+    (repo / "src" / "app.py").write_text("print('old')\n", encoding="utf-8")
+    monkeypatch.setenv("OPENJARVIS_QWEN_REPO_ROOT", str(repo))
+    monkeypatch.setenv("OPENJARVIS_QWEN_PATCH_PROPOSAL_DIR", str(proposals))
+    proposal = qwen_tool_bridge.execute_tool_requests(
+        [
+            {
+                "id": "r1",
+                "tool": "repo_patch_proposal",
+                "args": {
+                    "rationale": "Update greeting",
+                    "files": [{"path": "src/app.py", "content": "print('new')\n"}],
+                },
+            }
+        ]
+    )[0]
+
+    result = qwen_tool_bridge.apply_patch_proposal(
+        proposal["proposal_id"],
+        approval_phrase="yes",
+    )
+
+    assert result["ok"] is False
+    assert result["blocked"] is True
+    assert (repo / "src" / "app.py").read_text(encoding="utf-8") == "print('old')\n"
+
+
+def test_apply_patch_proposal_writes_files_and_backup(monkeypatch, tmp_path):
+    from openjarvis.tools import qwen_tool_bridge
+
+    repo = tmp_path / "repo"
+    proposals = tmp_path / "proposals"
+    (repo / "src").mkdir(parents=True)
+    (repo / "src" / "app.py").write_text("print('old')\n", encoding="utf-8")
+    monkeypatch.setenv("OPENJARVIS_QWEN_REPO_ROOT", str(repo))
+    monkeypatch.setenv("OPENJARVIS_QWEN_PATCH_PROPOSAL_DIR", str(proposals))
+    proposal = qwen_tool_bridge.execute_tool_requests(
+        [
+            {
+                "id": "r1",
+                "tool": "repo_patch_proposal",
+                "args": {
+                    "rationale": "Update greeting",
+                    "files": [{"path": "src/app.py", "content": "print('new')\n"}],
+                },
+            }
+        ]
+    )[0]
+
+    result = qwen_tool_bridge.apply_patch_proposal(
+        proposal["proposal_id"],
+        approval_phrase="APPLY QWEN PATCH",
+    )
+
+    assert result["ok"] is True
+    assert result["applied_files"] == ["src/app.py"]
+    assert (repo / "src" / "app.py").read_text(encoding="utf-8") == "print('new')\n"
+    assert result["backups"][0]["path"] == "src/app.py"
+    assert Path(result["backups"][0]["backup_path"]).read_text(encoding="utf-8") == "print('old')\n"
+    saved = json.loads(Path(proposal["proposal_path"]).read_text(encoding="utf-8"))
+    assert saved["applied_at"]
+
+
+def test_list_patch_proposals_marks_pending_and_applied(monkeypatch, tmp_path):
+    from openjarvis.tools import qwen_tool_bridge
+
+    repo = tmp_path / "repo"
+    proposals = tmp_path / "proposals"
+    repo.mkdir()
+    monkeypatch.setenv("OPENJARVIS_QWEN_REPO_ROOT", str(repo))
+    monkeypatch.setenv("OPENJARVIS_QWEN_PATCH_PROPOSAL_DIR", str(proposals))
+    created = qwen_tool_bridge.execute_tool_requests(
+        [
+            {
+                "id": "r1",
+                "tool": "repo_patch_proposal",
+                "args": {
+                    "rationale": "Add file",
+                    "files": [{"path": "src/app.py", "content": "print('new')\n"}],
+                },
+            }
+        ]
+    )[0]
+
+    pending = qwen_tool_bridge.list_patch_proposals()
+    qwen_tool_bridge.apply_patch_proposal(created["proposal_id"], approval_phrase="APPLY QWEN PATCH")
+    applied = qwen_tool_bridge.list_patch_proposals()
+
+    assert pending[0]["status"] == "pending"
+    assert pending[0]["changed_files"] == ["src/app.py"]
+    assert applied[0]["status"] == "applied"

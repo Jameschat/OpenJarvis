@@ -510,6 +510,111 @@ def _repo_patch_proposal(request_id: str, args: dict[str, Any]) -> dict[str, Any
     }
 
 
+def _proposal_path(proposal_id_or_path: str) -> Path:
+    raw = str(proposal_id_or_path or "").strip()
+    if not raw:
+        return _patch_proposal_dir() / "__missing__.json"
+    candidate = Path(raw)
+    if candidate.is_absolute():
+        return candidate
+    name = raw if raw.endswith(".json") else f"{raw}.json"
+    return _patch_proposal_dir() / name
+
+
+def apply_patch_proposal(proposal_id_or_path: str, *, approval_phrase: str) -> dict[str, Any]:
+    """Apply a previously saved Qwen edit proposal after explicit approval.
+
+    This is intentionally not exposed in the Qwen tool manifest; Qwen can
+    propose edits, but cannot approve and apply them itself.
+    """
+    if approval_phrase != "APPLY QWEN PATCH":
+        return {
+            "ok": False,
+            "blocked": True,
+            "error": "exact approval phrase required: APPLY QWEN PATCH",
+        }
+
+    path = _proposal_path(proposal_id_or_path)
+    if not path.exists() or not path.is_file():
+        return {"ok": False, "error": "proposal not found", "proposal_path": str(path)}
+    proposal = json.loads(path.read_text(encoding="utf-8-sig"))
+    if proposal.get("applied_at"):
+        return {
+            "ok": False,
+            "blocked": True,
+            "error": "proposal already applied",
+            "proposal_path": str(path),
+        }
+
+    files = proposal.get("files")
+    if not isinstance(files, list) or not files:
+        return {"ok": False, "error": "proposal has no files", "proposal_path": str(path)}
+
+    backup_root = _patch_proposal_dir() / "backups" / str(proposal.get("id") or path.stem)
+    backup_root.mkdir(parents=True, exist_ok=True)
+    applied: list[str] = []
+    backups: list[dict[str, str]] = []
+
+    for item in files:
+        if not isinstance(item, dict):
+            continue
+        target, rel, error = _resolve_repo_path(str(item.get("path") or ""))
+        if error:
+            return {"ok": False, "proposal_path": str(path), **error}
+        content = item.get("content")
+        if not isinstance(content, str):
+            return {"ok": False, "error": f"content required for {rel}", "proposal_path": str(path)}
+        assert target is not None
+        backup_path = backup_root / rel
+        backup_path.parent.mkdir(parents=True, exist_ok=True)
+        if target.exists() and target.is_file():
+            backup_path.write_text(target.read_text(encoding="utf-8", errors="replace"), encoding="utf-8")
+            backups.append({"path": rel, "backup_path": str(backup_path)})
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding="utf-8")
+        applied.append(rel)
+
+    proposal["applied_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    proposal["applied_files"] = applied
+    proposal["backups"] = backups
+    path.write_text(json.dumps(proposal, indent=2) + "\n", encoding="utf-8")
+    return {
+        "ok": True,
+        "proposal_id": proposal.get("id") or path.stem,
+        "proposal_path": str(path),
+        "applied_files": applied,
+        "backups": backups,
+    }
+
+
+def list_patch_proposals(limit: int = 20) -> list[dict[str, Any]]:
+    root = _patch_proposal_dir()
+    if not root.exists():
+        return []
+    proposals: list[dict[str, Any]] = []
+    for path in sorted(root.glob("*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8-sig"))
+        except Exception:
+            continue
+        files = data.get("files") if isinstance(data.get("files"), list) else []
+        proposals.append(
+            {
+                "id": str(data.get("id") or path.stem),
+                "proposal_path": str(path),
+                "created_at": str(data.get("created_at") or ""),
+                "applied_at": str(data.get("applied_at") or ""),
+                "status": "applied" if data.get("applied_at") else "pending",
+                "rationale": str(data.get("rationale") or ""),
+                "changed_files": [str(item.get("path") or "") for item in files if isinstance(item, dict)],
+                "apply_requires_approval": True,
+            }
+        )
+        if len(proposals) >= max(1, min(int(limit or 20), 100)):
+            break
+    return proposals
+
+
 def _visual_check_dir() -> Path:
     override = os.environ.get("OPENJARVIS_QWEN_VISUAL_CHECK_DIR")
     if override:

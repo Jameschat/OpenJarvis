@@ -812,6 +812,13 @@
         </article>
         <article class="context-card">
           <div class="context-title-row">
+            <div class="context-kicker">Qwen Proposals</div>
+            <span class="panel-count" id="studio-patch-proposal-count">0</span>
+          </div>
+          <div id="studio-patch-proposal-list" class="output-list"></div>
+        </article>
+        <article class="context-card">
+          <div class="context-title-row">
             <div class="context-kicker">Outputs</div>
             <span class="panel-count" id="studio-output-count">0</span>
           </div>
@@ -856,7 +863,8 @@
       schedule: "/schedule",
       vault: "/vault/summary",
       codegraph: "/codegraph/status",
-      qwenProfile: "/studio/qwen-profile"
+      qwenProfile: "/studio/qwen-profile",
+      qwenProposalApply: "/studio/qwen-proposals/apply"
     };
     let studioState = { projects: [], chats: [], runs: [], approved: false };
     let activeProjectId = "openjarvis";
@@ -1348,6 +1356,39 @@
       setText("studio-file-activity-count", rows.length ? `${rows.length} files` : "none");
     }
 
+    function renderPatchProposalsPanel(proposals) {
+      const root = el("studio-patch-proposal-list");
+      if (!root) return;
+      clear(root);
+      const rows = [...(proposals || [])];
+      rows.slice(0, 6).forEach((proposal) => {
+        const row = document.createElement("div");
+        row.className = "output-row";
+        row.title = `${proposal.rationale || "Qwen edit proposal"}\n${(proposal.changed_files || []).join("\n")}`;
+        const icon = document.createElement("span");
+        icon.className = "output-icon";
+        icon.textContent = proposal.status === "applied" ? "✓" : "Δ";
+        const name = document.createElement("span");
+        name.textContent = (proposal.changed_files || []).slice(0, 2).join(", ") || proposal.id || "Proposal";
+        const action = document.createElement("button");
+        action.className = "icon-btn";
+        action.type = "button";
+        action.dataset.studioAction = "apply-qwen-proposal";
+        action.dataset.proposalId = proposal.id || "";
+        action.textContent = proposal.status === "applied" ? "Applied" : "Apply";
+        action.disabled = proposal.status === "applied";
+        row.append(icon, name, action);
+        root.appendChild(row);
+      });
+      if (!rows.length) {
+        const row = document.createElement("div");
+        row.className = "progress-subtext";
+        row.textContent = "No Qwen edit proposals";
+        root.appendChild(row);
+      }
+      setText("studio-patch-proposal-count", rows.length);
+    }
+
     function renderRuns(runs) {
       const root = el("studio-run-list");
       clear(root);
@@ -1543,6 +1584,7 @@
       renderAgents(state.orchestration || {});
       renderProgressPanel(state.runs || []);
       renderFileActivityPanel(state.runs || []);
+      renderPatchProposalsPanel(state.qwen_patch_proposals || []);
       renderOutputsPanel(state.runs || []);
       renderBrowserPanel();
       renderSourcesPanel(state.plugins || [], state.runs || []);
@@ -1723,6 +1765,15 @@
       renderQwenProfile(result);
     }
 
+    async function applyQwenProposal(proposalId) {
+      if (!proposalId) return;
+      await apiPost(API.qwenProposalApply, {
+        proposal_id: proposalId,
+        approval_phrase: "APPLY QWEN PATCH"
+      });
+      await loadStudioState();
+    }
+
     document.addEventListener('click', async (event) => {
       const target = event.target.closest('[data-studio-action]');
       if (!target) {
@@ -1755,6 +1806,7 @@
         if (action === "toggle-context") el("studio-context").classList.toggle("mobile-open");
         if (action === "attach-context") el("studio-file-input").click();
         if (action === "set-qwen-profile") await setQwenProfile(target.dataset.profile || "fast");
+        if (action === "apply-qwen-proposal") await applyQwenProposal(target.dataset.proposalId);
         if (action === "toggle-approved") { studioState.approved = !studioState.approved; target.textContent = studioState.approved ? "Approved run" : "Default permissions"; }
         if (action === "open-agent-list") renderAgents(studioState.orchestration || {});
         if (action === "send-message") await sendComposer();

@@ -1336,6 +1336,12 @@ def _studio_state() -> Dict[str, Any]:
         "escalation": "Claude/Codex standby",
     }
     state["qwen_profile"] = _studio_qwen_profile()
+    try:
+        from openjarvis.tools import qwen_tool_bridge
+
+        state["qwen_patch_proposals"] = qwen_tool_bridge.list_patch_proposals()
+    except Exception:
+        state["qwen_patch_proposals"] = []
     state["system"] = _system_health_snapshot()
     state["plugins"] = _studio_plugins()
     try:
@@ -1800,6 +1806,8 @@ class _Handler(SimpleHTTPRequestHandler):
             self._handle_studio_run_create()
         elif self.path == "/studio/qwen-profile":
             self._handle_studio_qwen_profile()
+        elif self.path == "/studio/qwen-proposals/apply":
+            self._handle_studio_qwen_proposal_apply()
         elif self.path.startswith("/studio/runs/") and self.path.endswith("/evidence"):
             self._handle_studio_run_evidence()
         # /claude_event handled at the open-routes top (skipped here)
@@ -1959,6 +1967,27 @@ class _Handler(SimpleHTTPRequestHandler):
             self._json_response(400, {"error": str(exc)})
         except Exception:
             logger.exception("/studio/qwen-profile failed")
+            self._json_response(500, {"error": "internal error", "ref": _err_ref()})
+
+    def _handle_studio_qwen_proposal_apply(self) -> None:
+        try:
+            from openjarvis.tools import qwen_tool_bridge
+
+            data = self._read_json_body()
+            proposal_id = str(data.get("proposal_id") or data.get("proposal_path") or "").strip()
+            phrase = str(data.get("approval_phrase") or "").strip()
+            if not proposal_id:
+                return self._json_response(400, {"error": "proposal_id is required"})
+            result = qwen_tool_bridge.apply_patch_proposal(
+                proposal_id,
+                approval_phrase=phrase,
+            )
+            status = 200 if result.get("ok") else 400
+            self._json_response(status, result)
+        except ValueError as exc:
+            self._json_response(400, {"error": str(exc)})
+        except Exception:
+            logger.exception("/studio/qwen-proposals/apply failed")
             self._json_response(500, {"error": "internal error", "ref": _err_ref()})
 
     def _handle_provider_set(self) -> None:

@@ -151,6 +151,22 @@ def test_studio_has_live_file_activity_panel():
         assert marker in html
 
 
+def test_studio_has_qwen_patch_proposal_panel_and_apply_route():
+    html = (ROOT / "jarvis_web" / "studio.html").read_text(encoding="utf-8")
+    source = (ROOT / "src" / "openjarvis" / "cli" / "brain_server.py").read_text(encoding="utf-8")
+
+    for marker in [
+        'id="studio-patch-proposal-list"',
+        "renderPatchProposalsPanel",
+        "qwen_patch_proposals",
+        "/studio/qwen-proposals/apply",
+        "APPLY QWEN PATCH",
+    ]:
+        assert marker in html
+    assert "list_patch_proposals" in source
+    assert "_handle_studio_qwen_proposal_apply" in source
+
+
 def test_studio_shows_context_pressure_meter():
     html = (ROOT / "jarvis_web" / "studio.html").read_text(encoding="utf-8")
 
