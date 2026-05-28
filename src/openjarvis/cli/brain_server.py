@@ -1359,6 +1359,15 @@ def _studio_state() -> Dict[str, Any]:
     return state
 
 
+def _studio_runs_response(project_id: str | None = None, chat_id: str | None = None) -> List[Dict[str, Any]]:
+    from openjarvis.tools.studio_store import StudioStore
+    from openjarvis.tools import studio_runner
+
+    store = StudioStore()
+    studio_runner.sync_completed_run_outputs(store)
+    return studio_runner.enrich_runs_for_studio(store.list_runs(project_id, chat_id))
+
+
 def emit_chat_widget_toggle(action: str) -> None:
     """Public bridge for voice_cmd / fast-paths to nudge the HUD's chat
     widget open or closed. Decoupled from _chat_history's internal class
@@ -1673,12 +1682,11 @@ class _Handler(SimpleHTTPRequestHandler):
         elif self.path.startswith("/studio/runs"):
             try:
                 from urllib.parse import parse_qs, urlparse
-                from openjarvis.tools.studio_store import StudioStore
 
                 qs = parse_qs(urlparse(self.path).query)
                 project_id = (qs.get("project_id") or [None])[0]
                 chat_id = (qs.get("chat_id") or [None])[0]
-                self._json_response(200, {"runs": StudioStore().list_runs(project_id, chat_id)})
+                self._json_response(200, {"runs": _studio_runs_response(project_id, chat_id)})
             except Exception:
                 logger.exception("/studio/runs failed")
                 self._json_response(500, {"error": "internal error", "ref": _err_ref()})

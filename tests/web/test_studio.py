@@ -137,6 +137,15 @@ def test_studio_has_codex_style_work_panel():
     assert "enrich_runs_for_studio" in source
 
 
+def test_studio_runs_endpoint_syncs_and_enriches_runs():
+    source = (ROOT / "src" / "openjarvis" / "cli" / "brain_server.py").read_text(encoding="utf-8")
+
+    assert "def _studio_runs_response" in source
+    assert "sync_completed_run_outputs(store)" in source
+    assert "enrich_runs_for_studio" in source
+    assert '{"runs": _studio_runs_response(project_id, chat_id)}' in source
+
+
 def test_studio_has_live_file_activity_panel():
     html = (ROOT / "jarvis_web" / "studio.html").read_text(encoding="utf-8")
 
