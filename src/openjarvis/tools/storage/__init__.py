@@ -1,35 +1,40 @@
-"""Storage primitive — persistent searchable storage."""
+"""Storage primitive - persistent searchable storage."""
 
 from __future__ import annotations
 
-# Always-available backend
+import os
+
+# Always-available backend.
 import openjarvis.tools.storage.sqlite  # noqa: F401
 
-# Optional backends — import to trigger registration
+# Lightweight optional backend. Keep vector backends lazy because importing
+# FAISS can call Windows WMI through platform.machine(), which can hang after
+# a crash and block unrelated tools/tests.
 try:
     import openjarvis.tools.storage.bm25  # noqa: F401
 except ImportError:
     pass
 
-try:
-    import openjarvis.tools.storage.faiss_backend  # noqa: F401
-except ImportError:
-    pass
+if os.environ.get("OPENJARVIS_EAGER_VECTOR_BACKENDS", "").lower() in {"1", "true", "yes"}:
+    try:
+        import openjarvis.tools.storage.faiss_backend  # noqa: F401
+    except ImportError:
+        pass
 
-try:
-    import openjarvis.tools.storage.colbert_backend  # noqa: F401
-except ImportError:
-    pass
+    try:
+        import openjarvis.tools.storage.colbert_backend  # noqa: F401
+    except ImportError:
+        pass
 
-try:
-    import openjarvis.tools.storage.hybrid  # noqa: F401
-except ImportError:
-    pass
+    try:
+        import openjarvis.tools.storage.hybrid  # noqa: F401
+    except ImportError:
+        pass
 
-try:
-    import openjarvis.tools.storage.dense  # noqa: F401
-except ImportError:
-    pass
+    try:
+        import openjarvis.tools.storage.dense  # noqa: F401
+    except ImportError:
+        pass
 
 from openjarvis.tools.storage._stubs import MemoryBackend, RetrievalResult
 from openjarvis.tools.storage.chunking import Chunk, ChunkConfig, chunk_text
