@@ -569,6 +569,79 @@ def _task_output_files(task: dict[str, Any]) -> list[dict[str, Any]]:
                 "task_id": task_id,
             }
         )
+    outputs.extend(_qwen_tool_result_outputs(root, task_id, seen))
+    return outputs
+
+
+def _safe_artifact_path(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    lowered_parts = [part.lower() for part in Path(text).parts]
+    if any(secret in part for part in lowered_parts for secret in _FILE_ACTIVITY_SECRET_PARTS):
+        return ""
+    return text
+
+
+def _qwen_tool_result_outputs(root: Path, task_id: str, seen: set[Path]) -> list[dict[str, Any]]:
+    path = root / "QWEN_TOOL_RESULTS.json"
+    if not path.exists() or not path.is_file():
+        return []
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8", errors="replace"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    if isinstance(payload, list):
+        results = payload
+    elif isinstance(payload, dict):
+        results = payload.get("results") or []
+    else:
+        results = []
+    outputs: list[dict[str, Any]] = []
+    for result in results[:12]:
+        if not isinstance(result, dict) or result.get("ok") is False:
+            continue
+        tool = str(result.get("tool") or "")
+        if tool == "repo_patch_proposal":
+            artifact_path = _safe_artifact_path(result.get("proposal_path"))
+            if not artifact_path:
+                continue
+            changed_files = [str(item) for item in result.get("changed_files") or [] if item]
+            label = changed_files[0] if changed_files else str(result.get("proposal_id") or "pending")
+            item = {
+                "name": f"Qwen proposal: {label}",
+                "path": artifact_path,
+                "kind": "proposal",
+                "size": Path(artifact_path).stat().st_size if Path(artifact_path).exists() else 0,
+                "task_id": task_id,
+                "proposal_id": str(result.get("proposal_id") or ""),
+                "changed_files": changed_files,
+                "apply_requires_approval": bool(result.get("apply_requires_approval", True)),
+            }
+        elif tool == "browser_visual_check":
+            artifact_path = _safe_artifact_path(result.get("screenshot_path"))
+            if not artifact_path:
+                continue
+            title = str(result.get("title") or result.get("url") or "screenshot").strip()
+            item = {
+                "name": f"Visual check: {title}",
+                "path": artifact_path,
+                "kind": "screenshot",
+                "size": Path(artifact_path).stat().st_size if Path(artifact_path).exists() else 0,
+                "task_id": task_id,
+                "url": str(result.get("url") or ""),
+                "title": title,
+            }
+        else:
+            continue
+        try:
+            resolved = Path(item["path"]).resolve()
+        except OSError:
+            resolved = Path(item["path"])
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        outputs.append(item)
     return outputs
 
 

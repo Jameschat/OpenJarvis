@@ -272,6 +272,70 @@ def test_enrich_runs_for_studio_includes_task_outputs(monkeypatch, tmp_path):
     assert any(output["name"] == "QWEN_TOOL_RESULTS.json" for output in enriched[0]["outputs"])
 
 
+def test_enrich_runs_for_studio_surfaces_qwen_tool_artifacts(monkeypatch, tmp_path):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    proposal_path = tmp_path / "proposal.json"
+    screenshot_path = tmp_path / "studio.png"
+    (workspace / "QWEN_TOOL_RESULTS.json").write_text(
+        json.dumps(
+            {
+                "results": [
+                    {
+                        "tool": "repo_patch_proposal",
+                        "ok": True,
+                        "proposal_id": "qwen-proposal-1",
+                        "proposal_path": str(proposal_path),
+                        "changed_files": ["src/app.py"],
+                        "apply_requires_approval": True,
+                    },
+                    {
+                        "tool": "browser_visual_check",
+                        "ok": True,
+                        "screenshot_path": str(screenshot_path),
+                        "title": "Jarvis Studio",
+                        "url": "http://localhost:7710/studio",
+                    },
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    state_path = tmp_path / "agent-state.json"
+    state_path.write_text(
+        json.dumps(
+            {
+                "tasks": [
+                    {
+                        "id": "task-123",
+                        "title": "Studio: test",
+                        "agent_id": "qwen-planner",
+                        "status": "done",
+                        "workspace": str(workspace),
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    from openjarvis.tools import agent_runner
+
+    monkeypatch.setattr(agent_runner, "STATE_FILE", state_path)
+
+    enriched = studio_runner.enrich_runs_for_studio(
+        [{"id": "run-1", "status": "completed", "tasks": ["task-123"]}]
+    )
+
+    outputs = enriched[0]["outputs"]
+    proposal = next(output for output in outputs if output["kind"] == "proposal")
+    screenshot = next(output for output in outputs if output["kind"] == "screenshot")
+    assert proposal["name"] == "Qwen proposal: src/app.py"
+    assert proposal["proposal_id"] == "qwen-proposal-1"
+    assert proposal["path"] == str(proposal_path)
+    assert screenshot["name"] == "Visual check: Jarvis Studio"
+    assert screenshot["path"] == str(screenshot_path)
+
+
 def test_enrich_runs_for_studio_includes_live_task_progress(monkeypatch, tmp_path):
     workspace = tmp_path / "workspace"
     workspace.mkdir()
