@@ -13,7 +13,9 @@ def test_studio_static_route_is_registered():
 def test_studio_state_endpoint_is_registered():
     source = (ROOT / "src" / "openjarvis" / "cli" / "brain_server.py").read_text(encoding="utf-8")
     assert '"/studio/state"' in source
+    assert '"/studio/runtime-health"' in source
     assert "_studio_state()" in source
+    assert "check_runtime_health" in source
 
 
 def test_studio_html_exists_and_wires_real_endpoints():
@@ -132,6 +134,25 @@ def test_studio_has_live_system_health_panel():
     ]:
         assert marker in html
     assert '"sampled_at"' in source
+
+
+def test_studio_has_runtime_readiness_panel():
+    html = (ROOT / "jarvis_web" / "studio.html").read_text(encoding="utf-8")
+    source = (ROOT / "src" / "openjarvis" / "cli" / "brain_server.py").read_text(encoding="utf-8")
+    runtime_source = (
+        ROOT / "src" / "openjarvis" / "tools" / "runtime_health.py"
+    ).read_text(encoding="utf-8")
+
+    for marker in [
+        'id="studio-runtime-list"',
+        'id="studio-runtime-count"',
+        "renderRuntimePanel",
+        "state.runtime_health",
+        "jarvis_backend",
+        "litellm_proxy",
+        "qwen_fast_lane",
+    ]:
+        assert marker in html or marker in source or marker in runtime_source
 
 
 def test_studio_has_qwen_runtime_verdict_panel():

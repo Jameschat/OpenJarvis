@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
+import warnings
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Dict, Generator, List, Optional
@@ -12,7 +13,13 @@ from typing import Dict, Generator, List, Optional
 logger = logging.getLogger(__name__)
 
 try:
-    import pynvml
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message=r"The pynvml package is deprecated.*",
+            category=FutureWarning,
+        )
+        import pynvml
 
     _PYNVML_AVAILABLE = True
 except ImportError:

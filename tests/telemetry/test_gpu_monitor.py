@@ -6,6 +6,7 @@ import sys
 import time
 import types
 from dataclasses import dataclass
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -116,6 +117,12 @@ class TestGpuHardwareSpec:
         spec = GPU_SPECS["A100-SXM"]
         with pytest.raises(AttributeError):
             spec.tflops_fp16 = 999
+
+    def test_pynvml_import_warning_is_suppressed(self):
+        source = Path("src/openjarvis/telemetry/gpu_monitor.py").read_text(encoding="utf-8")
+
+        assert "warnings.catch_warnings" in source
+        assert "The pynvml package is deprecated" in source
 
 
 # ---------------------------------------------------------------------------

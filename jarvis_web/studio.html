@@ -805,6 +805,13 @@
         </article>
         <article class="context-card">
           <div class="context-title-row">
+            <div class="context-kicker">Runtime Readiness</div>
+            <span class="panel-count" id="studio-runtime-count">checking</span>
+          </div>
+          <div id="studio-runtime-list" class="source-list"></div>
+        </article>
+        <article class="context-card">
+          <div class="context-title-row">
             <div class="context-kicker">Qwen Runtime</div>
             <span class="panel-count" id="studio-qwen-runtime-count">local</span>
           </div>
@@ -1539,6 +1546,36 @@
       setText("studio-system-count", sampled ? `live ${sampled}` : "live");
     }
 
+    function renderRuntimePanel(runtimeHealth) {
+      const root = el("studio-runtime-list");
+      if (!root) return;
+      clear(root);
+      const services = (runtimeHealth && runtimeHealth.services) || [];
+      services.slice(0, 6).forEach((service) => {
+        const row = document.createElement("div");
+        row.className = "source-row";
+        row.title = service.ok ? (service.detail || "") : (service.action || service.detail || "");
+        const icon = document.createElement("span");
+        icon.className = "source-icon";
+        icon.textContent = service.ok ? "●" : "!";
+        const name = document.createElement("span");
+        name.textContent = service.label || service.id || "service";
+        const status = document.createElement("span");
+        status.className = "row-meta";
+        status.textContent = service.ok ? "online" : "down";
+        row.append(icon, name, status);
+        root.appendChild(row);
+      });
+      if (!services.length) {
+        const row = document.createElement("div");
+        row.className = "progress-subtext";
+        row.textContent = "Runtime health not available";
+        root.appendChild(row);
+      }
+      const down = services.filter((service) => service.required && !service.ok).length;
+      setText("studio-runtime-count", runtimeHealth && runtimeHealth.ok ? "ready" : `${down} blocked`);
+    }
+
     function renderQwenRuntimePanel(runtime) {
       const root = el("studio-qwen-runtime-list");
       if (!root) return;
@@ -1689,6 +1726,7 @@
       renderRuns(state.runs || []);
       renderAgents(state.orchestration || {});
       renderSystemPanel(state.system || {});
+      renderRuntimePanel(state.runtime_health || {});
       renderQwenRuntimePanel(state.qwen_runtime || {});
       renderProgressPanel(state.runs || []);
       renderFileActivityPanel(state.runs || []);

@@ -1367,6 +1367,17 @@ def _studio_state() -> Dict[str, Any]:
         state["qwen_patch_proposals"] = []
     state["system"] = _system_health_snapshot()
     state["qwen_runtime"] = _qwen_runtime_status()
+    try:
+        from openjarvis.tools.runtime_health import check_runtime_health
+
+        state["runtime_health"] = check_runtime_health()
+    except Exception:
+        logger.debug("runtime health snapshot unavailable", exc_info=True)
+        state["runtime_health"] = {
+            "ok": False,
+            "summary": "Jarvis runtime health unavailable.",
+            "services": [],
+        }
     state["plugins"] = _studio_plugins()
     try:
         state["orchestration"] = orch_bridge.get_snapshot()
@@ -1684,6 +1695,14 @@ class _Handler(SimpleHTTPRequestHandler):
             self._json_response(200, _studio_state())
         elif self.path == "/studio/state":
             self._json_response(200, _studio_state())
+        elif self.path == "/studio/runtime-health":
+            try:
+                from openjarvis.tools.runtime_health import check_runtime_health
+
+                self._json_response(200, check_runtime_health())
+            except Exception:
+                logger.exception("/studio/runtime-health failed")
+                self._json_response(500, {"error": "internal error", "ref": _err_ref()})
         elif self.path.startswith("/studio/projects"):
             try:
                 from openjarvis.tools.studio_store import StudioStore
