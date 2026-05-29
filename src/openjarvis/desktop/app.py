@@ -80,21 +80,41 @@ def launch(
     title: str = WINDOW_TITLE,
     wait_timeout_s: float = 30.0,
     health_check: HealthCheck | None = None,
+    start_backend: bool = False,
+    stop_backend_on_exit: bool = False,
 ) -> int:
     """Wait for the backend, then open Studio in a native WebView2 window.
 
     Returns a process exit code. 0 = window opened/closed normally; 2 = pywebview
     not installed (instructions printed). The window still opens even if the
     backend is not yet ready — Studio shows its own runtime-readiness screen.
+
+    When ``start_backend`` is set, a BackendSupervisor will start the jarvis.bat
+    stack if it isn't already healthy. ``stop_backend_on_exit`` (only meaningful
+    with start_backend) stops what the supervisor started when the window closes.
     """
     url = resolve_studio_url(host, port)
-    ready = wait_for_backend(timeout_s=wait_timeout_s, health_check=health_check)
-    if not ready:
-        print(
-            "Jarvis backend not detected yet — opening anyway; "
-            "Studio will show a runtime-readiness screen. "
-            "Start it with jarvis.bat if it stays offline."
-        )
+
+    supervisor = None
+    if start_backend:
+        from openjarvis.desktop.backend import BackendSupervisor
+
+        supervisor = BackendSupervisor(health_check=health_check)
+        outcome = supervisor.ensure_running(wait_timeout_s=wait_timeout_s)
+        if not outcome.get("ready"):
+            print(
+                "Backend not healthy after start attempt "
+                f"({outcome.get('reason', 'unknown')}) — opening anyway; "
+                "Studio will show a runtime-readiness screen."
+            )
+    else:
+        ready = wait_for_backend(timeout_s=wait_timeout_s, health_check=health_check)
+        if not ready:
+            print(
+                "Jarvis backend not detected yet — opening anyway; "
+                "Studio will show a runtime-readiness screen. "
+                "Start it with jarvis.bat (or pass --start-backend) if it stays offline."
+            )
 
     try:
         import webview  # lazy: optional dependency
@@ -110,7 +130,11 @@ def launch(
         height=920,
         min_size=(1024, 700),
     )
-    webview.start()
+    try:
+        webview.start()
+    finally:
+        if supervisor is not None and stop_backend_on_exit and supervisor.started_backend():
+            supervisor.stop()
     return 0
 
 
@@ -129,5 +153,21 @@ def main(argv: list[str] | None = None) -> int:
         default=30.0,
         help="seconds to wait for backend readiness before opening the window",
     )
+    parser.add_argument(
+        "--start-backend",
+        action="store_true",
+        help="start the jarvis.bat stack if it isn't already healthy",
+    )
+    parser.add_argument(
+        "--stop-backend-on-exit",
+        action="store_true",
+        help="stop the backend we started when the window closes (needs --start-backend)",
+    )
     args = parser.parse_args(argv)
-    return launch(host=args.host, port=args.port, wait_timeout_s=args.wait)
+    return launch(
+        host=args.host,
+        port=args.port,
+        wait_timeout_s=args.wait,
+        start_backend=args.start_backend,
+        stop_backend_on_exit=args.stop_backend_on_exit,
+    )
