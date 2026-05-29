@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import socket
+import sys
 from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
@@ -68,6 +69,15 @@ _DEFAULT_STATUS: dict[str, Any] = {
     ],
 }
 
+_BENCHMARK_RUNTIME_TO_LANE_ID = {
+    "wsl-turboq-mtp:8084": "wsl-mtp-froggeric",
+    "wsl-mtp-froggeric": "wsl-mtp-froggeric",
+    "vllm-int4-mtp:8086": "vllm-int4-mtp",
+    "vllm-int4-mtp": "vllm-int4-mtp",
+    "wsl-rotorquant-35b-a3b:8085": "rotorquant-35b-a3b",
+    "rotorquant-35b-a3b": "rotorquant-35b-a3b",
+}
+
 
 def qwen_runtime_status_path() -> Path:
     configured = os.environ.get("OPENJARVIS_QWEN_RUNTIME_STATUS_PATH", "").strip()
@@ -106,6 +116,82 @@ def save_qwen_runtime_status(
     return target
 
 
+def qwen_runtime_status_from_benchmark_results(
+    results: list[dict[str, Any]],
+    *,
+    base_status: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    status = deepcopy(base_status) if base_status is not None else default_qwen_runtime_status()
+    lanes = status.get("lanes")
+    if not isinstance(lanes, list):
+        status = default_qwen_runtime_status()
+        lanes = status["lanes"]
+
+    lanes_by_id = {
+        str(lane.get("id")): lane
+        for lane in lanes
+        if isinstance(lane, dict) and lane.get("id")
+    }
+    for result in results:
+        if not isinstance(result, dict):
+            continue
+        runtime = str(result.get("runtime") or "")
+        lane_id = _BENCHMARK_RUNTIME_TO_LANE_ID.get(runtime)
+        if not lane_id:
+            continue
+        lane = lanes_by_id.get(lane_id)
+        if not lane:
+            continue
+        benchmark = lane.setdefault("benchmark", {})
+        if not isinstance(benchmark, dict):
+            benchmark = {}
+            lane["benchmark"] = benchmark
+        ok = bool(result.get("ok"))
+        benchmark["latest_tok_s"] = _round_float(result.get("tokens_per_second"))
+        benchmark["latest_seconds"] = _round_float(result.get("seconds"))
+        benchmark["latest_tokens"] = int(result.get("tokens") or 0)
+        lane["last_result_ok"] = ok
+        lane["last_benchmarked_at"] = datetime.now(timezone.utc).isoformat()
+        if ok:
+            lane.pop("last_error", None)
+        else:
+            lane["last_error"] = str(result.get("error") or "benchmark failed")[:500]
+
+    status["updated_at"] = datetime.now(timezone.utc).isoformat()
+    return status
+
+
+def write_qwen_runtime_status_from_benchmark_file(
+    benchmark_results_path: Path | str,
+    *,
+    status_path: Path | str | None = None,
+) -> Path:
+    results_path = Path(benchmark_results_path)
+    data = json.loads(results_path.read_text(encoding="utf-8"))
+    if not isinstance(data, list):
+        raise ValueError("benchmark results must be a JSON list")
+    status = qwen_runtime_status_from_benchmark_results(data)
+    return save_qwen_runtime_status(status, path=status_path)
+
+
+def main(argv: list[str] | None = None) -> int:
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Update Jarvis Studio Qwen runtime status from benchmark JSON."
+    )
+    parser.add_argument("--benchmark-results", required=True)
+    parser.add_argument("--status-path", default="")
+    args = parser.parse_args(argv)
+
+    written = write_qwen_runtime_status_from_benchmark_file(
+        args.benchmark_results,
+        status_path=args.status_path or None,
+    )
+    print(str(written))
+    return 0
+
+
 def load_qwen_runtime_status(
     *,
     path: Path | str | None = None,
@@ -113,6 +199,13 @@ def load_qwen_runtime_status(
 ) -> dict[str, Any]:
     status = _load_status_file(Path(path) if path is not None else qwen_runtime_status_path())
     return load_qwen_runtime_status_from_data(status, port_checker=port_checker)
+
+
+def _round_float(value: Any) -> float:
+    try:
+        return round(float(value), 2)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def load_qwen_runtime_status_from_data(
@@ -179,3 +272,7 @@ def _load_status_file(path: Path) -> dict[str, Any]:
     if not isinstance(data, dict):
         return default_qwen_runtime_status()
     return data
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

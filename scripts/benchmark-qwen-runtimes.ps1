@@ -6,7 +6,9 @@ param(
     [int]$TimeoutSec = 900,
     [string]$TurboQBaseUrl = "http://127.0.0.1:8084/v1",
     [string]$RotorQuantBaseUrl = "http://127.0.0.1:8085/v1",
-    [string]$OutputPath = ""
+    [string]$OutputPath = "",
+    [switch]$UpdateStudioStatus,
+    [string]$RuntimeStatusPath = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -127,3 +129,23 @@ if (-not $OutputPath) {
 }
 $results | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $OutputPath -Encoding UTF8
 Write-Host "Benchmark written to: $OutputPath"
+
+if ($UpdateStudioStatus) {
+    $repoRoot = Split-Path -Parent $PSScriptRoot
+    $python = Join-Path $repoRoot ".venv\Scripts\python.exe"
+    $statusArgs = @(
+        "-m",
+        "openjarvis.tools.qwen_runtime_status",
+        "--benchmark-results",
+        $OutputPath
+    )
+    if ($RuntimeStatusPath) {
+        $statusArgs += @("--status-path", $RuntimeStatusPath)
+    }
+    if (Test-Path -LiteralPath $python) {
+        & $python @statusArgs
+    } else {
+        & python @statusArgs
+    }
+    Write-Host "Studio Qwen Runtime status updated."
+}

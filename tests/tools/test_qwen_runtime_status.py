@@ -1,9 +1,15 @@
 import json
+from pathlib import Path
 
 from openjarvis.tools.qwen_runtime_status import (
     load_qwen_runtime_status,
+    main,
+    qwen_runtime_status_from_benchmark_results,
     save_qwen_runtime_status,
+    write_qwen_runtime_status_from_benchmark_file,
 )
+
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_qwen_runtime_status_defaults_include_current_active_lane():
@@ -92,3 +98,104 @@ def test_save_qwen_runtime_status_writes_loadable_json(tmp_path):
     loaded = json.loads(path.read_text(encoding="utf-8"))
     assert loaded["active_lane"] == "test-lane"
     assert loaded["lanes"][0]["benchmark"]["short_tok_s"] == 99.9
+
+
+def test_runtime_status_from_benchmark_results_updates_known_lanes():
+    status = qwen_runtime_status_from_benchmark_results(
+        [
+            {
+                "runtime": "wsl-turboq-mtp:8084",
+                "ok": True,
+                "seconds": 2.2,
+                "tokens": 168,
+                "tokens_per_second": 76.31,
+            },
+            {
+                "runtime": "wsl-rotorquant-35b-a3b:8085",
+                "ok": False,
+                "seconds": 900,
+                "tokens": 0,
+                "tokens_per_second": 0,
+                "error": "timeout",
+            },
+        ]
+    )
+
+    lanes = {lane["id"]: lane for lane in status["lanes"]}
+    assert status["active_lane"] == "wsl-mtp-froggeric"
+    assert lanes["wsl-mtp-froggeric"]["benchmark"]["latest_tok_s"] == 76.31
+    assert lanes["wsl-mtp-froggeric"]["last_result_ok"] is True
+    assert lanes["rotorquant-35b-a3b"]["last_result_ok"] is False
+    assert lanes["rotorquant-35b-a3b"]["last_error"] == "timeout"
+
+
+def test_write_runtime_status_from_benchmark_file(tmp_path):
+    results_path = tmp_path / "benchmark.json"
+    status_path = tmp_path / "qwen-runtime-status.json"
+    results_path.write_text(
+        json.dumps(
+            [
+                {
+                    "runtime": "vllm-int4-mtp:8086",
+                    "ok": True,
+                    "seconds": 3.0,
+                    "tokens": 120,
+                    "tokens_per_second": 40.0,
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    written = write_qwen_runtime_status_from_benchmark_file(
+        results_path,
+        status_path=status_path,
+    )
+
+    assert written == status_path
+    status = load_qwen_runtime_status(path=status_path, port_checker=lambda _port: False)
+    lane = next(lane for lane in status["lanes"] if lane["id"] == "vllm-int4-mtp")
+    assert lane["benchmark"]["latest_tok_s"] == 40.0
+
+
+def test_qwen_runtime_status_cli_writes_status_file(tmp_path):
+    results_path = tmp_path / "benchmark.json"
+    status_path = tmp_path / "qwen-runtime-status.json"
+    results_path.write_text(
+        json.dumps(
+            [
+                {
+                    "runtime": "wsl-turboq-mtp:8084",
+                    "ok": True,
+                    "seconds": 1.5,
+                    "tokens": 90,
+                    "tokens_per_second": 60.0,
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    exit_code = main(
+        [
+            "--benchmark-results",
+            str(results_path),
+            "--status-path",
+            str(status_path),
+        ]
+    )
+
+    assert exit_code == 0
+    status = json.loads(status_path.read_text(encoding="utf-8"))
+    lane = next(lane for lane in status["lanes"] if lane["id"] == "wsl-mtp-froggeric")
+    assert lane["benchmark"]["latest_tok_s"] == 60.0
+
+
+def test_benchmark_script_can_update_studio_runtime_status():
+    script = (ROOT / "scripts" / "benchmark-qwen-runtimes.ps1").read_text(
+        encoding="utf-8"
+    )
+
+    assert "UpdateStudioStatus" in script
+    assert "openjarvis.tools.qwen_runtime_status" in script
+    assert "--benchmark-results" in script
