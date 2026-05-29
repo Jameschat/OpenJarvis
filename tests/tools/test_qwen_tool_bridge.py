@@ -436,3 +436,42 @@ def test_apply_patch_proposal_honors_recorded_repo_root(monkeypatch, tmp_path):
     )
     assert applied["ok"] is True
     assert (site / "index.html").read_text(encoding="utf-8") == "<h1>new</h1>\n"
+
+
+def test_manifest_exposes_verify_in_sandbox():
+    from openjarvis.tools import qwen_tool_bridge
+
+    manifest = qwen_tool_bridge.tool_manifest()
+    assert "verify_in_sandbox" in manifest
+    assert "DISPOSABLE" in manifest
+
+
+def test_verify_in_sandbox_runs_declared_check_scoped_to_project(monkeypatch, tmp_path):
+    """End-to-end: Qwen's verify_in_sandbox request runs the project's declared
+    check against its proposed files in a throwaway copy, scoped via repo_root."""
+    import sys
+    from openjarvis.tools import qwen_tool_bridge
+
+    monkeypatch.delenv("OPENJARVIS_QWEN_REPO_ROOT", raising=False)
+    site = tmp_path / "proj"
+    site.mkdir()
+    (site / ".jarvis-verify.txt").write_text(
+        f"{sys.executable} -m py_compile app.py\n", encoding="utf-8"
+    )
+    (site / "app.py").write_text("def broken(:\n", encoding="utf-8")
+
+    results = qwen_tool_bridge.execute_tool_requests(
+        [
+            {
+                "id": "r1",
+                "tool": "verify_in_sandbox",
+                "args": {"files": [{"path": "app.py", "content": "def ok():\n    return 1\n"}]},
+            }
+        ],
+        repo_root=str(site),
+    )
+
+    assert results[0]["ok"] is True
+    assert results[0]["passed"] is True
+    # Real file untouched.
+    assert (site / "app.py").read_text(encoding="utf-8") == "def broken(:\n"

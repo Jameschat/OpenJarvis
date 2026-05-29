@@ -98,6 +98,18 @@ def tool_manifest() -> str:
             "description": "Open a local Jarvis page and capture a screenshot/text excerpt for visual QA.",
         },
         {
+            "tool": "verify_in_sandbox",
+            "tier": "verify",
+            "args": {
+                "files": [{"path": "project-relative path", "content": "full proposed file content"}],
+            },
+            "description": (
+                "Apply your proposed files into a DISPOSABLE copy of the project and run the "
+                "project's declared check (.jarvis-verify.txt). Returns the real pass/fail + "
+                "output so you can fix actual errors and try again. Does NOT touch real files."
+            ),
+        },
+        {
             "tool": "web_search",
             "tier": "research",
             "args": {"query": "string", "limit": "1..5"},
@@ -247,6 +259,8 @@ def _execute_one(request: dict[str, Any]) -> dict[str, Any]:
             return _repo_patch_proposal(request_id, args)
         if tool == "browser_visual_check":
             return _browser_visual_check(request_id, args)
+        if tool == "verify_in_sandbox":
+            return _verify_in_sandbox(request_id, args)
         if tool == "web_search":
             return _tool_use_call(request_id, tool, args, {"query", "limit"})
         if tool == "github_search":
@@ -438,6 +452,24 @@ def _repo_search(request_id: str, args: dict[str, Any]) -> dict[str, Any]:
         "query": query,
         "matches": matches,
     }
+
+
+def _verify_in_sandbox(request_id: str, args: dict[str, Any]) -> dict[str, Any]:
+    """Run the project's declared check against Qwen's proposed files in a
+    disposable copy of the active project (v2 autonomy). Qwen controls the file
+    contents; the operator controls the check command via .jarvis-verify.txt."""
+    from openjarvis.tools import qwen_sandbox
+
+    files = args.get("files")
+    if not isinstance(files, list) or not files:
+        return {
+            "id": request_id,
+            "tool": "verify_in_sandbox",
+            "ok": False,
+            "error": "files must be a non-empty list",
+        }
+    result = qwen_sandbox.run_check_in_sandbox(_repo_root(), files)
+    return {"id": request_id, "tool": "verify_in_sandbox", **result}
 
 
 def _patch_proposal_dir() -> Path:
