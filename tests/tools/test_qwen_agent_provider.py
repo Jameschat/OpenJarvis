@@ -813,3 +813,26 @@ def test_qwen_should_think_all_enables_even_simple(monkeypatch):
 
     monkeypatch.setenv("OPENJARVIS_QWEN_THINKING", "all")
     assert agent_runner._qwen_should_think("hi") is True
+
+
+def test_extract_qwen_proposed_files_reads_latest_proposal(tmp_path):
+    from openjarvis.tools import agent_runner
+
+    proposal = tmp_path / "p.json"
+    proposal.write_text(
+        json.dumps({"files": [{"path": "app.py", "content": "print(1)\n"}]}),
+        encoding="utf-8",
+    )
+    results = [
+        {"tool": "recall_vault", "ok": True},
+        {"tool": "repo_patch_proposal", "ok": True, "proposal_path": str(proposal)},
+    ]
+    files = agent_runner._extract_qwen_proposed_files(results)
+    assert files == [{"path": "app.py", "content": "print(1)\n"}]
+
+
+def test_extract_qwen_proposed_files_none_without_proposal():
+    from openjarvis.tools import agent_runner
+
+    assert agent_runner._extract_qwen_proposed_files([{"tool": "repo_read", "ok": True}]) is None
+    assert agent_runner._extract_qwen_proposed_files([]) is None

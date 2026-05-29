@@ -2166,6 +2166,30 @@ def _qwen_should_think(task_prompt: str) -> bool:
     return qwen_quality_loop.is_complex(task_prompt or "")
 
 
+def _extract_qwen_proposed_files(all_tool_results: list[Dict[str, Any]]) -> list[Dict[str, Any]] | None:
+    """Pull the file set from the most recent successful repo_patch_proposal in
+    a Qwen tool-bridge run, for the v2 sandbox verification loop. Returns a list
+    of {path, content} or None if no proposal was made."""
+    for res in reversed(all_tool_results or []):
+        if (
+            isinstance(res, dict)
+            and res.get("tool") == "repo_patch_proposal"
+            and res.get("ok")
+            and res.get("proposal_path")
+        ):
+            try:
+                data = json.loads(Path(res["proposal_path"]).read_text(encoding="utf-8-sig"))
+            except Exception:
+                return None
+            files = [
+                {"path": f["path"], "content": f["content"]}
+                for f in data.get("files", [])
+                if isinstance(f, dict) and "path" in f and "content" in f
+            ]
+            return files or None
+    return None
+
+
 def _run_qwen_task(task: Task, agent_spec: Dict[str, Any]) -> None:
     """Run a local Qwen-backed single-shot agent through LiteLLM.
 
@@ -2346,6 +2370,53 @@ def _run_qwen_task(task: Task, agent_spec: Dict[str, Any]) -> None:
                 f"{qwen_tool_bridge.format_tool_results(all_tool_results)}"
             )
 
+        # Sandbox verification loop (v2 wired into the autonomy loop): if the
+        # active project declares a check (.jarvis-verify.txt) and Qwen proposed
+        # files, actually RUN the proposal in a disposable copy and feed real
+        # failures back until it passes or the budget is spent. No-op (skipped)
+        # when there's no declared check or no proposal — so default behaviour is
+        # unchanged.
+        verify_verdict = None
+        if task.repo_root:
+            from openjarvis.tools import qwen_sandbox, qwen_verify_loop
+
+            if qwen_sandbox.load_verify_command(Path(task.repo_root)) is not None:
+                proposed_files = _extract_qwen_proposed_files(all_tool_results)
+                if proposed_files:
+                    def _redraft_proposal(feedback: str):
+                        out = _call_local_qwen(
+                            feedback,
+                            user_text="Return a corrected repo_patch_proposal now.",
+                        )
+                        for req in qwen_tool_bridge.parse_tool_requests(out):
+                            if req.get("tool") == "repo_patch_proposal":
+                                files = (req.get("args") or {}).get("files")
+                                if isinstance(files, list):
+                                    return files
+                        return None
+
+                    try:
+                        _verify_rounds = int(os.environ.get("OPENJARVIS_QWEN_VERIFY_ROUNDS", "3"))
+                    except ValueError:
+                        _verify_rounds = 3
+                    _verify_rounds = max(0, min(_verify_rounds, 5))
+                    final_files, verify_verdict, verify_trail = qwen_verify_loop.verify_and_revise(
+                        proposed_files,
+                        task.repo_root,
+                        redraft_proposal=_redraft_proposal,
+                        run_check=qwen_sandbox.run_check_in_sandbox,
+                        max_rounds=_verify_rounds,
+                        base_prompt=prompt,
+                    )
+                    (ws / "QWEN_VERIFIED_PROPOSAL.json").write_text(
+                        json.dumps(
+                            {"verdict": verify_verdict, "files": final_files, "rounds": verify_trail},
+                            indent=2,
+                        )
+                        + "\n",
+                        encoding="utf-8",
+                    )
+
         # Reflexion pass (v1.2, Qwen autonomy upgrade): for complex tasks, have
         # Qwen critique its own draft and rewrite before the quality gate. Opt-in
         # via OPENJARVIS_QWEN_REFLEXION because it adds an LLM call (latency) to
@@ -2394,6 +2465,21 @@ def _run_qwen_task(task: Task, agent_spec: Dict[str, Any]) -> None:
                 encoding="utf-8",
             )
 
+        verify_block = ""
+        if verify_verdict is not None:
+            if not verify_verdict.get("available"):
+                vstatus = f"unavailable ({verify_verdict.get('reason', 'no declared check')})"
+            elif verify_verdict.get("verified"):
+                vstatus = "PASSED — proposal was executed in a sandbox and the check passed"
+            else:
+                vstatus = "FAILED — proposal still fails the check; escalation recommended"
+            verify_block = (
+                "\n## Sandbox Verification (v2)\n\n"
+                f"Status: {vstatus}\n\n"
+                f"Revision rounds: {verify_verdict.get('rounds', 0)}\n\n"
+                f"Last exit code: {verify_verdict.get('exit_code', 'n/a')}\n"
+            )
+
         result_md = (
             f"# {task.title}\n\n"
             f"Provider: qwen\n\n"
@@ -2402,6 +2488,7 @@ def _run_qwen_task(task: Task, agent_spec: Dict[str, Any]) -> None:
             "## Result\n\n"
             f"{content.strip()}\n\n"
             f"{qwen_quality_loop.format_quality_report(quality)}"
+            f"{verify_block}"
         )
         result_path = ws / (f"{task.id}.RESULT.md" if task.project_id else "RESULT.md")
         result_path.write_text(result_md, encoding="utf-8")
