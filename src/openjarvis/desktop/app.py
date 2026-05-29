@@ -41,6 +41,49 @@ def _default_health_check() -> dict[str, Any]:
     return check_runtime_health()
 
 
+class DesktopApi:
+    """JS-callable API exposed to the boot screen (``window.pywebview.api``)."""
+
+    def __init__(
+        self,
+        studio_url: str,
+        *,
+        health_check: HealthCheck | None = None,
+        supervisor: Any | None = None,
+    ) -> None:
+        self._studio_url = studio_url
+        self._health_check = health_check
+        self._supervisor = supervisor
+
+    def studio_url(self) -> str:
+        return self._studio_url
+
+    def ready(self) -> bool:
+        return backend_ready(health_check=self._health_check)
+
+    def start_backend(self) -> dict[str, Any]:
+        if self._supervisor is None:
+            return {"started": False, "reason": "supervisor not available"}
+        return self._supervisor.ensure_running(wait_timeout_s=120)
+
+
+def acquire_single_instance(port: int = 48707):
+    """Best-effort single-instance guard: bind a localhost TCP port. Returns the
+    bound socket (keep a reference alive for the app's lifetime) if we are the
+    only instance, or None if another instance already holds it."""
+    import socket
+
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 0)
+        sock.bind(("127.0.0.1", int(port)))
+        sock.listen(1)
+        return sock
+    except OSError:
+        sock.close()
+        return None
+
+
 def backend_ready(*, health_check: HealthCheck | None = None) -> bool:
     """True when the required Jarvis backend services are reachable."""
     check = health_check or _default_health_check
@@ -82,39 +125,38 @@ def launch(
     health_check: HealthCheck | None = None,
     start_backend: bool = False,
     stop_backend_on_exit: bool = False,
+    single_instance: bool = True,
 ) -> int:
-    """Wait for the backend, then open Studio in a native WebView2 window.
+    """Open Jarvis Studio in a native WebView2 window.
 
-    Returns a process exit code. 0 = window opened/closed normally; 2 = pywebview
-    not installed (instructions printed). The window still opens even if the
-    backend is not yet ready — Studio shows its own runtime-readiness screen.
+    Returns a process exit code. 0 = normal; 2 = pywebview not installed; 3 =
+    another instance already running. If the backend is healthy the window opens
+    directly on Studio; otherwise it opens a branded **readiness boot screen**
+    that polls for the backend, lets the user start it, and navigates to Studio
+    once healthy.
 
-    When ``start_backend`` is set, a BackendSupervisor will start the jarvis.bat
-    stack if it isn't already healthy. ``stop_backend_on_exit`` (only meaningful
-    with start_backend) stops what the supervisor started when the window closes.
+    ``start_backend`` proactively starts the jarvis.bat stack via a supervisor;
+    ``stop_backend_on_exit`` stops what the supervisor started on close.
     """
     url = resolve_studio_url(host, port)
 
-    supervisor = None
-    if start_backend:
-        from openjarvis.desktop.backend import BackendSupervisor
+    _instance_lock = None
+    if single_instance:
+        _instance_lock = acquire_single_instance()
+        if _instance_lock is None:
+            print("Jarvis desktop app is already running.")
+            return 3
 
-        supervisor = BackendSupervisor(health_check=health_check)
+    # A supervisor is always available so the boot screen's "Start backend"
+    # button works; we only auto-start when asked.
+    from openjarvis.desktop.backend import BackendSupervisor
+
+    supervisor = BackendSupervisor(health_check=health_check)
+    if start_backend:
         outcome = supervisor.ensure_running(wait_timeout_s=wait_timeout_s)
-        if not outcome.get("ready"):
-            print(
-                "Backend not healthy after start attempt "
-                f"({outcome.get('reason', 'unknown')}) — opening anyway; "
-                "Studio will show a runtime-readiness screen."
-            )
+        ready = bool(outcome.get("ready"))
     else:
         ready = wait_for_backend(timeout_s=wait_timeout_s, health_check=health_check)
-        if not ready:
-            print(
-                "Jarvis backend not detected yet — opening anyway; "
-                "Studio will show a runtime-readiness screen. "
-                "Start it with jarvis.bat (or pass --start-backend) if it stays offline."
-            )
 
     try:
         import webview  # lazy: optional dependency
@@ -123,18 +165,31 @@ def launch(
         print(f"Meanwhile you can open {url} in a browser.")
         return 2
 
-    webview.create_window(
-        title,
-        url,
-        width=1440,
-        height=920,
-        min_size=(1024, 700),
-    )
+    if ready:
+        webview.create_window(title, url, width=1440, height=920, min_size=(1024, 700))
+    else:
+        from openjarvis.desktop.boot import boot_html
+
+        api = DesktopApi(url, health_check=health_check, supervisor=supervisor)
+        webview.create_window(
+            title,
+            html=boot_html(url, title=title),
+            js_api=api,
+            width=1440,
+            height=920,
+            min_size=(1024, 700),
+        )
+
     try:
         webview.start()
     finally:
-        if supervisor is not None and stop_backend_on_exit and supervisor.started_backend():
+        if stop_backend_on_exit and supervisor.started_backend():
             supervisor.stop()
+        if _instance_lock is not None:
+            try:
+                _instance_lock.close()
+            except Exception:
+                pass
     return 0
 
 
@@ -163,6 +218,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="stop the backend we started when the window closes (needs --start-backend)",
     )
+    parser.add_argument(
+        "--no-single-instance",
+        action="store_true",
+        help="allow more than one desktop window to run at once",
+    )
     args = parser.parse_args(argv)
     return launch(
         host=args.host,
@@ -170,4 +230,5 @@ def main(argv: list[str] | None = None) -> int:
         wait_timeout_s=args.wait,
         start_backend=args.start_backend,
         stop_backend_on_exit=args.stop_backend_on_exit,
+        single_instance=not args.no_single_instance,
     )
