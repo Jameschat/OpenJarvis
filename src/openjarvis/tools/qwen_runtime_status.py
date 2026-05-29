@@ -167,7 +167,9 @@ def write_qwen_runtime_status_from_benchmark_file(
     status_path: Path | str | None = None,
 ) -> Path:
     results_path = Path(benchmark_results_path)
-    data = json.loads(results_path.read_text(encoding="utf-8"))
+    data = json.loads(results_path.read_text(encoding="utf-8-sig"))
+    if isinstance(data, dict):
+        data = [data]
     if not isinstance(data, list):
         raise ValueError("benchmark results must be a JSON list")
     status = qwen_runtime_status_from_benchmark_results(data)

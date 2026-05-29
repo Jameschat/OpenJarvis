@@ -160,6 +160,61 @@ def test_write_runtime_status_from_benchmark_file(tmp_path):
     assert lane["benchmark"]["latest_tok_s"] == 40.0
 
 
+def test_write_runtime_status_accepts_powershell_utf8_bom(tmp_path):
+    results_path = tmp_path / "benchmark-bom.json"
+    status_path = tmp_path / "qwen-runtime-status.json"
+    results_path.write_text(
+        "\ufeff"
+        + json.dumps(
+            [
+                {
+                    "runtime": "wsl-turboq-mtp:8084",
+                    "ok": True,
+                    "seconds": 1.87,
+                    "tokens": 143,
+                    "tokens_per_second": 76.47,
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    write_qwen_runtime_status_from_benchmark_file(
+        results_path,
+        status_path=status_path,
+    )
+
+    status = load_qwen_runtime_status(path=status_path, port_checker=lambda _port: False)
+    lane = next(lane for lane in status["lanes"] if lane["id"] == "wsl-mtp-froggeric")
+    assert lane["benchmark"]["latest_tok_s"] == 76.47
+
+
+def test_write_runtime_status_accepts_single_benchmark_object(tmp_path):
+    results_path = tmp_path / "single-benchmark.json"
+    status_path = tmp_path / "qwen-runtime-status.json"
+    results_path.write_text(
+        json.dumps(
+            {
+                "runtime": "wsl-turboq-mtp:8084",
+                "ok": True,
+                "seconds": 1.87,
+                "tokens": 143,
+                "tokens_per_second": 76.47,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    write_qwen_runtime_status_from_benchmark_file(
+        results_path,
+        status_path=status_path,
+    )
+
+    status = load_qwen_runtime_status(path=status_path, port_checker=lambda _port: False)
+    lane = next(lane for lane in status["lanes"] if lane["id"] == "wsl-mtp-froggeric")
+    assert lane["benchmark"]["latest_tok_s"] == 76.47
+
+
 def test_qwen_runtime_status_cli_writes_status_file(tmp_path):
     results_path = tmp_path / "benchmark.json"
     status_path = tmp_path / "qwen-runtime-status.json"
