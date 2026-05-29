@@ -225,7 +225,7 @@ def test_rotorquant_command_uses_long_context_coding_defaults():
     assert "--port" in command
     assert "8085" in command
     assert "--ctx-size" in command
-    assert "200000" in command
+    assert "128000" in command
     assert "--cache-type-k" in command
     assert "q8_0" in command
     assert "--cache-type-v" in command
@@ -265,6 +265,7 @@ def test_rotorquant_wsl_start_script_is_opt_in_and_separate():
     script = Path("scripts/start-qwen-rotorquant-wsl.ps1").read_text(encoding="utf-8")
 
     assert "EXPERIMENTAL" in script
+    assert "[int]$ContextTokens = 128000" in script
     assert "llama-cpp-turboquant" in script
     assert "Qwen3.6-35B-A3B-RotorQuant-GGUF-IQ4_XS" in script
     assert "feature/turboquant-kv-cache" in script

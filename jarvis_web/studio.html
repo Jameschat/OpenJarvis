@@ -1442,8 +1442,8 @@
         percent: 0,
         status: "normal",
         used_chars: 0,
-        limit_chars: 800000,
-        remaining_chars: 800000
+        limit_chars: 512000,
+        remaining_chars: 512000
       };
       const percent = Math.max(0, Math.min(100, Number(context.percent || 0)));
       root.className = `context-meter ${context.status || "normal"}`;

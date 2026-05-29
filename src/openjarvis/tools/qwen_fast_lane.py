@@ -396,7 +396,7 @@ def build_rotorquant_command(
     model_ref: str,
     host: str = "0.0.0.0",
     port: int = 8085,
-    context_tokens: int = 200000,
+    context_tokens: int = 128000,
     gpu_layers: int = 99,
     threads: int = 24,
     batch_size: int = 4092,

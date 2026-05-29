@@ -57,14 +57,14 @@ _DEFAULT_STATUS: dict[str, Any] = {
             "alias": "qwen3.6-35b-a3b-rotorquant",
             "port": 8085,
             "role": "prototype",
-            "context_tokens": 200000,
+            "context_tokens": 128000,
             "benchmark": {
                 "short_tok_s": 154.69,
                 "long_completion_tok_s": 11.46,
                 "long_total_tok_s": 6223.0,
             },
             "verdict": "hold",
-            "notes": "Very fast short output, but speculative decoding was not active.",
+            "notes": "Very fast short output; daily target reduced to 128K because Studio has memory handoff.",
         },
     ],
 }

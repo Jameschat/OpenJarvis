@@ -11,7 +11,7 @@ from typing import Any
 from openjarvis.tools import studio_context, studio_research, studio_store, studio_workflows
 
 STUDIO_RUN_STALE_AFTER_SECONDS = 300
-STUDIO_CONTEXT_CHAR_LIMIT = int(os.environ.get("OPENJARVIS_STUDIO_CONTEXT_CHAR_LIMIT", "800000"))
+STUDIO_CONTEXT_CHAR_LIMIT = int(os.environ.get("OPENJARVIS_STUDIO_CONTEXT_CHAR_LIMIT", "512000"))
 BRAIN_ROOT = Path(os.environ.get("OPENJARVIS_BRAIN_ROOT", r"E:\Claude\Obsidian\Claude\Brain"))
 _FILE_ACTIVITY_IGNORES = {
     "jarvis.bat",

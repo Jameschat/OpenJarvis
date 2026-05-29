@@ -34,7 +34,7 @@ def test_qwen_runtime_status_loads_json_override(tmp_path):
         json.dumps(
             {
                 "active_lane": "rotorquant-35b-a3b",
-                "promotion_verdict": "Promote after verified 200K context benchmark.",
+            "promotion_verdict": "Promote after verified 128K context benchmark.",
                 "lanes": [
                     {
                         "id": "rotorquant-35b-a3b",
@@ -42,7 +42,7 @@ def test_qwen_runtime_status_loads_json_override(tmp_path):
                         "alias": "qwen3.6-35b-a3b-rotorquant",
                         "port": 8085,
                         "role": "active",
-                        "context_tokens": 200000,
+                        "context_tokens": 128000,
                         "benchmark": {"short_tok_s": 142.0},
                         "verdict": "candidate",
                         "notes": "Updated by benchmark harness.",
@@ -58,7 +58,7 @@ def test_qwen_runtime_status_loads_json_override(tmp_path):
     assert status["active_lane"] == "rotorquant-35b-a3b"
     assert status["active_alias"] == "qwen3.6-35b-a3b-rotorquant"
     assert status["active_online"] is True
-    assert status["promotion_verdict"] == "Promote after verified 200K context benchmark."
+    assert status["promotion_verdict"] == "Promote after verified 128K context benchmark."
     assert status["lanes"][0]["online"] is True
     assert status["lanes"][0]["benchmark"]["short_tok_s"] == 142.0
 
