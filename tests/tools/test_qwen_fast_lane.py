@@ -206,6 +206,13 @@ def test_turboq_mtp_wsl_start_script_is_opt_in_and_separate():
     assert "8084" in script
 
 
+def test_froggeric_wsl_start_script_uses_studio_sized_context():
+    script = Path("scripts/start-qwen-mtp-froggeric-wsl.ps1").read_text(encoding="utf-8")
+
+    assert "[int]$ContextTokens = 16384" in script
+    assert "--ctx-size $ContextTokens" in script
+
+
 def test_rotorquant_command_uses_long_context_coding_defaults():
     command = qwen_fast_lane.build_rotorquant_command(
         turboquant_server_path="/root/llama-cpp-turboquant/build/bin/llama-server",

@@ -4,7 +4,7 @@ param(
     [string]$Model = "/mnt/e/Claude/models/Qwen3.6-27B-Q4_K_M-mtp.gguf",
     [string]$ChatTemplate = "/mnt/e/Claude/OpenJarvis/configs/qwen/froggeric-chat-template.jinja",
     [int]$Port = 8084,
-    [int]$ContextTokens = 4096,
+    [int]$ContextTokens = 16384,
     [int]$DraftMax = 3,
     [string]$CacheTypeK = "q4_0",
     [string]$CacheTypeV = "q4_0",

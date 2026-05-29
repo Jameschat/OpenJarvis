@@ -27,7 +27,7 @@ _DEFAULT_STATUS: dict[str, Any] = {
             "alias": "qwen3.6-27b-local",
             "port": 8084,
             "role": "active",
-            "context_tokens": 4096,
+            "context_tokens": 16384,
             "benchmark": {
                 "short_tok_s": 58.34,
                 "studio_json_tok_s": 76.31,

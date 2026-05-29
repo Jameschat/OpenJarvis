@@ -19,6 +19,8 @@ def test_qwen_runtime_status_defaults_include_current_active_lane():
     assert status["active_alias"] == "qwen3.6-27b-local"
     assert status["active_online"] is False
     assert "do not promote vLLM" in status["promotion_verdict"]
+    active = next(lane for lane in status["lanes"] if lane["id"] == "wsl-mtp-froggeric")
+    assert active["context_tokens"] == 16384
     assert {lane["id"] for lane in status["lanes"]} >= {
         "wsl-mtp-froggeric",
         "vllm-int4-mtp",
