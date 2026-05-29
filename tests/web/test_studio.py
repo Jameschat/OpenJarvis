@@ -137,6 +137,9 @@ def test_studio_has_live_system_health_panel():
 def test_studio_has_qwen_runtime_verdict_panel():
     html = (ROOT / "jarvis_web" / "studio.html").read_text(encoding="utf-8")
     source = (ROOT / "src" / "openjarvis" / "cli" / "brain_server.py").read_text(encoding="utf-8")
+    runtime_source = (
+        ROOT / "src" / "openjarvis" / "tools" / "qwen_runtime_status.py"
+    ).read_text(encoding="utf-8")
 
     for marker in [
         'id="studio-qwen-runtime-list"',
@@ -148,8 +151,9 @@ def test_studio_has_qwen_runtime_verdict_panel():
         "wsl-mtp-froggeric",
         "vllm-int4-mtp",
     ]:
-        assert marker in html or marker in source
+        assert marker in html or marker in source or marker in runtime_source
     assert "def _qwen_runtime_status" in source
+    assert "load_qwen_runtime_status" in source
     assert 'state["qwen_runtime"]' in source
 
 

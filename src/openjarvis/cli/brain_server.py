@@ -1111,64 +1111,11 @@ def _qwen_runtime_status() -> Dict[str, Any]:
     This is deliberately read-only. Experimental lanes can be installed and
     benchmarked without becoming live candidates until their verdict changes.
     """
-    lanes = [
-        {
-            "id": "wsl-mtp-froggeric",
-            "label": "WSL MTP Froggeric",
-            "alias": "qwen3.6-27b-local",
-            "port": 8084,
-            "role": "active",
-            "context_tokens": 4096,
-            "benchmark": {
-                "short_tok_s": 58.34,
-                "studio_json_tok_s": 76.31,
-                "tool_xml_tok_s": 58.44,
-            },
-            "verdict": "keep",
-            "notes": "Current Jarvis lane; best Studio planning result in latest run.",
-        },
-        {
-            "id": "vllm-int4-mtp",
-            "label": "vLLM INT4 MTP",
-            "alias": "qwen3.6-27b-vllm",
-            "port": 8086,
-            "role": "experimental",
-            "context_tokens": 32768,
-            "benchmark": {
-                "short_tok_s": 40.03,
-                "studio_json_tok_s": 34.26,
-                "tool_xml_tok_s": 61.04,
-            },
-            "verdict": "reject",
-            "notes": "32K works only with CUDA graphs disabled; 200K did not fit on 24GB.",
-        },
-        {
-            "id": "rotorquant-35b-a3b",
-            "label": "35B-A3B RotorQuant",
-            "alias": "qwen3.6-35b-a3b-rotorquant",
-            "port": 8085,
-            "role": "prototype",
-            "context_tokens": 200000,
-            "benchmark": {
-                "short_tok_s": 154.69,
-                "long_completion_tok_s": 11.46,
-                "long_total_tok_s": 6223.0,
-            },
-            "verdict": "hold",
-            "notes": "Very fast short output, but speculative decoding was not active.",
-        },
-    ]
-    for lane in lanes:
-        lane["online"] = _port_is_open("127.0.0.1", int(lane["port"]))
-    active = next((lane for lane in lanes if lane["role"] == "active"), lanes[0])
-    return {
-        "active_lane": active["id"],
-        "active_alias": active["alias"],
-        "active_online": bool(active.get("online")),
-        "promotion_verdict": "Keep WSL MTP/Froggeric on 8084; do not promote vLLM yet.",
-        "lanes": lanes,
-        "updated_at": datetime.now(timezone.utc).isoformat(),
-    }
+    from openjarvis.tools.qwen_runtime_status import load_qwen_runtime_status
+
+    return load_qwen_runtime_status(
+        port_checker=lambda port: _port_is_open("127.0.0.1", port)
+    )
 
 
 def _markets_pro_analyze(body: Dict[str, Any]) -> Dict[str, Any]:
