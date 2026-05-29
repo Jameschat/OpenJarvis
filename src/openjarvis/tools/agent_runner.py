@@ -1034,6 +1034,12 @@ class Task:
     # code, etc). When None, the task gets a fresh isolated workspace at
     # ``RUNS_DIR/<task.id>/``.
     project_id: Optional[str] = None
+    # Optional working directory for the Qwen safe tool bridge. When set, a
+    # Qwen task's repo_read/repo_search/repo_patch_proposal tools operate on
+    # this folder (e.g. a client website outside the OpenJarvis repo) instead
+    # of the default OpenJarvis repo. Defaulted so existing state.json
+    # deserializes without migration.
+    repo_root: Optional[str] = None
     # Verification loop fields (autonomy-improvement #1, 2026-04-27).
     # All defaulted so existing state.json deserializes cleanly without
     # migration. Behaviour is opt-in via OPENJARVIS_VERIFY_LOOP env var
@@ -1257,7 +1263,8 @@ class _Registry:
                  parent_task_id: Optional[str] = None,
                  verifier_for: Optional[str] = None,
                  retry_count: int = 0,
-                 plan_step_id: Optional[str] = None) -> str:
+                 plan_step_id: Optional[str] = None,
+                 repo_root: Optional[str] = None) -> str:
         if agent_id not in self.stats:
             raise ValueError(f"unknown agent: {agent_id}")
         effective, swapped = self._maybe_swap_agent(agent_id)
@@ -1266,7 +1273,8 @@ class _Registry:
                     project_id=project_id, priority=int(priority),
                     parent_task_id=parent_task_id,
                     verifier_for=verifier_for,
-                    retry_count=int(retry_count))
+                    retry_count=int(retry_count),
+                    repo_root=repo_root)
         with self._lock:
             self.tasks[tid] = task
             self._save_unlocked()
@@ -2134,6 +2142,30 @@ def _active_qwen_profile() -> str:
     return profile if profile in {"fast", "quality"} else "fast"
 
 
+def _qwen_should_think(task_prompt: str) -> bool:
+    """Whether to enable Qwen 3.6 native reasoning for this task (v1.3).
+
+    All `_run_qwen_task` work runs on the background worker (Studio queues it,
+    the UI polls) — never the interactive quick-answer path, which short-circuits
+    in studio_runner before reaching here. So thinking is safe latency-wise as
+    long as we gate it to the heavier *complex* tasks.
+
+    Modes via OPENJARVIS_QWEN_THINKING:
+      - off          : never think (fast everywhere)
+      - background   : think only on complex tasks (default; operator's choice)
+      - all          : think on every Qwen task, even simple ones
+    """
+    mode = os.environ.get("OPENJARVIS_QWEN_THINKING", "background").strip().lower()
+    if mode in ("off", "0", "false", "no", ""):
+        return False
+    if mode == "all":
+        return True
+    # default "background": only complex build/plan/research/code tasks.
+    from openjarvis.tools import qwen_quality_loop
+
+    return qwen_quality_loop.is_complex(task_prompt or "")
+
+
 def _run_qwen_task(task: Task, agent_spec: Dict[str, Any]) -> None:
     """Run a local Qwen-backed single-shot agent through LiteLLM.
 
@@ -2205,6 +2237,13 @@ def _run_qwen_task(task: Task, agent_spec: Dict[str, Any]) -> None:
         is_studio_task = bool(task.project_id and str(task.project_id).startswith("studio-"))
         qwen_timeout = 90 if is_studio_task else 600
         qwen_max_tokens = 900 if is_studio_task else 2500
+        # v1.3 thinking-mode (background tasks only, complex by default). Reasoning
+        # tokens are spent before the visible answer, so when thinking is on we must
+        # widen the token + time budget or the answer gets truncated/blank.
+        qwen_thinking = _qwen_should_think(task.prompt or "")
+        if qwen_thinking:
+            qwen_max_tokens = max(qwen_max_tokens, 2500)
+            qwen_timeout = max(qwen_timeout, 300)
         base_url = os.environ.get("OPENAI_BASE_URL", "http://localhost:4000")
         fake_openai = "openai" in sys.modules and not getattr(sys.modules["openai"], "__file__", None)
         use_direct_ollama = (
@@ -2224,7 +2263,7 @@ def _run_qwen_task(task: Task, agent_spec: Dict[str, Any]) -> None:
             client = OpenAI(base_url=base_url, api_key=api_key)
             if model in {"qwen3.6-27b-local", "qwen3.6-27b-quality"}:
                 create_kwargs["extra_body"] = {
-                    "chat_template_kwargs": {"enable_thinking": False}
+                    "chat_template_kwargs": {"enable_thinking": qwen_thinking}
                 }
 
         def _call_local_qwen(prompt_text: str, user_text: str = "Produce RESULT.md now.") -> str:
@@ -2275,7 +2314,9 @@ def _run_qwen_task(task: Task, agent_spec: Dict[str, Any]) -> None:
         while tool_requests and tool_rounds < 3:
             tool_rounds += 1
             had_tool_results = True
-            tool_results = qwen_tool_bridge.execute_tool_requests(tool_requests)
+            tool_results = qwen_tool_bridge.execute_tool_requests(
+                tool_requests, repo_root=task.repo_root
+            )
             all_tool_requests.extend(tool_requests)
             all_tool_results.extend(tool_results)
             (ws / "QWEN_TOOL_RESULTS.json").write_text(
@@ -2305,31 +2346,52 @@ def _run_qwen_task(task: Task, agent_spec: Dict[str, Any]) -> None:
                 f"{qwen_tool_bridge.format_tool_results(all_tool_results)}"
             )
 
-        quality = qwen_quality_loop.assess_qwen_output(
-            content,
-            task.prompt or "",
-            had_tool_results=had_tool_results,
-        )
-        if quality.needs_retry:
-            revision_prompt = "\n\n".join(
+        # Reflexion pass (v1.2, Qwen autonomy upgrade): for complex tasks, have
+        # Qwen critique its own draft and rewrite before the quality gate. Opt-in
+        # via OPENJARVIS_QWEN_REFLEXION because it adds an LLM call (latency) to
+        # every complex task, not just failing ones.
+        if (
+            os.environ.get("OPENJARVIS_QWEN_REFLEXION", "0").strip().lower()
+            in ("1", "true", "yes", "on")
+            and qwen_quality_loop.is_complex(task.prompt or "")
+        ):
+            reflexion_prompt = "\n\n".join(
                 part
                 for part in (
                     prompt,
-                    qwen_quality_loop.build_revision_prompt(task.prompt or "", content, quality),
+                    qwen_quality_loop.build_reflexion_prompt(task.prompt or "", content),
                 )
                 if part
             )
-            revised = _call_local_qwen(
-                revision_prompt,
-                user_text="Revise the answer and produce final RESULT.md now.",
+            reflected = _call_local_qwen(
+                reflexion_prompt,
+                user_text="Critique your draft, then output the corrected final answer now.",
             )
-            if revised.strip():
-                content = revised
-            quality = qwen_quality_loop.assess_qwen_output(
-                content,
-                task.prompt or "",
-                had_tool_results=had_tool_results,
-                after_retry=True,
+            if reflected.strip():
+                content = reflected
+
+        # Iterate-until-pass loop (v1.1): keep feeding the specific quality-gate
+        # failures back to Qwen until it passes or the revision budget is spent.
+        # Budget default 3 (was an effective 1-shot); clamp 0..5.
+        try:
+            _qwen_max_rev = int(os.environ.get("OPENJARVIS_QWEN_MAX_REVISIONS", "3"))
+        except ValueError:
+            _qwen_max_rev = 3
+        _qwen_max_rev = max(0, min(_qwen_max_rev, 5))
+        content, quality, revision_rounds = qwen_quality_loop.revise_until_pass(
+            content,
+            task.prompt or "",
+            redraft=lambda rp: _call_local_qwen(
+                rp, user_text="Revise the answer and produce final RESULT.md now."
+            ),
+            had_tool_results=had_tool_results,
+            max_revisions=_qwen_max_rev,
+            base_prompt=prompt,
+        )
+        if revision_rounds:
+            (ws / "QWEN_REVISION_TRAIL.json").write_text(
+                json.dumps({"rounds": revision_rounds}, indent=2) + "\n",
+                encoding="utf-8",
             )
 
         result_md = (
@@ -3229,7 +3291,8 @@ def add_task(title: str, agent_id: str, prompt: Optional[str] = None,
              parent_task_id: Optional[str] = None,
              verifier_for: Optional[str] = None,
              retry_count: int = 0,
-             plan_step_id: Optional[str] = None) -> str:
+             plan_step_id: Optional[str] = None,
+             repo_root: Optional[str] = None) -> str:
     """Queue a task. ``prompt`` defaults to ``title`` if not supplied.
 
     If ``project_id`` is set, the task shares a workspace at
@@ -3251,7 +3314,8 @@ def add_task(title: str, agent_id: str, prompt: Optional[str] = None,
                          parent_task_id=parent_task_id,
                          verifier_for=verifier_for,
                          retry_count=retry_count,
-                         plan_step_id=plan_step_id)
+                         plan_step_id=plan_step_id,
+                         repo_root=repo_root)
 
 
 def _bootstrap_plan_task_map() -> None:

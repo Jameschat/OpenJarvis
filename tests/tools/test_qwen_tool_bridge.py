@@ -363,3 +363,76 @@ def test_list_patch_proposals_marks_pending_and_applied(monkeypatch, tmp_path):
     assert pending[0]["status"] == "pending"
     assert pending[0]["changed_files"] == ["src/app.py"]
     assert applied[0]["status"] == "applied"
+
+
+def test_execute_repo_root_kwarg_scopes_reads_outside_default(monkeypatch, tmp_path):
+    """A per-call repo_root lets Qwen read a project outside the OpenJarvis repo.
+
+    This is the Westhill fix: no env override set, repo_root passed explicitly.
+    """
+    from openjarvis.tools import qwen_tool_bridge
+
+    monkeypatch.delenv("OPENJARVIS_QWEN_REPO_ROOT", raising=False)
+    site = tmp_path / "westhill-hotel"
+    site.mkdir()
+    (site / "index.html").write_text("<!doctype html><title>Westhill</title>\n", encoding="utf-8")
+
+    results = qwen_tool_bridge.execute_tool_requests(
+        [{"id": "r1", "tool": "repo_read", "args": {"path": "index.html"}}],
+        repo_root=str(site),
+    )
+
+    assert results[0]["ok"] is True
+    assert "Westhill" in results[0]["content"]
+    # Active root is reset after the call so later calls are not affected.
+    assert qwen_tool_bridge._ACTIVE_REPO_ROOT is None
+
+
+def test_execute_repo_root_kwarg_resets_even_on_error(monkeypatch, tmp_path):
+    from openjarvis.tools import qwen_tool_bridge
+
+    monkeypatch.delenv("OPENJARVIS_QWEN_REPO_ROOT", raising=False)
+    qwen_tool_bridge.execute_tool_requests(
+        [{"id": "r1", "tool": "repo_read", "args": {"path": "missing.html"}}],
+        repo_root=str(tmp_path),
+    )
+    assert qwen_tool_bridge._ACTIVE_REPO_ROOT is None
+
+
+def test_apply_patch_proposal_honors_recorded_repo_root(monkeypatch, tmp_path):
+    """A proposal created for a project outside the OpenJarvis repo applies back
+    into that project's folder, using the repo_root recorded on the proposal —
+    even though no env override is active at apply time."""
+    from openjarvis.tools import qwen_tool_bridge
+
+    site = tmp_path / "westhill-hotel"
+    proposals = tmp_path / "proposals"
+    site.mkdir()
+    (site / "index.html").write_text("<h1>old</h1>\n", encoding="utf-8")
+    monkeypatch.delenv("OPENJARVIS_QWEN_REPO_ROOT", raising=False)
+    monkeypatch.setenv("OPENJARVIS_QWEN_PATCH_PROPOSAL_DIR", str(proposals))
+
+    created = qwen_tool_bridge.execute_tool_requests(
+        [
+            {
+                "id": "r1",
+                "tool": "repo_patch_proposal",
+                "args": {
+                    "rationale": "New hero copy",
+                    "files": [{"path": "index.html", "content": "<h1>new</h1>\n"}],
+                },
+            }
+        ],
+        repo_root=str(site),
+    )[0]
+
+    assert created["ok"] is True
+    proposal = json.loads(Path(created["proposal_path"]).read_text(encoding="utf-8"))
+    assert Path(proposal["repo_root"]).resolve() == site.resolve()
+
+    # Apply with no active scope — must still land inside the site folder.
+    applied = qwen_tool_bridge.apply_patch_proposal(
+        created["proposal_id"], approval_phrase="APPLY QWEN PATCH"
+    )
+    assert applied["ok"] is True
+    assert (site / "index.html").read_text(encoding="utf-8") == "<h1>new</h1>\n"

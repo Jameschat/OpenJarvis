@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Callable
 import re
 
 
@@ -54,6 +55,80 @@ def assess_qwen_output(
     needs_retry = bool(issues) and not after_retry
     needs_escalation = bool(issues) and after_retry
     return QualityAssessment(score=score, issues=issues, needs_retry=needs_retry, needs_escalation=needs_escalation)
+
+
+def build_reflexion_prompt(original_prompt: str, draft: str) -> str:
+    """Self-critique (reflexion) prompt: make Qwen find its own defects, then
+    rewrite. Distinct from the heuristic gate — catches a class of errors the
+    regex checks cannot see. v1.2 of the Qwen autonomy upgrade."""
+    return (
+        "Before finalising, critique your own draft against the task.\n\n"
+        "Original task:\n"
+        f"{(original_prompt or '').strip()}\n\n"
+        "Your draft:\n"
+        f"{(draft or '').strip()}\n\n"
+        "Step 1: list the concrete defects, gaps, unverified claims, wrong "
+        "assumptions, or missing steps in the draft as a short bullet list.\n"
+        "Step 2: produce a corrected, complete final answer that fixes every "
+        "defect you listed. Output only the corrected final answer."
+    )
+
+
+def is_complex(task_prompt: str) -> bool:
+    """Public predicate for 'this task warrants the heavier autonomy loop'."""
+    return _looks_complex((task_prompt or "").lower())
+
+
+def revise_until_pass(
+    content: str,
+    task_prompt: str,
+    *,
+    redraft: Callable[[str], str],
+    had_tool_results: bool = False,
+    max_revisions: int = 3,
+    base_prompt: str = "",
+) -> tuple[str, QualityAssessment, list[dict]]:
+    """Iterate-until-pass revision loop (v1.1 of the Qwen autonomy upgrade).
+
+    Repeatedly assess the draft and, while it fails and budget remains, feed the
+    *specific* quality-gate issues back to ``redraft`` (a callable that takes a
+    revision prompt and returns a new draft). Stops on pass or when the revision
+    budget is spent; the final assessment on a spent budget reads as
+    escalation-required. Returns ``(final_content, final_assessment, rounds)``
+    where ``rounds`` is an audit trail of each revision.
+
+    Pure except for ``redraft`` — fully unit-testable with a fake redraft.
+    """
+    max_revisions = max(0, int(max_revisions))
+    assessment = assess_qwen_output(content, task_prompt, had_tool_results=had_tool_results)
+    rounds: list[dict] = []
+    revisions = 0
+    while not assessment.passed and revisions < max_revisions:
+        revisions += 1
+        is_last = revisions >= max_revisions
+        revision_prompt = "\n\n".join(
+            part
+            for part in (base_prompt, build_revision_prompt(task_prompt, content, assessment))
+            if part
+        )
+        revised = redraft(revision_prompt)
+        if revised and revised.strip():
+            content = revised
+        assessment = assess_qwen_output(
+            content,
+            task_prompt,
+            had_tool_results=had_tool_results,
+            after_retry=is_last,
+        )
+        rounds.append(
+            {
+                "revision": revisions,
+                "score": assessment.score,
+                "issues": list(assessment.issues),
+                "passed": assessment.passed,
+            }
+        )
+    return content, assessment, rounds
 
 
 def build_revision_prompt(original_prompt: str, draft: str, assessment: QualityAssessment) -> str:

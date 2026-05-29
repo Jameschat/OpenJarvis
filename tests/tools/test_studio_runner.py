@@ -626,3 +626,36 @@ def test_critical_context_creates_continuation_chat_once(monkeypatch, tmp_path):
     enriched_again = studio_runner.enrich_chats_with_context([store.get_chat(chat["id"])], store=store, char_limit=100)
     assert enriched_again[0]["context"]["continuation"]["chat_id"] == continuation["chat_id"]
     assert len([c for c in store.list_chats("openjarvis") if c.get("continuation")]) == 1
+
+
+def test_project_repo_root_resolves_vault_project_path(monkeypatch, tmp_path):
+    """A Studio project whose vault PROJECT.md declares a `path:` resolves its
+    repo root to that working dir, so Qwen file tools target the right folder."""
+    from openjarvis.tools import obsidian_brain
+
+    brain = tmp_path / "brain"
+    site = tmp_path / "westhill-hotel"
+    site.mkdir()
+    project_md = brain / "Projects" / "westhill-hotel" / "PROJECT.md"
+    project_md.parent.mkdir(parents=True)
+    project_md.write_text(
+        f"---\nslug: westhill-hotel\npath: {site}\n---\n# Westhill\n", encoding="utf-8"
+    )
+    monkeypatch.setattr(obsidian_brain, "BRAIN_ROOT", brain)
+
+    root = studio_runner._project_repo_root(
+        {"id": "westhill-hotel", "vault_project": "westhill-hotel",
+         "repo_root": str(studio_runner.studio_store.DEFAULT_REPO_ROOT)}
+    )
+    assert root.resolve() == site.resolve()
+
+
+def test_project_repo_root_falls_back_to_default(monkeypatch, tmp_path):
+    from openjarvis.tools import obsidian_brain
+
+    monkeypatch.setattr(obsidian_brain, "BRAIN_ROOT", tmp_path / "brain")
+    root = studio_runner._project_repo_root(
+        {"id": "openjarvis", "vault_project": "OpenJarvis",
+         "repo_root": str(studio_runner.studio_store.DEFAULT_REPO_ROOT)}
+    )
+    assert root.resolve() == studio_runner.studio_store.DEFAULT_REPO_ROOT.resolve()

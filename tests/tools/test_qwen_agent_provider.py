@@ -237,7 +237,7 @@ def test_qwen_provider_executes_safe_tool_bridge_round(monkeypatch, tmp_path):
     monkeypatch.setattr(
         qwen_tool_bridge,
         "execute_tool_requests",
-        lambda requests: [{"id": "r1", "tool": "recall_vault", "ok": True, "hits": [{"path": "Projects/Networx.md"}]}],
+        lambda requests, **kwargs: [{"id": "r1", "tool": "recall_vault", "ok": True, "hits": [{"path": "Projects/Networx.md"}]}],
     )
 
     task = Task(
@@ -372,7 +372,7 @@ def test_qwen_provider_accepts_xml_style_tool_request_block(monkeypatch, tmp_pat
     monkeypatch.setattr(
         qwen_tool_bridge,
         "execute_tool_requests",
-        lambda requests: [{"id": "r1", "tool": "recall_vault", "ok": True, "hits": []}],
+        lambda requests, **kwargs: [{"id": "r1", "tool": "recall_vault", "ok": True, "hits": []}],
     )
 
     agent_runner._run_qwen_task(
@@ -452,7 +452,7 @@ def test_qwen_provider_executes_multiple_safe_tool_bridge_rounds(monkeypatch, tm
         def mark_finished(self, task_id, exit_code, error=None):
             assert exit_code == 0
 
-    def fake_execute(requests):
+    def fake_execute(requests, **kwargs):
         executed.extend(requests)
         if requests[0]["id"] == "r1":
             return [{"id": "r1", "tool": "recall_vault", "ok": True, "summary": "vault hit"}]
@@ -790,3 +790,26 @@ def test_qwen_workspace_files_reject_path_escape(tmp_path):
 
     assert written == []
     assert not (tmp_path.parent / "outside.txt").exists()
+
+
+def test_qwen_should_think_default_background_complex_only(monkeypatch):
+    from openjarvis.tools import agent_runner
+
+    monkeypatch.delenv("OPENJARVIS_QWEN_THINKING", raising=False)
+    # default = background: think on complex tasks, not on simple ones
+    assert agent_runner._qwen_should_think("build the westhill website") is True
+    assert agent_runner._qwen_should_think("hi there, how are you") is False
+
+
+def test_qwen_should_think_off_disables_everywhere(monkeypatch):
+    from openjarvis.tools import agent_runner
+
+    monkeypatch.setenv("OPENJARVIS_QWEN_THINKING", "off")
+    assert agent_runner._qwen_should_think("build a complex app and plan it") is False
+
+
+def test_qwen_should_think_all_enables_even_simple(monkeypatch):
+    from openjarvis.tools import agent_runner
+
+    monkeypatch.setenv("OPENJARVIS_QWEN_THINKING", "all")
+    assert agent_runner._qwen_should_think("hi") is True

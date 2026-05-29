@@ -185,8 +185,28 @@ def parse_tool_requests(content: str) -> list[dict[str, Any]]:
     return out
 
 
-def execute_tool_requests(requests: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return [_execute_one(request) for request in requests[:5]]
+def execute_tool_requests(
+    requests: list[dict[str, Any]], *, repo_root: str | Path | None = None
+) -> list[dict[str, Any]]:
+    """Execute up to 5 safe Qwen tool requests.
+
+    When ``repo_root`` is given, the repo-inspection tools (repo_read,
+    repo_search, repo_patch_proposal) are scoped to that working directory for
+    the duration of the call instead of the default OpenJarvis repo. This lets a
+    Studio project that lives outside the OpenJarvis repo (e.g. a client website
+    at ``E:\\Claude\\westhill-hotel``) be inspected/edited by local Qwen.
+    """
+    global _ACTIVE_REPO_ROOT
+    previous = _ACTIVE_REPO_ROOT
+    if repo_root:
+        try:
+            _ACTIVE_REPO_ROOT = Path(repo_root).resolve()
+        except Exception:
+            _ACTIVE_REPO_ROOT = previous
+    try:
+        return [_execute_one(request) for request in requests[:5]]
+    finally:
+        _ACTIVE_REPO_ROOT = previous
 
 
 def format_tool_results(results: list[dict[str, Any]]) -> str:
@@ -309,14 +329,27 @@ _SECRET_PATH_RE = re.compile(
 )
 
 
+# When a Studio project is scoped to a working directory, the runner sets this
+# (via execute_tool_requests' repo_root kwarg) for the duration of a Qwen
+# tool-bridge call, so repo_read / repo_search / repo_patch_proposal operate on
+# that project's folder instead of the default OpenJarvis repo. It is reset in
+# execute_tool_requests' finally. Safe because agent concurrency is 1 task at a
+# time. The OPENJARVIS_QWEN_REPO_ROOT env override still works as a fallback.
+_ACTIVE_REPO_ROOT: Path | None = None
+
+
 def _repo_root() -> Path:
+    if _ACTIVE_REPO_ROOT is not None:
+        return _ACTIVE_REPO_ROOT
     override = os.environ.get("OPENJARVIS_QWEN_REPO_ROOT")
     if override:
         return Path(override).resolve()
     return Path(r"E:\Claude\OpenJarvis").resolve()
 
 
-def _resolve_repo_path(raw_path: str) -> tuple[Path | None, str, dict[str, Any] | None]:
+def _resolve_repo_path(
+    raw_path: str, root: Path | None = None
+) -> tuple[Path | None, str, dict[str, Any] | None]:
     rel = str(raw_path or "").replace("\\", "/").strip()
     if not rel or rel.startswith("/") or ":" in rel or ".." in Path(rel).parts:
         return None, rel, {"ok": False, "error": "path escapes repo root"}
@@ -326,7 +359,7 @@ def _resolve_repo_path(raw_path: str) -> tuple[Path | None, str, dict[str, Any] 
             "blocked": True,
             "reason": "secret-like paths are not exposed to Qwen safe repo inspection",
         }
-    root = _repo_root()
+    root = (root or _repo_root()).resolve()
     target = (root / rel).resolve()
     try:
         target.relative_to(root)
@@ -550,6 +583,12 @@ def apply_patch_proposal(proposal_id_or_path: str, *, approval_phrase: str) -> d
     if not isinstance(files, list) or not files:
         return {"ok": False, "error": "proposal has no files", "proposal_path": str(path)}
 
+    # Resolve against the repo root the proposal was created against, not the
+    # current default. A proposal made for a Studio project outside the
+    # OpenJarvis repo records its own ``repo_root``; apply must honour it or the
+    # paths would resolve into the wrong tree (or be rejected as escaping).
+    proposal_root = Path(str(proposal.get("repo_root"))) if proposal.get("repo_root") else None
+
     backup_root = _patch_proposal_dir() / "backups" / str(proposal.get("id") or path.stem)
     backup_root.mkdir(parents=True, exist_ok=True)
     applied: list[str] = []
@@ -558,7 +597,7 @@ def apply_patch_proposal(proposal_id_or_path: str, *, approval_phrase: str) -> d
     for item in files:
         if not isinstance(item, dict):
             continue
-        target, rel, error = _resolve_repo_path(str(item.get("path") or ""))
+        target, rel, error = _resolve_repo_path(str(item.get("path") or ""), proposal_root)
         if error:
             return {"ok": False, "proposal_path": str(path), **error}
         content = item.get("content")

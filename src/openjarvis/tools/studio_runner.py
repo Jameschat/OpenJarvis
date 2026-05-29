@@ -178,6 +178,7 @@ def _queue_agent_task(
     agent_id: str,
     prompt: str,
     project_id: str | None = None,
+    repo_root: str | None = None,
 ) -> str:
     from openjarvis.tools import agent_runner
 
@@ -187,6 +188,7 @@ def _queue_agent_task(
         prompt=prompt,
         project_id=project_id,
         priority=20,
+        repo_root=repo_root,
     )
 
 
@@ -319,9 +321,55 @@ def _subtract_file_activity(
     return _merge_file_activity(rows)
 
 
+def _vault_project_workdir(vault_project: str | None) -> Path | None:
+    """Resolve a project's working directory from its vault PROJECT.md.
+
+    Looks for a ``path:`` field in the YAML frontmatter of
+    ``Brain/Projects/<vault_project>/PROJECT.md``. This is how a Studio project
+    that lives outside the OpenJarvis repo (a client website, a game, etc.)
+    tells the Qwen tool bridge where its files actually are. Returns None when
+    no folder/frontmatter path is found.
+    """
+    name = (vault_project or "").strip()
+    if not name:
+        return None
+    try:
+        from openjarvis.tools import obsidian_brain
+
+        project_md = obsidian_brain.BRAIN_ROOT / "Projects" / name / "PROJECT.md"
+        if not project_md.is_file():
+            return None
+        text = project_md.read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        return None
+    if not text.startswith("---"):
+        return None
+    end = text.find("\n---", 3)
+    frontmatter = text[3:end] if end != -1 else ""
+    for line in frontmatter.splitlines():
+        stripped = line.strip()
+        if stripped.lower().startswith("path:"):
+            raw = stripped.split(":", 1)[1].strip().strip("'\"")
+            if raw:
+                candidate = Path(raw)
+                if candidate.exists():
+                    return candidate
+    return None
+
+
 def _project_repo_root(project: dict[str, Any] | None = None) -> Path:
+    # An explicit, non-default repo_root on the project wins.
     if project and project.get("repo_root"):
-        return Path(str(project["repo_root"]))
+        explicit = Path(str(project["repo_root"]))
+        if explicit.resolve() != studio_store.DEFAULT_REPO_ROOT.resolve():
+            return explicit
+    # Otherwise, let the vault PROJECT.md path point at the real working dir.
+    if project:
+        workdir = _vault_project_workdir(project.get("vault_project") or project.get("id"))
+        if workdir is not None:
+            return workdir
+        if project.get("repo_root"):
+            return Path(str(project["repo_root"]))
     return studio_store.DEFAULT_REPO_ROOT
 
 
@@ -978,6 +1026,7 @@ def start_studio_run(
         agent_id=agent_id,
         prompt=task_prompt,
         project_id=f"studio-{project_id}",
+        repo_root=str(_project_repo_root(project)),
     )
     run = store.get_run(run["id"])
     run.setdefault("tasks", []).append(task_id)
