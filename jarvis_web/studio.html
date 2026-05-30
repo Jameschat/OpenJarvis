@@ -517,6 +517,40 @@
       color: #e9fbff;
       box-shadow: inset 0 0 0 1px rgba(98,230,255,0.25);
     }
+    .remote-worker-status {
+      min-height: 26px;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 0 10px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.055);
+      color: #cfd3dc;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+    .remote-worker-led {
+      width: 9px;
+      height: 9px;
+      border-radius: 999px;
+      background: #ff6868;
+      box-shadow: 0 0 12px rgba(255,104,104,0.55);
+    }
+    .remote-worker-status.online {
+      color: #e7fff1;
+      border-color: rgba(55,229,131,0.28);
+      background: rgba(55,229,131,0.09);
+    }
+    .remote-worker-status.online .remote-worker-led {
+      background: var(--green);
+      box-shadow: 0 0 12px rgba(55,229,131,0.65);
+    }
+    .remote-worker-status.offline {
+      color: #ffd5d5;
+      border-color: rgba(255,104,104,0.3);
+      background: rgba(255,104,104,0.08);
+    }
     .context-status {
       flex: 1 1 100%;
       min-height: 16px;
@@ -875,6 +909,10 @@
               <button class="profile-btn" type="button" data-studio-action="set-qwen-profile" data-profile="quality">Quality</button>
               <button class="profile-btn" type="button" data-studio-action="set-qwen-profile" data-profile="remote">Remote 35B</button>
             </div>
+            <span id="studio-remote-worker-status" class="remote-worker-status offline" title="Remote 35B worker status">
+              <i class="remote-worker-led" aria-hidden="true"></i>
+              <span>Remote offline</span>
+            </span>
             <button class="send-btn" type="button" data-studio-action="send-message">↑</button>
           </div>
         </div>
@@ -1173,6 +1211,32 @@
       return `${prompt}\n\nAttached context:\n${context}`;
     }
 
+    function getRemoteWorkerLane() {
+      const lanes = (studioState.qwen_runtime && studioState.qwen_runtime.lanes) || [];
+      return lanes.find((lane) => lane.id === "remote-35b-a3b" || lane.alias === "qwen3.6-35b-a3b-remote") || null;
+    }
+
+    function remoteProfileCanRun() {
+      const active = studioState.qwen_profile && studioState.qwen_profile.active;
+      if (active !== "remote") return true;
+      const lane = getRemoteWorkerLane();
+      return Boolean(lane && lane.online);
+    }
+
+    function renderRemoteWorkerStatus() {
+      const root = el("studio-remote-worker-status");
+      if (!root) return;
+      const lane = getRemoteWorkerLane();
+      const online = Boolean(lane && lane.online);
+      root.classList.toggle("online", online);
+      root.classList.toggle("offline", !online);
+      root.title = online
+        ? "Remote 35B worker online"
+        : "Remote 35B worker offline. Start the second PC before using the Remote 35B profile.";
+      const label = root.querySelector("span");
+      if (label) label.textContent = online ? "Remote online" : "Remote offline";
+    }
+
     function renderQwenProfile(profileState) {
       const active = (profileState && profileState.active) || "fast";
       document.querySelectorAll(".profile-btn").forEach((button) => {
@@ -1182,7 +1246,12 @@
       const label = profile ? `${profile.label} profile` : `${active} profile`;
       const modelLabel = el("studio-model-label");
       if (modelLabel && profile) modelLabel.textContent = `${profile.model} · ${profile.label}`;
-      setContextStatus(`Qwen ${label}: ${profile ? profile.summary : "local profile"}`);
+      renderRemoteWorkerStatus();
+      if (active === "remote" && !remoteProfileCanRun()) {
+        setContextStatus("Remote 35B unavailable: second PC is offline, so remote tasks are blocked.");
+      } else {
+        setContextStatus(`Qwen ${label}: ${profile ? profile.summary : "local profile"}`);
+      }
     }
 
     function drawBootRain() {
@@ -1975,6 +2044,7 @@
       renderSystemPanel(state.system || {});
       renderRuntimePanel(state.runtime_health || {});
       renderQwenRuntimePanel(state.qwen_runtime || {});
+      renderRemoteWorkerStatus();
       renderProgressPanel(state.runs || []);
       renderFileActivityPanel(state.runs || []);
       renderPatchProposalsPanel(state.qwen_patch_proposals || []);
@@ -2033,6 +2103,10 @@
       const composer = el("studio-composer");
       const prompt = (composer.value || "").trim();
       if (!prompt) return;
+      if (!remoteProfileCanRun()) {
+        setContextStatus("Remote 35B worker offline. Start the second PC or switch to Fast/Quality before sending.");
+        return;
+      }
       composer.value = "";
       const submittedPrompt = promptWithAttachments(prompt);
       composerAttachments = [];

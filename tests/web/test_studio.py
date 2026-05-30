@@ -151,6 +151,17 @@ def test_studio_has_qwen_profile_and_context_controls():
     assert "/studio/qwen-profile" in source
 
 
+def test_studio_remote_profile_has_visible_status_and_send_guard():
+    html = (ROOT / "jarvis_web" / "studio.html").read_text(encoding="utf-8")
+
+    assert 'id="studio-remote-worker-status"' in html
+    assert "remote-worker-led" in html
+    assert "getRemoteWorkerLane" in html
+    assert "remoteProfileCanRun" in html
+    assert "Remote 35B unavailable" in html
+    assert "Remote 35B worker offline" in html
+
+
 def test_studio_has_live_system_health_panel():
     html = (ROOT / "jarvis_web" / "studio.html").read_text(encoding="utf-8")
     source = (ROOT / "src" / "openjarvis" / "cli" / "brain_server.py").read_text(encoding="utf-8")
