@@ -2048,8 +2048,11 @@ class _Handler(SimpleHTTPRequestHandler):
         try:
             data = self._read_json_body()
             profile = str(data.get("profile") or "").strip().lower()
-            if profile not in {"fast", "quality"}:
-                return self._json_response(400, {"error": "profile must be fast or quality"})
+            if profile not in {"fast", "quality", "remote"}:
+                return self._json_response(
+                    400,
+                    {"error": "profile must be fast, quality, or remote"},
+                )
             _save_studio_qwen_profile(profile)
             self._json_response(200, _studio_qwen_profile())
         except ValueError as exc:

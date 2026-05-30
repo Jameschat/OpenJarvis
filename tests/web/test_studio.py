@@ -149,6 +149,8 @@ def test_studio_has_qwen_profile_and_context_controls():
     assert "addFileContext" in html
     assert "addTextContext" in html
     assert "/studio/qwen-profile" in source
+    assert 'profile not in {"fast", "quality", "remote"}' in source
+    assert "profile must be fast, quality, or remote" in source
 
 
 def test_studio_remote_profile_has_visible_status_and_send_guard():
