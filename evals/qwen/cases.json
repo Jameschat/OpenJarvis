@@ -1,0 +1,47 @@
+{
+  "label": "qwen-accuracy-seed",
+  "cases": [
+    {
+      "id": "code-add-fn",
+      "category": "code",
+      "prompt": "Write a Python function named add(a, b) that returns their sum. Output only the code.",
+      "grader": "contains",
+      "expect": { "contains": ["def add", "return"], "not_contains": ["I cannot"] }
+    },
+    {
+      "id": "factual-http",
+      "category": "factual",
+      "prompt": "What does the acronym HTTP stand for? Answer in one short sentence.",
+      "grader": "contains",
+      "expect": { "contains": ["hypertext transfer protocol"] }
+    },
+    {
+      "id": "json-person",
+      "category": "json",
+      "prompt": "Return a JSON object with keys \"name\" and \"age\" for a person named Alex aged 30. Output only JSON.",
+      "grader": "contains",
+      "expect": { "contains": ["\"name\"", "alex", "\"age\"", "30"] }
+    },
+    {
+      "id": "instruction-yesno",
+      "category": "instruction",
+      "prompt": "Is the number 7 a prime number? Answer with exactly one word: Yes or No.",
+      "grader": "contains",
+      "expect": { "contains": ["yes"] }
+    },
+    {
+      "id": "plan-contact-form",
+      "category": "plan",
+      "prompt": "List three numbered steps to add a contact form to a static website.",
+      "grader": "contains",
+      "expect": { "contains": ["1", "2", "3"] }
+    },
+    {
+      "id": "sql-select",
+      "category": "code",
+      "prompt": "Write a SQL query that selects all columns from a table called users where age is greater than 18. Output only SQL.",
+      "grader": "contains",
+      "expect": { "contains": ["select", "from users", "where", "18"] }
+    }
+  ]
+}
