@@ -109,6 +109,7 @@ def test_qwen_provider_bypasses_stalled_litellm_for_direct_ollama(monkeypatch, t
     monkeypatch.setattr(agent_runner, "_litellm_proxy_healthy", lambda base_url: False)
     monkeypatch.setattr(agent_runner, "_call_qwen_via_ollama", lambda prompt, **kwargs: "Direct Ollama result.")
     monkeypatch.setenv("OPENAI_BASE_URL", "http://localhost:4000")
+    monkeypatch.setenv("OPENJARVIS_QWEN_PROFILE", "fast")
 
     task = Task(
         id="task-qwen-direct",
@@ -168,6 +169,7 @@ def test_qwen_provider_writes_result_markdown(monkeypatch, tmp_path):
     monkeypatch.setattr(agent_runner, "_build_brain_context", lambda: "")
     monkeypatch.setattr(agent_runner, "_write_agent_task_note", lambda *args, **kwargs: None)
     monkeypatch.setenv("OPENAI_BASE_URL", "http://localhost:4000")
+    monkeypatch.setenv("OPENJARVIS_QWEN_PROFILE", "fast")
 
     task = Task(
         id="task-qwen",
@@ -607,6 +609,8 @@ def test_qwen_provider_uses_persisted_remote_profile(monkeypatch, tmp_path):
     from openjarvis.tools import agent_runner
     from openjarvis.tools.agent_runner import Task
 
+    calls = []
+
     class DummyMessage:
         content = "Remote 35B profile result."
 
@@ -615,6 +619,7 @@ def test_qwen_provider_uses_persisted_remote_profile(monkeypatch, tmp_path):
 
     class DummyCompletions:
         def create(self, **kwargs):
+            calls.append(kwargs)
             assert kwargs["model"] == "qwen3.6-35b-a3b-remote"
             return types.SimpleNamespace(choices=[DummyChoice()])
 
@@ -645,7 +650,7 @@ def test_qwen_provider_uses_persisted_remote_profile(monkeypatch, tmp_path):
             id="task-qwen-remote",
             title="Remote profile",
             agent_id="qwen-planner",
-            prompt="Plan it.",
+            prompt="Hello.",
         ),
         {"id": "qwen-planner", "role": "Plan.", "model": "qwen3.6-27b-local"},
     )
@@ -653,6 +658,69 @@ def test_qwen_provider_uses_persisted_remote_profile(monkeypatch, tmp_path):
     assert "Remote 35B profile result." in (
         tmp_path / "runs" / "task-qwen-remote" / "RESULT.md"
     ).read_text(encoding="utf-8")
+    assert calls[0]["extra_body"]["chat_template_kwargs"]["enable_thinking"] is False
+
+
+def test_qwen_remote_profile_uses_deep_work_thinking_budget(monkeypatch, tmp_path):
+    from openjarvis.tools import agent_runner
+    from openjarvis.tools.agent_runner import Task
+
+    calls = []
+
+    class DummyMessage:
+        content = (
+            "Assumptions: use the Remote 35B deep-work profile.\n\n"
+            "Verification: context and thinking budget were selected.\n\n"
+            "Next actions: continue with remote planning."
+        )
+
+    class DummyChoice:
+        message = DummyMessage()
+
+    class DummyCompletions:
+        def create(self, **kwargs):
+            calls.append(kwargs)
+            assert kwargs["model"] == "qwen3.6-35b-a3b-remote"
+            return types.SimpleNamespace(choices=[DummyChoice()])
+
+    class DummyClient:
+        def __init__(self, **kwargs):
+            self.chat = types.SimpleNamespace(completions=DummyCompletions())
+
+    class DummyRegistry:
+        def mark_running(self, task_id, workspace):
+            pass
+
+        def mark_finished(self, task_id, exit_code, error=None):
+            assert exit_code == 0
+
+    profile_path = tmp_path / ".openjarvis" / "studio" / "qwen_profile.json"
+    profile_path.parent.mkdir(parents=True)
+    profile_path.write_text('{"active":"remote"}', encoding="utf-8")
+    monkeypatch.setattr(agent_runner.Path, "home", lambda: tmp_path)
+    monkeypatch.delenv("OPENJARVIS_QWEN_PROFILE", raising=False)
+    monkeypatch.setitem(sys.modules, "openai", types.SimpleNamespace(OpenAI=DummyClient))
+    monkeypatch.setattr(agent_runner, "RUNS_DIR", tmp_path / "runs")
+    monkeypatch.setattr(agent_runner, "_reg", DummyRegistry())
+    monkeypatch.setattr(agent_runner, "_build_brain_context", lambda: "")
+    monkeypatch.setattr(agent_runner, "_write_agent_task_note", lambda *args, **kwargs: None)
+
+    agent_runner._run_qwen_task(
+        Task(
+            id="task-qwen-remote-deep",
+            title="Remote profile deep work",
+            agent_id="qwen-planner",
+            prompt="Plan the architecture, implementation, verification, and multi-file build strategy.",
+        ),
+        {"id": "qwen-planner", "role": "Plan.", "model": "qwen3.6-27b-local"},
+    )
+
+    assert calls
+    assert calls[0]["timeout"] >= 420
+    assert calls[0]["max_tokens"] >= 3500
+    assert calls[0]["extra_body"]["chat_template_kwargs"]["enable_thinking"] is True
+    assert "REMOTE 35B DEEP-WORK PROFILE" in calls[0]["messages"][0]["content"]
+    assert "128000" in calls[0]["messages"][0]["content"]
 
 
 def test_qwen_quality_profile_retries_local_when_litellm_lacks_alias(monkeypatch, tmp_path):

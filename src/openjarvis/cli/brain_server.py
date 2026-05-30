@@ -1374,7 +1374,9 @@ def _studio_qwen_profile() -> Dict[str, Any]:
             "label": "Remote 35B",
             "model": "qwen3.6-35b-a3b-remote",
             "base_url": "http://192.168.1.191:4000/v1",
-            "summary": "Remote GPU Qwen 35B-A3B TurboQuant worker",
+            "summary": "Remote GPU Qwen 35B-A3B TurboQuant worker, 128K context deep-work lane",
+            "context_tokens": 128000,
+            "thinking": "complex tasks only",
         },
     }
     return {"active": profile, "profiles": profiles}

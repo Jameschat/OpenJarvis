@@ -174,6 +174,14 @@ def test_studio_has_qwen_profile_and_context_controls():
     assert "profile must be fast, quality, or remote" in source
 
 
+def test_studio_remote_profile_advertises_deep_context_policy():
+    source = (ROOT / "src" / "openjarvis" / "cli" / "brain_server.py").read_text(encoding="utf-8")
+
+    assert '"context_tokens": 128000' in source
+    assert '"thinking": "complex tasks only"' in source
+    assert "128K context" in source
+
+
 def test_studio_remote_profile_has_visible_status_and_send_guard():
     html = (ROOT / "jarvis_web" / "studio.html").read_text(encoding="utf-8")
 

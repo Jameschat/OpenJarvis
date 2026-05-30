@@ -2219,6 +2219,17 @@ def _run_qwen_task(task: Task, agent_spec: Dict[str, Any]) -> None:
         model = "qwen3.6-27b-quality"
     elif requested_remote_profile:
         model = "qwen3.6-35b-a3b-remote"
+    remote_profile_block = ""
+    if requested_remote_profile:
+        remote_context_tokens = int(os.environ.get("OPENJARVIS_REMOTE_QWEN_CONTEXT_TOKENS", "128000"))
+        remote_profile_block = (
+            "REMOTE 35B DEEP-WORK PROFILE:\n"
+            f"- Target context budget: {remote_context_tokens} tokens.\n"
+            "- Use this lane for architecture, project planning, code review, multi-file reasoning, "
+            "and larger memory-backed tasks.\n"
+            "- Do not paste entire projects into context. Retrieve the relevant files/memory first, "
+            "summarize decisions, and rely on Studio context handoff before saturation."
+        )
     role = (agent_spec.get("role") or "Local Qwen agent.").strip()
     workspace_write = bool(agent_spec.get("workspace_write"))
     brain_block = _build_brain_context()
@@ -2252,6 +2263,7 @@ def _run_qwen_task(task: Task, agent_spec: Dict[str, Any]) -> None:
             "When a code change is needed, request repo_patch_proposal with "
             "full proposed file content; Jarvis will not apply it until "
             "Codex/operator approval.",
+            remote_profile_block,
             qwen_tool_bridge.tool_manifest(),
             workspace_block,
             f"TASK:\n{task.prompt or ''}",
@@ -2272,6 +2284,9 @@ def _run_qwen_task(task: Task, agent_spec: Dict[str, Any]) -> None:
         if qwen_thinking:
             qwen_max_tokens = max(qwen_max_tokens, 2500)
             qwen_timeout = max(qwen_timeout, 300)
+        if requested_remote_profile and qwen_thinking:
+            qwen_max_tokens = max(qwen_max_tokens, 3500)
+            qwen_timeout = max(qwen_timeout, 420)
         base_url = os.environ.get("OPENAI_BASE_URL", "http://localhost:4000")
         fake_openai = "openai" in sys.modules and not getattr(sys.modules["openai"], "__file__", None)
         use_direct_ollama = (
@@ -2289,7 +2304,7 @@ def _run_qwen_task(task: Task, agent_spec: Dict[str, Any]) -> None:
 
             api_key = os.environ.get("OPENAI_API_KEY", "sk-noop")
             client = OpenAI(base_url=base_url, api_key=api_key)
-            if model in {"qwen3.6-27b-local", "qwen3.6-27b-quality"}:
+            if model in {"qwen3.6-27b-local", "qwen3.6-27b-quality", "qwen3.6-35b-a3b-remote"}:
                 create_kwargs["extra_body"] = {
                     "chat_template_kwargs": {"enable_thinking": qwen_thinking}
                 }
