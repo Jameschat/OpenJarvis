@@ -122,6 +122,18 @@ def test_studio_composer_enter_sends_shift_enter_newline():
     assert "sendComposer()" in html
 
 
+def test_studio_sidebar_plugins_and_automations_are_expandable():
+    html = (ROOT / "jarvis_web" / "studio.html").read_text(encoding="utf-8")
+
+    assert 'id="studio-sidebar-plugins"' in html
+    assert 'id="studio-sidebar-automations"' in html
+    assert "renderSidebarPlugins" in html
+    assert "renderSidebarAutomations" in html
+    assert "toggleSidebarSection" in html
+    assert 'data-section="plugins"' in html
+    assert 'data-section="automations"' in html
+
+
 def test_studio_has_qwen_profile_and_context_controls():
     html = (ROOT / "jarvis_web" / "studio.html").read_text(encoding="utf-8")
     source = (ROOT / "src" / "openjarvis" / "cli" / "brain_server.py").read_text(encoding="utf-8")

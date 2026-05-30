@@ -109,6 +109,53 @@
       font-weight: 650;
     }
     .side-command:hover, .side-command.active { background: rgba(255,255,255,0.08); }
+    .side-command.open {
+      background: rgba(98,230,255,0.1);
+      color: #e8fbff;
+    }
+    .sidebar-panel {
+      width: calc(100% - 12px);
+      margin: 0 6px 8px;
+      padding: 6px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: rgba(255,255,255,0.035);
+      display: grid;
+      gap: 4px;
+    }
+    .sidebar-panel[hidden] { display: none; }
+    .sidebar-item {
+      min-height: 30px;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+      align-items: center;
+      border-radius: 8px;
+      padding: 6px 8px;
+      color: #ececf0;
+      font-size: 12px;
+      text-align: left;
+      background: rgba(255,255,255,0.035);
+    }
+    .sidebar-item:hover { background: rgba(255,255,255,0.07); }
+    .sidebar-item strong {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 12px;
+    }
+    .sidebar-item small {
+      grid-column: 1 / -1;
+      color: var(--muted);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .sidebar-empty {
+      padding: 7px 8px;
+      color: var(--muted);
+      font-size: 12px;
+    }
     .side-section {
       padding: 14px 12px 4px;
       color: #8b8b95;
@@ -787,8 +834,10 @@
       <div class="sidebar-top">
         <button class="side-command active" type="button" data-studio-action="new-chat">New chat</button>
         <button class="side-command" type="button" data-studio-action="focus-search">Search</button>
-        <button class="side-command" type="button" data-studio-action="show-plugins">Plugins</button>
-        <button class="side-command" type="button" data-studio-action="show-automations">Automations <span class="row-meta" id="studio-automation-count">0</span></button>
+        <button class="side-command" type="button" data-studio-action="show-plugins" data-section="plugins">Plugins</button>
+        <div class="sidebar-panel" id="studio-sidebar-plugins" hidden></div>
+        <button class="side-command" type="button" data-studio-action="show-automations" data-section="automations">Automations <span class="row-meta" id="studio-automation-count">0</span></button>
+        <div class="sidebar-panel" id="studio-sidebar-automations" hidden></div>
       </div>
       <div class="side-section">Projects</div>
       <div id="studio-projects"></div>
@@ -1245,6 +1294,85 @@
         menu.append(archive, remove);
         row.append(select, options, menu);
         root.appendChild(row);
+      });
+    }
+
+    function sidebarStatusLabel(value) {
+      const text = String(value || "ready");
+      return text.length > 18 ? `${text.slice(0, 15)}...` : text;
+    }
+
+    function renderSidebarPlugins(plugins) {
+      const root = el("studio-sidebar-plugins");
+      if (!root) return;
+      clear(root);
+      const rows = plugins || [];
+      if (!rows.length) {
+        const empty = document.createElement("div");
+        empty.className = "sidebar-empty";
+        empty.textContent = "No plugins loaded";
+        root.appendChild(empty);
+        return;
+      }
+      rows.forEach((plugin) => {
+        const row = document.createElement("button");
+        row.className = "sidebar-item";
+        row.type = "button";
+        row.dataset.studioAction = "focus-plugin";
+        const name = document.createElement("strong");
+        name.textContent = plugin.name || plugin.id || "Plugin";
+        const status = document.createElement("span");
+        status.className = "row-meta";
+        status.textContent = sidebarStatusLabel(plugin.status);
+        const summary = document.createElement("small");
+        summary.textContent = plugin.summary || plugin.id || "";
+        row.append(name, status, summary);
+        root.appendChild(row);
+      });
+    }
+
+    function renderSidebarAutomations(automations) {
+      const root = el("studio-sidebar-automations");
+      if (!root) return;
+      clear(root);
+      const rows = automations || [];
+      if (!rows.length) {
+        const empty = document.createElement("div");
+        empty.className = "sidebar-empty";
+        empty.textContent = "No automations scheduled";
+        root.appendChild(empty);
+        return;
+      }
+      rows.slice(0, 12).forEach((automation) => {
+        const row = document.createElement("button");
+        row.className = "sidebar-item";
+        row.type = "button";
+        row.dataset.studioAction = "focus-automation";
+        const name = document.createElement("strong");
+        name.textContent = automation.name || automation.title || automation.id || "Automation";
+        const status = document.createElement("span");
+        status.className = "row-meta";
+        status.textContent = sidebarStatusLabel(automation.status || automation.state || "active");
+        const summary = document.createElement("small");
+        summary.textContent = automation.schedule || automation.prompt || automation.next_run || "";
+        row.append(name, status, summary);
+        root.appendChild(row);
+      });
+    }
+
+    function toggleSidebarSection(section) {
+      const panels = {
+        plugins: el("studio-sidebar-plugins"),
+        automations: el("studio-sidebar-automations"),
+      };
+      const panel = panels[section];
+      if (!panel) return;
+      const willOpen = panel.hidden;
+      Object.entries(panels).forEach(([key, node]) => {
+        if (node) node.hidden = key === section ? !willOpen : true;
+      });
+      document.querySelectorAll(".side-command[data-section]").forEach((button) => {
+        button.classList.toggle("open", button.dataset.section === section && willOpen);
       });
     }
 
@@ -1839,6 +1967,8 @@
       }
       renderProjects(projects);
       renderChats(chats);
+      renderSidebarPlugins(state.plugins || []);
+      renderSidebarAutomations(state.automations || []);
       renderRuns(state.runs || []);
       renderAgents(state.orchestration || {});
       renderSystemPanel(state.system || {});
@@ -2047,8 +2177,28 @@
         if (!["toggle-chat-menu"].includes(action)) closeChatMenus();
         if (action === "new-chat") await createChat();
         if (action === "focus-search") el("studio-search").focus();
-        if (action === "show-plugins") renderSourcesPanel((await apiGet("/studio/plugins")).plugins || [], studioState.runs || []);
-        if (action === "show-automations") renderRuns((await apiGet("/studio/automations")).automations || []);
+        if (action === "show-plugins") {
+          const plugins = (await apiGet("/studio/plugins")).plugins || [];
+          studioState.plugins = plugins;
+          renderSidebarPlugins(plugins);
+          renderSourcesPanel(plugins, studioState.runs || []);
+          toggleSidebarSection("plugins");
+        }
+        if (action === "show-automations") {
+          const automations = (await apiGet("/studio/automations")).automations || [];
+          studioState.automations = automations;
+          renderSidebarAutomations(automations);
+          renderRuns(automations);
+          toggleSidebarSection("automations");
+        }
+        if (action === "focus-plugin") {
+          renderSourcesPanel(studioState.plugins || [], studioState.runs || []);
+          el("studio-context").classList.add("mobile-open");
+        }
+        if (action === "focus-automation") {
+          renderRuns(studioState.automations || []);
+          el("studio-context").classList.add("mobile-open");
+        }
         if (action === "open-operations") window.location.href = "/brain";
         if (action === "open-settings") window.location.href = "/brain#settings";
         if (action === "select-project") { activeProjectId = target.dataset.projectId; activeChatId = ""; await loadStudioState(); }
