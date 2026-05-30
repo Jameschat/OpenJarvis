@@ -931,7 +931,28 @@ def _skills_root() -> Path:
 def _installed_skill_names(root: Path) -> list[str]:
     if not root.exists():
         return []
-    return sorted(path.name for path in root.iterdir() if path.is_dir())
+    names = {
+        path.name
+        for path in root.rglob("*")
+        if path.is_dir() and ((path / "SKILL.md").exists() or (path / "skill.toml").exists())
+    }
+    names.update(path.name for path in root.iterdir() if path.is_dir())
+    return sorted(names)
+
+
+def _resolve_skill_dir(root: Path, name: str) -> Path | None:
+    root_resolved = root.resolve()
+    candidates = [(root / name).resolve()]
+    if root.exists():
+        candidates.extend(path.resolve() for path in root.rglob(name) if path.is_dir())
+    for candidate in candidates:
+        try:
+            candidate.relative_to(root_resolved)
+        except ValueError:
+            continue
+        if candidate.is_dir() and ((candidate / "SKILL.md").exists() or (candidate / "skill.toml").exists()):
+            return candidate
+    return None
 
 
 def _skill_guidance(request_id: str, args: dict[str, Any]) -> dict[str, Any]:
@@ -945,17 +966,8 @@ def _skill_guidance(request_id: str, args: dict[str, Any]) -> dict[str, Any]:
         }
 
     root = _skills_root()
-    skill_dir = (root / name).resolve()
-    try:
-        skill_dir.relative_to(root.resolve())
-    except ValueError:
-        return {
-            "id": request_id,
-            "tool": "skill_guidance",
-            "ok": False,
-            "error": "invalid skill path",
-        }
-    if not skill_dir.is_dir():
+    skill_dir = _resolve_skill_dir(root, name)
+    if skill_dir is None:
         return {
             "id": request_id,
             "tool": "skill_guidance",
@@ -994,4 +1006,9 @@ def _skill_guidance(request_id: str, args: dict[str, Any]) -> dict[str, Any]:
         "tags": tags,
         "metadata_path": metadata_name if metadata_path.exists() else "",
         "excerpt": excerpt,
+        **(
+            {"skill_path": skill_dir.relative_to(root.resolve()).as_posix()}
+            if skill_dir.parent.resolve() != root.resolve()
+            else {}
+        ),
     }

@@ -86,6 +86,33 @@ def test_qwen_skill_guidance_loads_installed_skill(monkeypatch, tmp_path):
     ]
 
 
+def test_qwen_skill_guidance_loads_nested_installed_skill(monkeypatch, tmp_path):
+    from openjarvis.tools import qwen_tool_bridge
+
+    skill_dir = tmp_path / "unrealxu-unrealengine5" / "ue5-auto-assistant"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "# UE5 Auto Assistant\n\nRoute Unreal Engine requests to the right UE5 workflow.",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("OPENJARVIS_SKILLS_DIR", str(tmp_path))
+
+    results = qwen_tool_bridge.execute_tool_requests(
+        [
+            {
+                "id": "r1",
+                "tool": "skill_guidance",
+                "args": {"name": "ue5-auto-assistant"},
+            }
+        ]
+    )
+
+    assert results[0]["ok"] is True
+    assert results[0]["name"] == "ue5-auto-assistant"
+    assert results[0]["skill_path"] == "unrealxu-unrealengine5/ue5-auto-assistant"
+    assert "Route Unreal Engine requests" in results[0]["excerpt"]
+
+
 def test_qwen_skill_guidance_rejects_path_traversal(monkeypatch, tmp_path):
     from openjarvis.tools import qwen_tool_bridge
 
