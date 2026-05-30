@@ -92,6 +92,49 @@ def test_pytest_case_runs_real_check():
     assert report.results[0].passed is True
 
 
+_PROPOSAL = (
+    '```json\n{"requests":[{"id":"r1","tool":"repo_patch_proposal","args":'
+    '{"files":[{"path":"app.py","content":"x=1\\n"}]}}]}\n```'
+)
+
+
+def test_propose_with_retry_returns_on_first_success():
+    calls = []
+
+    def call_model(attempt, hint):
+        calls.append((attempt, hint))
+        return _PROPOSAL
+
+    files = qwen_agentic_eval.propose_with_retry(call_model, max_attempts=2)
+    assert files == [{"path": "app.py", "content": "x=1\n"}]
+    assert len(calls) == 1  # no retry needed
+    assert calls[0][1] == ""  # no hint on first attempt
+
+
+def test_propose_with_retry_recovers_on_second_attempt():
+    calls = []
+
+    def call_model(attempt, hint):
+        calls.append((attempt, hint))
+        return "sorry, here is some prose" if attempt == 0 else _PROPOSAL
+
+    files = qwen_agentic_eval.propose_with_retry(call_model, max_attempts=2)
+    assert files == [{"path": "app.py", "content": "x=1\n"}]
+    assert len(calls) == 2
+    assert calls[1][1]  # corrective hint passed on the retry
+
+
+def test_propose_with_retry_gives_up_after_max_attempts():
+    calls = []
+
+    def call_model(attempt, hint):
+        calls.append(attempt)
+        return "never valid"
+
+    assert qwen_agentic_eval.propose_with_retry(call_model, max_attempts=2) is None
+    assert len(calls) == 2
+
+
 def test_load_seed_agentic_cases():
     seed = Path(__file__).resolve().parents[2] / "evals" / "qwen" / "agentic-cases.json"
     cases = qwen_agentic_eval.load_agentic_cases(seed)

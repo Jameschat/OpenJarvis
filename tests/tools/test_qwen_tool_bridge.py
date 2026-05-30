@@ -511,6 +511,44 @@ def test_parse_tool_requests_ignores_unrelated_code_fence():
     assert qwen_tool_bridge.parse_tool_requests(content) == []
 
 
+def test_parse_repairs_trailing_commas_and_prose():
+    from openjarvis.tools import qwen_tool_bridge
+
+    # trailing comma + trailing prose after the JSON object
+    content = (
+        '{"requests":[{"id":"r1","tool":"recall_vault","args":{"query":"x"},},]}\n'
+        "Hope that helps!"
+    )
+    reqs = qwen_tool_bridge.parse_tool_requests(content)
+    assert len(reqs) == 1
+    assert reqs[0]["tool"] == "recall_vault"
+
+
+def test_balanced_object_ignores_braces_in_strings():
+    from openjarvis.tools import qwen_tool_bridge
+
+    text = 'prefix {"a":"has } brace","b":1} trailing'
+    assert qwen_tool_bridge._balanced_object(text) == '{"a":"has } brace","b":1}'
+
+
+def test_extract_proposal_files_from_json_fence():
+    from openjarvis.tools import qwen_tool_bridge
+
+    out = (
+        "```json\n"
+        '{"requests":[{"id":"r1","tool":"repo_patch_proposal","args":'
+        '{"files":[{"path":"app.py","content":"x=1\\n"}]}}]}\n```'
+    )
+    files = qwen_tool_bridge.extract_proposal_files(out)
+    assert files == [{"path": "app.py", "content": "x=1\n"}]
+
+
+def test_extract_proposal_files_none_when_absent():
+    from openjarvis.tools import qwen_tool_bridge
+
+    assert qwen_tool_bridge.extract_proposal_files("no json here") is None
+
+
 def test_parse_tool_requests_accepts_schema_aliases():
     """Qwen sometimes emits qwen_tool_requests/name instead of requests/tool.
     Regression for schema drift the agentic eval surfaced (2026-05-30)."""

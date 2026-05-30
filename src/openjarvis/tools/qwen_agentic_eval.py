@@ -137,46 +137,71 @@ def load_agentic_cases(path: str | Path) -> list[AgenticCase]:
     return out
 
 
+_RETRY_HINT = (
+    "Your previous response did not contain a usable tool-request JSON block. "
+    "Return ONLY one ```json fenced block, no prose, exactly: "
+    '{"requests":[{"id":"r1","tool":"repo_patch_proposal","args":'
+    '{"files":[{"path":"...","content":"..."}]}}]} '
+    "with valid JSON string escaping — every newline inside content MUST be \\n."
+)
+
+
+def propose_with_retry(
+    call_model: Callable[[int, str], str], *, max_attempts: int = 2
+) -> Files | None:
+    """Call the model up to ``max_attempts`` times, returning the first parseable
+    repo_patch_proposal. After a miss, the next call gets a corrective hint. Pure:
+    ``call_model(attempt_index, hint) -> raw_output`` is injected, so it's tested
+    without a real model."""
+    from openjarvis.tools import qwen_tool_bridge
+
+    hint = ""
+    for attempt in range(max(1, max_attempts)):
+        output = call_model(attempt, hint) or ""
+        files = qwen_tool_bridge.extract_proposal_files(output)
+        if files:
+            return files
+        hint = _RETRY_HINT
+    return None
+
+
 def default_propose(prompt: str, proj: Path, *, model: str = "qwen3.6-27b-local", timeout: int = 180) -> Files | None:
     """Real Qwen proposer: show the project, ask for a repo_patch_proposal, parse
-    the proposed files. CLI-only (lazy imports)."""
+    the proposed files, retrying once with a corrective hint. CLI-only (lazy)."""
     import os
 
     from openai import OpenAI
 
-    from openjarvis.tools import qwen_tool_bridge
-
     listing = read_project_files(proj)
     sys_prompt = (
         "You are a precise local coding agent. You are given a project's files and a task. "
-        "Return EXACTLY one fenced block named qwen_tool_requests containing JSON with a single "
-        "repo_patch_proposal request whose args.files is a list of {path, content} with the FULL "
-        "corrected file content. Output only that block."
-    )
-    user = (
-        f"TASK:\n{prompt}\n\nCURRENT PROJECT FILES:\n{listing}\n\n"
-        'Respond with: {"requests":[{"id":"r1","tool":"repo_patch_proposal",'
-        '"args":{"rationale":"...","files":[{"path":"...","content":"..."}]}}]}'
+        "Return EXACTLY one ```json fenced block containing JSON with a single repo_patch_proposal "
+        "request whose args.files is a list of {path, content} with the FULL corrected file content. "
+        "Use valid JSON: newlines inside content must be escaped as \\n. Output only that block."
     )
     base_url = os.environ.get("OPENAI_BASE_URL", "http://localhost:4000")
     client = OpenAI(base_url=base_url, api_key=os.environ.get("OPENAI_API_KEY", "sk-noop"))
-    resp = client.chat.completions.create(
-        model=model,
-        messages=[{"role": "system", "content": sys_prompt}, {"role": "user", "content": user}],
-        max_tokens=1500,
-        timeout=timeout,
-        extra_body={"chat_template_kwargs": {"enable_thinking": False}},
-    )
-    if not resp.choices:
-        return None
-    msg = resp.choices[0].message
-    content = (msg.content or getattr(msg, "reasoning_content", "") or "").strip()
-    for req in qwen_tool_bridge.parse_tool_requests(content):
-        if req.get("tool") == "repo_patch_proposal":
-            files = (req.get("args") or {}).get("files")
-            if isinstance(files, list) and files:
-                return files
-    return None
+
+    def call_model(_attempt: int, hint: str) -> str:
+        user = (
+            f"TASK:\n{prompt}\n\nCURRENT PROJECT FILES:\n{listing}\n\n"
+            'Respond with: {"requests":[{"id":"r1","tool":"repo_patch_proposal",'
+            '"args":{"rationale":"...","files":[{"path":"...","content":"..."}]}}]}'
+            + (f"\n\n{hint}" if hint else "")
+        )
+        resp = client.chat.completions.create(
+            model=model,
+            messages=[{"role": "system", "content": sys_prompt}, {"role": "user", "content": user}],
+            max_tokens=1500,
+            timeout=timeout,
+            extra_body={"chat_template_kwargs": {"enable_thinking": False}},
+        )
+        if not resp.choices:
+            return ""
+        msg = resp.choices[0].message
+        return (msg.content or getattr(msg, "reasoning_content", "") or "").strip()
+
+    return propose_with_retry(call_model, max_attempts=2)
 
 
 def main(argv: list[str] | None = None) -> int:

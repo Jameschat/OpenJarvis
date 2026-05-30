@@ -46,6 +46,70 @@ def _requests_list(payload: dict[str, Any]) -> list[Any] | None:
             return value
     return None
 
+
+def _balanced_object(text: str) -> str | None:
+    """Return the first complete top-level ``{...}`` object, respecting string
+    literals (so braces inside strings don't miscount). Handles trailing prose,
+    leading text, and multiple objects. None if no balanced object is found."""
+    start = text.find("{")
+    if start == -1:
+        return None
+    depth = 0
+    in_str = False
+    esc = False
+    for i in range(start, len(text)):
+        c = text[i]
+        if in_str:
+            if esc:
+                esc = False
+            elif c == "\\":
+                esc = True
+            elif c == '"':
+                in_str = False
+            continue
+        if c == '"':
+            in_str = True
+        elif c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start : i + 1]
+    return None
+
+
+def _strip_trailing_commas(text: str) -> str:
+    return re.sub(r",(\s*[}\]])", r"\1", text)
+
+
+def _loads_lenient(text: str) -> dict[str, Any] | None:
+    """Strict JSON first, then common-breakage repairs: balanced-brace extraction
+    (drops trailing prose / truncation noise) and trailing-comma removal. Models
+    emit these imperfections constantly, especially with code in string values."""
+    value = _safe_json(text)
+    if value is not None:
+        return value
+    obj = _balanced_object(text)
+    if obj is not None:
+        value = _safe_json(obj)
+        if value is not None:
+            return value
+        value = _safe_json(_strip_trailing_commas(obj))
+        if value is not None:
+            return value
+    return _safe_json(_strip_trailing_commas(text))
+
+
+def extract_proposal_files(model_output: str) -> list[dict[str, Any]] | None:
+    """Pull the files list from the first repo_patch_proposal in a model output,
+    or None. Shared by the agentic eval proposer and any code-edit flow."""
+    for req in parse_tool_requests(model_output):
+        if req.get("tool") == "repo_patch_proposal":
+            files = (req.get("args") or {}).get("files")
+            if isinstance(files, list) and files:
+                return files
+    return None
+
 _SUPERPOWER_SKILLS = {
     "brainstorming": "Explore requirements and present a design before implementation.",
     "writing-plans": "Create a detailed implementation plan with exact files, tests, commands, and commits.",
@@ -187,7 +251,7 @@ def parse_tool_requests(content: str) -> list[dict[str, Any]]:
     for pattern in _REQUEST_PATTERNS:
         match = pattern.search(text)
         if match:
-            payload = _safe_json(match.group("payload"))
+            payload = _loads_lenient(match.group("payload"))
             if payload is None:
                 return [
                     {
@@ -202,16 +266,16 @@ def parse_tool_requests(content: str) -> list[dict[str, Any]]:
     # 2. Fallback: any fenced code block whose JSON carries a request list.
     if payload is None:
         for block in _FENCE_RE.finditer(text):
-            candidate = _safe_json(block.group("body").strip())
+            candidate = _loads_lenient(block.group("body").strip())
             if candidate is not None and _requests_list(candidate) is not None:
                 payload = candidate
                 break
 
-    # 3. Fallback: raw JSON object (no fence).
+    # 3. Fallback: raw JSON object (no fence) anywhere in the text.
     if payload is None:
-        stripped = text.strip()
-        if stripped.startswith("{"):
-            candidate = _safe_json(stripped)
+        obj = _balanced_object(text)
+        if obj is not None:
+            candidate = _loads_lenient(obj)
             if candidate is not None and _requests_list(candidate) is not None:
                 payload = candidate
 
