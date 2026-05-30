@@ -21,6 +21,31 @@ _REQUEST_PATTERNS = [
     ),
 ]
 
+# Fallback: any fenced code block (```json, ```, etc.). Models very often wrap
+# tool requests in ```json instead of ```qwen_tool_requests — without this we
+# silently drop perfectly valid proposals (caught by the agentic eval, 2026-05-30).
+_FENCE_RE = re.compile(r"```[a-zA-Z0-9_]*\s*(?P<body>.*?)```", re.DOTALL)
+
+
+def _safe_json(text: str) -> dict[str, Any] | None:
+    try:
+        value = json.loads(text)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    return value if isinstance(value, dict) else None
+
+
+# Models drift on the exact schema — accept common aliases for the request list.
+_REQUEST_LIST_KEYS = ("requests", "qwen_tool_requests", "tool_requests")
+
+
+def _requests_list(payload: dict[str, Any]) -> list[Any] | None:
+    for key in _REQUEST_LIST_KEYS:
+        value = payload.get(key)
+        if isinstance(value, list):
+            return value
+    return None
+
 _SUPERPOWER_SKILLS = {
     "brainstorming": "Explore requirements and present a design before implementation.",
     "writing-plans": "Create a detailed implementation plan with exact files, tests, commands, and commits.",
@@ -155,25 +180,45 @@ def tool_manifest() -> str:
 
 
 def parse_tool_requests(content: str) -> list[dict[str, Any]]:
-    match = None
+    text = content or ""
+    payload: dict[str, Any] | None = None
+
+    # 1. Explicit qwen_tool_requests fence / XML — invalid JSON here is a hard error.
     for pattern in _REQUEST_PATTERNS:
-        match = pattern.search(content or "")
+        match = pattern.search(text)
         if match:
+            payload = _safe_json(match.group("payload"))
+            if payload is None:
+                return [
+                    {
+                        "id": "parse-error",
+                        "tool": "invalid",
+                        "args": {},
+                        "error": "qwen_tool_requests block was not valid JSON",
+                    }
+                ]
             break
-    if not match:
+
+    # 2. Fallback: any fenced code block whose JSON carries a request list.
+    if payload is None:
+        for block in _FENCE_RE.finditer(text):
+            candidate = _safe_json(block.group("body").strip())
+            if candidate is not None and _requests_list(candidate) is not None:
+                payload = candidate
+                break
+
+    # 3. Fallback: raw JSON object (no fence).
+    if payload is None:
+        stripped = text.strip()
+        if stripped.startswith("{"):
+            candidate = _safe_json(stripped)
+            if candidate is not None and _requests_list(candidate) is not None:
+                payload = candidate
+
+    if payload is None:
         return []
-    try:
-        payload = json.loads(match.group("payload"))
-    except json.JSONDecodeError:
-        return [
-            {
-                "id": "parse-error",
-                "tool": "invalid",
-                "args": {},
-                "error": "qwen_tool_requests block was not valid JSON",
-            }
-        ]
-    requests = payload.get("requests")
+
+    requests = _requests_list(payload)
     if not isinstance(requests, list):
         return [
             {
@@ -190,7 +235,8 @@ def parse_tool_requests(content: str) -> list[dict[str, Any]]:
         out.append(
             {
                 "id": str(item.get("id") or f"r{index + 1}"),
-                "tool": str(item.get("tool") or "").strip(),
+                # accept "name" as an alias for "tool" (observed model drift)
+                "tool": str(item.get("tool") or item.get("name") or "").strip(),
                 "args": item.get("args") if isinstance(item.get("args"), dict) else {},
             }
         )

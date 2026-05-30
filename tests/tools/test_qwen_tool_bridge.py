@@ -475,3 +475,54 @@ def test_verify_in_sandbox_runs_declared_check_scoped_to_project(monkeypatch, tm
     assert results[0]["passed"] is True
     # Real file untouched.
     assert (site / "app.py").read_text(encoding="utf-8") == "def broken(:\n"
+
+
+def test_parse_tool_requests_accepts_json_fenced_block():
+    """Models commonly wrap requests in ```json instead of ```qwen_tool_requests.
+    Regression for the parser bug the agentic eval surfaced (2026-05-30)."""
+    from openjarvis.tools import qwen_tool_bridge
+
+    content = (
+        "Sure, here is the fix:\n\n"
+        "```json\n"
+        '{"requests":[{"id":"r1","tool":"repo_patch_proposal","args":'
+        '{"rationale":"fix","files":[{"path":"app.py","content":"def greet(name):\\n    return name\\n"}]}}]}\n'
+        "```\n"
+    )
+    reqs = qwen_tool_bridge.parse_tool_requests(content)
+    assert len(reqs) == 1
+    assert reqs[0]["tool"] == "repo_patch_proposal"
+    assert reqs[0]["args"]["files"][0]["path"] == "app.py"
+
+
+def test_parse_tool_requests_accepts_raw_json():
+    from openjarvis.tools import qwen_tool_bridge
+
+    content = '{"requests":[{"id":"r1","tool":"recall_vault","args":{"query":"x"}}]}'
+    reqs = qwen_tool_bridge.parse_tool_requests(content)
+    assert len(reqs) == 1
+    assert reqs[0]["tool"] == "recall_vault"
+
+
+def test_parse_tool_requests_ignores_unrelated_code_fence():
+    from openjarvis.tools import qwen_tool_bridge
+
+    content = "```python\nprint('hello')\n```\nno tool requests here"
+    assert qwen_tool_bridge.parse_tool_requests(content) == []
+
+
+def test_parse_tool_requests_accepts_schema_aliases():
+    """Qwen sometimes emits qwen_tool_requests/name instead of requests/tool.
+    Regression for schema drift the agentic eval surfaced (2026-05-30)."""
+    from openjarvis.tools import qwen_tool_bridge
+
+    content = (
+        "```json\n"
+        '{"qwen_tool_requests":[{"id":"r1","name":"repo_patch_proposal","args":'
+        '{"files":[{"path":"app.py","content":"def greet(name):\\n    return name\\n"}]}}]}\n'
+        "```\n"
+    )
+    reqs = qwen_tool_bridge.parse_tool_requests(content)
+    assert len(reqs) == 1
+    assert reqs[0]["tool"] == "repo_patch_proposal"
+    assert reqs[0]["args"]["files"][0]["path"] == "app.py"
