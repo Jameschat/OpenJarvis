@@ -57,6 +57,20 @@ def test_sandbox_passes_when_proposed_fix_compiles(tmp_path):
     assert (tmp_path / "app.py").read_text(encoding="utf-8") == "def broken(:\n"
 
 
+def test_sandbox_resolves_plain_python_to_current_interpreter(tmp_path):
+    from openjarvis.tools import qwen_sandbox
+
+    _write_repo(tmp_path, "python -m py_compile app.py", "x = 1\n")
+    result = qwen_sandbox.run_check_in_sandbox(
+        tmp_path,
+        [{"path": "app.py", "content": "x = 1\n"}],
+        timeout=60,
+    )
+    assert result["ok"] is True
+    assert result["passed"] is True
+    assert result["command"][0] == sys.executable
+
+
 def test_sandbox_reports_real_failure(tmp_path):
     from openjarvis.tools import qwen_sandbox
 

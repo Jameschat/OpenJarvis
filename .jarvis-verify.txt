@@ -1,0 +1,3 @@
+# Default safe check for Jarvis/Qwen sandbox proposals.
+# Qwen controls proposed file content, not this command.
+python -m pytest tests/tools/test_qwen_sandbox.py tests/tools/test_qwen_verify_loop.py -q

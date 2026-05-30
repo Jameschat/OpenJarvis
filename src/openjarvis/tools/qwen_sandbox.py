@@ -27,6 +27,7 @@ from __future__ import annotations
 import shlex
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -73,7 +74,7 @@ _IGNORE_DIRS = {
 
 _SECRET_NAMES = ("jarvis.bat", ".env", "secret", "token", "key", ".pem", ".pfx", ".p12")
 
-MAX_SANDBOX_FILES = 4000  # refuse to copy absurdly large trees
+MAX_SANDBOX_FILES = 10_000  # refuse to copy absurdly large trees
 DEFAULT_TIMEOUT_S = 120
 MAX_OUTPUT_CHARS = 20_000
 
@@ -104,6 +105,19 @@ def _executable_allowed(argv: list[str]) -> bool:
         if exe.endswith(suffix):
             exe = exe[: -len(suffix)]
     return exe in ALLOWED_EXECUTABLES
+
+
+def _resolve_command(argv: list[str]) -> list[str]:
+    """Run generic Python declarations through Jarvis's current interpreter."""
+    if not argv:
+        return argv
+    exe = Path(argv[0]).name.lower()
+    for suffix in (".exe", ".cmd", ".bat"):
+        if exe.endswith(suffix):
+            exe = exe[: -len(suffix)]
+    if exe in {"python", "python3", "py"}:
+        return [sys.executable, *argv[1:]]
+    return argv
 
 
 def _safe_rel(raw_path: str) -> str | None:
@@ -151,6 +165,7 @@ def run_check_in_sandbox(
             "blocked": True,
             "error": f"check executable not allow-listed: {command[0]}",
         }
+    command = _resolve_command(command)
 
     # Validate every proposed file path before doing any work.
     clean_files: list[tuple[str, str]] = []
