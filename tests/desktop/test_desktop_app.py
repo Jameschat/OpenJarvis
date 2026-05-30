@@ -79,7 +79,8 @@ def test_launch_returns_2_without_pywebview(monkeypatch, capsys):
 
     monkeypatch.setattr(builtins, "__import__", fake_import)
 
-    code = app.launch(health_check=lambda: {"ok": True}, wait_timeout_s=0)
+    # single_instance=False isolates this from any real running app instance.
+    code = app.launch(health_check=lambda: {"ok": True}, wait_timeout_s=0, single_instance=False)
     assert code == 2
     out = capsys.readouterr().out
     assert "pywebview is not installed" in out

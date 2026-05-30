@@ -236,6 +236,37 @@ def _public_pin() -> str:
     return os.environ.get("OPENJARVIS_PUBLIC_PIN", "").strip()
 
 
+_LOOPBACK_IPS = {"127.0.0.1", "::1", "::ffff:127.0.0.1"}
+
+
+def _loopback_auth_ok(get_header, client_ip: str, port: int) -> bool:
+    """True when a request is the local operator (desktop app / local browser /
+    CLI) and may bypass the PIN gate.
+
+    Safety: the Cloudflare tunnel ALWAYS stamps Cf-Connecting-Ip / X-Forwarded-*
+    on forwarded traffic, so requiring their absence means this never bypasses
+    auth for public-tunnel visitors. When an Origin header is present it must be
+    a local origin — this blocks cross-site / DNS-rebinding requests a malicious
+    web page might fire at 127.0.0.1. ``get_header(name)`` returns a header or
+    None (case-insensitive), mirroring http.client headers.
+    """
+    if os.environ.get("OPENJARVIS_TRUST_LOOPBACK", "1").strip().lower() in ("0", "false", "no", "off"):
+        return False
+    if (
+        get_header("Cf-Connecting-Ip")
+        or get_header("X-Forwarded-For")
+        or get_header("X-Forwarded-Proto")
+        or get_header("Cf-Visitor")
+    ):
+        return False
+    if (client_ip or "") not in _LOOPBACK_IPS:
+        return False
+    origin = (get_header("Origin") or "").strip().rstrip("/")
+    if origin and origin not in {f"http://127.0.0.1:{port}", f"http://localhost:{port}"}:
+        return False
+    return True
+
+
 def _make_session_token() -> str:
     token = secrets.token_hex(24)
     with _PIN_SESSIONS_LOCK:
@@ -2605,6 +2636,10 @@ class _Handler(SimpleHTTPRequestHandler):
         pin = _public_pin()
         if not pin:
             return True  # PIN not configured → open access (dev mode)
+        # Trusted local request (desktop app / local browser / CLI) — never
+        # bypasses the public tunnel, which always carries Cf-/X-Forwarded headers.
+        if _loopback_auth_ok(self.headers.get, self.client_address[0] if self.client_address else "", _PORT):
+            return True
         # Cookie?
         cookie = self.headers.get("Cookie") or ""
         for chunk in cookie.split(";"):

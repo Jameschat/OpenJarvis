@@ -168,7 +168,8 @@ def launch(
     api = DesktopApi(url, health_check=health_check, supervisor=supervisor)
     if ready:
         window = webview.create_window(
-            title, url, width=1440, height=920, min_size=(1024, 700)
+            title, url, width=1440, height=920, min_size=(1024, 700),
+            text_select=True,  # allow selecting/copying text from Studio
         )
     else:
         from openjarvis.desktop.boot import boot_html
@@ -180,6 +181,7 @@ def launch(
             width=1440,
             height=920,
             min_size=(1024, 700),
+            text_select=True,
         )
 
     from openjarvis.desktop.menu import MenuController, start_with_menu
