@@ -357,6 +357,71 @@ def _vault_project_workdir(vault_project: str | None) -> Path | None:
     return None
 
 
+def _words(text: str) -> set[str]:
+    return {
+        word
+        for word in "".join(ch.lower() if ch.isalnum() else " " for ch in text).split()
+        if len(word) >= 3
+    }
+
+
+def _vault_project_candidates() -> list[dict[str, Any]]:
+    try:
+        from openjarvis.tools import obsidian_brain
+
+        projects_root = obsidian_brain.BRAIN_ROOT / "Projects"
+    except Exception:
+        return []
+    if not projects_root.exists():
+        return []
+    candidates: list[dict[str, Any]] = []
+    for project_md in projects_root.glob("*/PROJECT.md"):
+        project_id = project_md.parent.name
+        try:
+            text = project_md.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        title = project_id
+        for line in text.splitlines()[:20]:
+            stripped = line.strip()
+            if stripped.startswith("#"):
+                title = stripped.lstrip("#").strip() or title
+                break
+        workdir = _vault_project_workdir(project_id)
+        candidates.append(
+            {
+                "id": project_id,
+                "title": title,
+                "repo_root": str(workdir) if workdir is not None else None,
+                "keywords": _words(f"{project_id} {title} {text[:1000]}"),
+            }
+        )
+    return candidates
+
+
+def _infer_project_from_prompt(prompt: str, current_project: dict[str, Any] | None) -> dict[str, Any] | None:
+    current_id = str((current_project or {}).get("id") or "")
+    # Respect an already-specific Studio project; only auto-route when the UI is
+    # on the generic OpenJarvis workspace.
+    if current_id and current_id != "openjarvis":
+        return None
+    prompt_words = _words(prompt)
+    if not prompt_words:
+        return None
+    best: tuple[int, dict[str, Any]] | None = None
+    for candidate in _vault_project_candidates():
+        if candidate["id"] == current_id:
+            continue
+        keywords = set(candidate.get("keywords") or set())
+        score = len(prompt_words & keywords)
+        slug_words = _words(str(candidate.get("id") or ""))
+        if slug_words and slug_words.issubset(prompt_words | keywords) and prompt_words & slug_words:
+            score += 4
+        if score >= 3 and (best is None or score > best[0]):
+            best = (score, candidate)
+    return best[1] if best else None
+
+
 def _project_repo_root(project: dict[str, Any] | None = None) -> Path:
     # An explicit, non-default repo_root on the project wins.
     if project and project.get("repo_root"):
@@ -550,6 +615,12 @@ def _load_agent_task_index() -> dict[str, dict[str, Any]]:
         return {}
     tasks = state.get("tasks") or []
     return {str(task.get("id")): task for task in tasks if isinstance(task, dict) and task.get("id")}
+
+
+def _agent_registry() -> Any:
+    from openjarvis.tools import agent_runner
+
+    return agent_runner._reg
 
 
 def _iso_to_epoch(value: str | None) -> float | None:
@@ -802,6 +873,16 @@ def _mark_studio_run_timed_out(
     run: dict[str, Any],
     task_ids: list[str],
 ) -> None:
+    try:
+        registry = _agent_registry()
+        for task_id in task_ids:
+            registry.mark_finished(
+                task_id,
+                -1,
+                f"Studio run timed out after {STUDIO_RUN_STALE_AFTER_SECONDS}s.",
+            )
+    except Exception:
+        pass
     updated = store.get_run(run["id"])
     updated["status"] = "failed"
     updated["updated_at"] = studio_store.utc_now()
@@ -901,6 +982,15 @@ def start_studio_run(
         project_id,
         title=project_id,
     )
+    inferred_project = _infer_project_from_prompt(prompt, project)
+    if inferred_project is not None:
+        project_id = str(inferred_project["id"])
+        project = store.ensure_project(
+            project_id,
+            title=str(inferred_project.get("title") or project_id),
+            repo_root=str(inferred_project.get("repo_root") or studio_store.DEFAULT_REPO_ROOT),
+            vault_project=project_id,
+        )
     decision = studio_workflows.select_workflow(prompt)
     run = store.create_run(project_id, chat_id, prompt, workflow=decision["workflow"])
     run = _store_run_file_activity_baseline(store, run, _project_repo_root(project))

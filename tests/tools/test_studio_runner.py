@@ -433,6 +433,36 @@ def test_sync_marks_stale_studio_runs_failed(monkeypatch, tmp_path):
     assert any("timed out" in m["content"].lower() for m in chat["messages"])
 
 
+def test_sync_timeout_marks_agent_task_failed(monkeypatch, tmp_path):
+    monkeypatch.setattr(studio_runner.studio_store, "STUDIO_ROOT", tmp_path / "studio")
+    monkeypatch.setattr(studio_runner, "STUDIO_RUN_STALE_AFTER_SECONDS", 60)
+    store = studio_runner.studio_store.StudioStore(tmp_path / "studio")
+    store.ensure_project("openjarvis", title="OpenJarvis")
+    chat = store.create_chat("openjarvis", title="Chat")
+    run = store.create_run("openjarvis", chat["id"], "Long task", workflow="execute")
+    run["status"] = "running"
+    run["tasks"] = ["task-stuck"]
+    store._write_json(store._run_path(run["id"]), run)
+
+    monkeypatch.setattr(
+        studio_runner,
+        "_load_agent_task_index",
+        lambda: {"task-stuck": {"id": "task-stuck", "status": "running", "started_at": 1779771600}},
+    )
+    monkeypatch.setattr(studio_runner.time, "time", lambda: 1779771901)
+    marked = []
+
+    class FakeRegistry:
+        def mark_finished(self, task_id, exit_code, error=None):
+            marked.append((task_id, exit_code, error))
+
+    monkeypatch.setattr(studio_runner, "_agent_registry", lambda: FakeRegistry())
+
+    studio_runner.sync_completed_run_outputs(store)
+
+    assert marked == [("task-stuck", -1, "Studio run timed out after 60s.")]
+
+
 def test_sync_marks_orphaned_studio_runs_failed(monkeypatch, tmp_path):
     monkeypatch.setattr(studio_runner.studio_store, "STUDIO_ROOT", tmp_path / "studio")
     monkeypatch.setattr(studio_runner, "STUDIO_RUN_STALE_AFTER_SECONDS", 60)
@@ -659,3 +689,57 @@ def test_project_repo_root_falls_back_to_default(monkeypatch, tmp_path):
          "repo_root": str(studio_runner.studio_store.DEFAULT_REPO_ROOT)}
     )
     assert root.resolve() == studio_runner.studio_store.DEFAULT_REPO_ROOT.resolve()
+
+
+def test_start_studio_run_routes_named_vault_project(monkeypatch, tmp_path):
+    from openjarvis.tools import obsidian_brain
+
+    brain = tmp_path / "brain"
+    site = tmp_path / "westhill-hotel"
+    site.mkdir()
+    project_md = brain / "Projects" / "westhill-hotel" / "PROJECT.md"
+    project_md.parent.mkdir(parents=True)
+    project_md.write_text(
+        f"---\nslug: westhill-hotel\npath: {site}\n---\n"
+        "# PROJECT.md - Westhill Country Hotel Website\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(obsidian_brain, "BRAIN_ROOT", brain)
+    monkeypatch.setattr(studio_runner.studio_store, "STUDIO_ROOT", tmp_path / "studio")
+    monkeypatch.setattr(
+        studio_runner.studio_context,
+        "build_project_context_pack",
+        lambda prompt, project=None: {"ok": True, "markdown": "Westhill context", "warnings": []},
+    )
+    monkeypatch.setattr(
+        studio_runner.studio_workflows,
+        "select_workflow",
+        lambda prompt: {
+            "workflow": "execute",
+            "reason": "Single direct task with normal verification.",
+            "requires_operator_approval": False,
+            "verification": {"required": True},
+            "risks": [],
+        },
+    )
+    queued = {}
+
+    def fake_queue(**kwargs):
+        queued.update(kwargs)
+        return "task-westhill"
+
+    monkeypatch.setattr(studio_runner, "_queue_agent_task", fake_queue)
+
+    store = studio_runner.studio_store.StudioStore(tmp_path / "studio")
+    store.ensure_project("openjarvis", title="OpenJarvis")
+    chat = store.create_chat("openjarvis", title="New chat")
+
+    result = studio_runner.start_studio_run(
+        "openjarvis",
+        chat["id"],
+        "can we continue with the westhill country hotel website, modernising it",
+    )
+
+    assert result["run"]["project_id"] == "westhill-hotel"
+    assert queued["project_id"] == "studio-westhill-hotel"
+    assert Path(queued["repo_root"]).resolve() == site.resolve()
