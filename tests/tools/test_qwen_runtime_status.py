@@ -22,7 +22,7 @@ def test_qwen_runtime_status_defaults_include_current_active_lane():
 
 def test_qwen_runtime_status_includes_node_identity(monkeypatch):
     monkeypatch.setenv("JARVIS_NODE_ROLE", "worker")
-    monkeypatch.setenv("JARVIS_NODE_ID", "worker-3090")
+    monkeypatch.setenv("JARVIS_NODE_ID", "worker-gpu")
     monkeypatch.setenv("JARVIS_WORKER_MODEL", "qwen3.6-35b-a3b-rotorquant")
     monkeypatch.setenv("JARVIS_WORKER_REPO", "Jameschat/OpenJarvis3090")
 
@@ -30,7 +30,7 @@ def test_qwen_runtime_status_includes_node_identity(monkeypatch):
 
     assert status["node"] == {
         "role": "worker",
-        "node_id": "worker-3090",
+        "node_id": "worker-gpu",
         "is_worker": True,
         "worker_model": "qwen3.6-35b-a3b-rotorquant",
         "worker_repo": "Jameschat/OpenJarvis3090",

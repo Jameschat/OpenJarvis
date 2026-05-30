@@ -76,6 +76,16 @@ def test_studio_has_project_preview_action():
     assert "_handle_studio_preview" in source
 
 
+def test_studio_has_worker_update_action():
+    html = (ROOT / "jarvis_web" / "studio.html").read_text(encoding="utf-8")
+    source = (ROOT / "src" / "openjarvis" / "cli" / "brain_server.py").read_text(encoding="utf-8")
+
+    assert 'data-studio-action="update-worker"' in html
+    assert "updateWorkerNode" in html
+    assert "/studio/worker-update" in html
+    assert "_handle_studio_worker_update" in source
+
+
 def test_studio_has_boot_screen_that_fades_after_state_load():
     html = (ROOT / "jarvis_web" / "studio.html").read_text(encoding="utf-8")
     assert "drawBootRain" in html

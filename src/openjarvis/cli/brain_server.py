@@ -1374,7 +1374,7 @@ def _studio_qwen_profile() -> Dict[str, Any]:
             "label": "Remote 35B",
             "model": "qwen3.6-35b-a3b-remote",
             "base_url": "http://192.168.1.191:4000/v1",
-            "summary": "RTX 3090 Qwen 35B-A3B TurboQuant worker",
+            "summary": "Remote GPU Qwen 35B-A3B TurboQuant worker",
         },
     }
     return {"active": profile, "profiles": profiles}
@@ -1800,6 +1800,8 @@ class _Handler(SimpleHTTPRequestHandler):
             self._json_response(200, _studio_qwen_profile())
         elif self.path == "/studio/preview":
             self._handle_studio_preview_get()
+        elif self.path == "/studio/worker-update":
+            self._json_response(405, {"error": "worker update requires POST"})
         elif self.path == "/studio/automations":
             try:
                 from openjarvis.tools import agent_runner
@@ -1911,6 +1913,8 @@ class _Handler(SimpleHTTPRequestHandler):
             self._handle_studio_qwen_profile()
         elif self.path == "/studio/preview":
             self._handle_studio_preview()
+        elif self.path == "/studio/worker-update":
+            self._handle_studio_worker_update()
         elif self.path == "/studio/qwen-proposals/apply":
             self._handle_studio_qwen_proposal_apply()
         elif self.path.startswith("/studio/runs/") and self.path.endswith("/evidence"):
@@ -2116,6 +2120,16 @@ class _Handler(SimpleHTTPRequestHandler):
             self._json_response(400, {"error": str(exc)})
         except Exception:
             logger.exception("/studio/preview failed")
+            self._json_response(500, {"error": "internal error", "ref": _err_ref()})
+
+    def _handle_studio_worker_update(self) -> None:
+        try:
+            from openjarvis.tools.worker_update import run_worker_update
+
+            result = run_worker_update()
+            self._json_response(200 if result.get("ok") else 400, result)
+        except Exception:
+            logger.exception("/studio/worker-update failed")
             self._json_response(500, {"error": "internal error", "ref": _err_ref()})
 
     def _handle_studio_qwen_proposal_apply(self) -> None:

@@ -879,6 +879,7 @@
       <div id="studio-chats"></div>
       <div class="sidebar-bottom">
         <button class="side-command" type="button" data-studio-action="open-operations">Operations Center</button>
+        <button class="side-command" type="button" data-studio-action="update-worker">Update Node</button>
         <button class="side-command" type="button" data-studio-action="open-settings">Settings</button>
       </div>
     </aside>
@@ -1019,6 +1020,7 @@
       chats: "/studio/chats",
       runs: "/studio/runs",
       preview: "/studio/preview",
+      workerUpdate: "/studio/worker-update",
       search: "/studio/search",
       chatEvents: "/chat_events",
       orchEvents: "/orch_events",
@@ -2245,6 +2247,17 @@
       window.open(result.url, "_blank", "noopener,noreferrer");
     }
 
+    async function updateWorkerNode() {
+      setContextStatus("Worker update started. Pulling latest Jarvis changes on this node...");
+      const result = await apiPost(API.workerUpdate, {});
+      if (result.ok) {
+        setContextStatus("Worker update complete: latest Jarvis changes pulled and worker smoke test passed.");
+      } else {
+        setContextStatus(result.error || result.stderr || "Worker update failed.");
+      }
+      await loadStudioState();
+    }
+
     async function applyQwenProposal(proposalId) {
       if (!proposalId) return;
       await apiPost(API.qwenProposalApply, {
@@ -2288,6 +2301,7 @@
           el("studio-context").classList.add("mobile-open");
         }
         if (action === "open-operations") window.location.href = "/brain";
+        if (action === "update-worker") await updateWorkerNode();
         if (action === "open-settings") window.location.href = "/brain#settings";
         if (action === "select-project") { activeProjectId = target.dataset.projectId; activeChatId = ""; await loadStudioState(); }
         if (action === "select-chat") { activeChatId = target.dataset.chatId; renderState(studioState); }

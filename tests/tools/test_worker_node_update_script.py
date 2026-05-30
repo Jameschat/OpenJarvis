@@ -45,6 +45,6 @@ def test_worker_env_example_documents_worker_identity():
     )
 
     assert "JARVIS_NODE_ROLE=worker" in env_example
-    assert "JARVIS_NODE_ID=worker-3090" in env_example
+    assert "JARVIS_NODE_ID=worker-gpu" in env_example
     assert "JARVIS_WORKER_REPO=Jameschat/OpenJarvis3090" in env_example
     assert "JARVIS_WORKER_MODEL=qwen3.6-35b-a3b-rotorquant" in env_example

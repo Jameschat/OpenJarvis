@@ -81,7 +81,7 @@ _DEFAULT_STATUS: dict[str, Any] = {
                 "tiny_prompt_tok_s": 406.42,
             },
             "verdict": "use-for-planning-review",
-            "notes": "Second PC RTX 3090 via LiteLLM; tested from main PC with jarvis-remote-ok.",
+            "notes": "Second PC GPU worker via LiteLLM; tested from main PC with jarvis-remote-ok.",
         },
     ],
 }

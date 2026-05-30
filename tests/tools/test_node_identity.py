@@ -21,14 +21,14 @@ def test_node_identity_defaults_to_primary(monkeypatch):
 
 def test_node_identity_reads_worker_environment(monkeypatch):
     monkeypatch.setenv("JARVIS_NODE_ROLE", "worker")
-    monkeypatch.setenv("JARVIS_NODE_ID", "worker-3090")
+    monkeypatch.setenv("JARVIS_NODE_ID", "worker-gpu")
     monkeypatch.setenv("JARVIS_WORKER_MODEL", "qwen3.6-35b-a3b-rotorquant")
     monkeypatch.setenv("JARVIS_WORKER_REPO", "Jameschat/OpenJarvis3090")
 
     identity = load_node_identity()
 
     assert identity["role"] == "worker"
-    assert identity["node_id"] == "worker-3090"
+    assert identity["node_id"] == "worker-gpu"
     assert identity["worker_model"] == "qwen3.6-35b-a3b-rotorquant"
     assert identity["worker_repo"] == "Jameschat/OpenJarvis3090"
     assert identity["is_worker"] is True
