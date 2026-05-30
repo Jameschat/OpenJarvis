@@ -13,6 +13,11 @@ $repo = "E:\Claude\OpenJarvis"
 $python = Join-Path $repo ".venv\Scripts\python.exe"
 if (-not (Test-Path $python)) { $python = "python" }
 
+# Optional app icon: drop a jarvis.ico at jarvis_web\jarvis.ico to brand the exe.
+$iconArgs = @()
+$icon = Join-Path $repo "jarvis_web\jarvis.ico"
+if (Test-Path $icon) { $iconArgs = @("--icon", $icon) }
+
 & $python -m PyInstaller `
   --name Jarvis `
   --noconsole `
@@ -22,6 +27,7 @@ if (-not (Test-Path $python)) { $python = "python" }
   --hidden-import openjarvis.tools.runtime_health `
   --hidden-import openjarvis.tools.qwen_runtime_status `
   --paths (Join-Path $repo "src") `
+  @iconArgs `
   (Join-Path $repo "src\openjarvis\desktop\__main__.py")
 
 Write-Host ""

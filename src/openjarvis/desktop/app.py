@@ -165,13 +165,15 @@ def launch(
         print(f"Meanwhile you can open {url} in a browser.")
         return 2
 
+    api = DesktopApi(url, health_check=health_check, supervisor=supervisor)
     if ready:
-        webview.create_window(title, url, width=1440, height=920, min_size=(1024, 700))
+        window = webview.create_window(
+            title, url, width=1440, height=920, min_size=(1024, 700)
+        )
     else:
         from openjarvis.desktop.boot import boot_html
 
-        api = DesktopApi(url, health_check=health_check, supervisor=supervisor)
-        webview.create_window(
+        window = webview.create_window(
             title,
             html=boot_html(url, title=title),
             js_api=api,
@@ -180,8 +182,11 @@ def launch(
             min_size=(1024, 700),
         )
 
+    from openjarvis.desktop.menu import MenuController, start_with_menu
+
+    controller = MenuController(studio_url=url, api=api, get_window=lambda: window)
     try:
-        webview.start()
+        start_with_menu(webview, controller)
     finally:
         if stop_backend_on_exit and supervisor.started_backend():
             supervisor.stop()
