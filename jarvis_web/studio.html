@@ -272,6 +272,57 @@
       border: 1px solid var(--line);
       border-top-left-radius: 6px;
     }
+    .assistant-transcript {
+      max-width: 900px;
+      margin-bottom: 24px;
+      justify-items: stretch;
+    }
+    .assistant-transcript .bubble {
+      max-width: 100%;
+      padding: 2px 0 0;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      box-shadow: none;
+      color: #f3f3f4;
+      font-size: 13px;
+      line-height: 1.52;
+      white-space: normal;
+      overflow-wrap: break-word;
+    }
+    .assistant-transcript .bubble p {
+      margin: 0 0 10px;
+    }
+    .assistant-transcript .bubble ul,
+    .assistant-transcript .bubble ol {
+      margin: 0 0 12px 20px;
+      padding: 0;
+    }
+    .assistant-transcript .bubble li {
+      margin: 4px 0;
+    }
+    .assistant-transcript .bubble code {
+      border-radius: 5px;
+      padding: 1px 4px;
+      background: rgba(255,255,255,0.08);
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      font-size: 12px;
+    }
+    .assistant-transcript .bubble .assistant-code {
+      display: block;
+      margin: 12px 0;
+      padding: 12px;
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      background: #101012;
+      color: #eef2ff;
+      white-space: pre;
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.02);
+    }
+    .assistant-transcript .message-time {
+      padding-left: 0;
+    }
     .jarvis.typing .bubble::after {
       content: "";
       display: inline-block;
@@ -906,11 +957,67 @@
       return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
     }
 
+    function appendAssistantInline(parent, text) {
+      const source = String(text || "");
+      const pattern = /`([^`]+)`/g;
+      let last = 0;
+      let match;
+      while ((match = pattern.exec(source)) !== null) {
+        if (match.index > last) parent.appendChild(document.createTextNode(source.slice(last, match.index)));
+        const code = document.createElement("code");
+        code.textContent = match[1];
+        parent.appendChild(code);
+        last = pattern.lastIndex;
+      }
+      if (last < source.length) parent.appendChild(document.createTextNode(source.slice(last)));
+    }
+
+    function formatAssistantMarkdown(text) {
+      const fragment = document.createDocumentFragment();
+      const content = String(text || "").replace(/\r\n/g, "\n");
+      const blocks = content.split(/```/);
+      blocks.forEach((block, index) => {
+        if (index % 2 === 1) {
+          const lines = block.replace(/^\w+\n/, "");
+          const code = document.createElement("code");
+          code.className = "assistant-code";
+          code.textContent = lines.trimEnd();
+          fragment.appendChild(code);
+          return;
+        }
+        const paragraphs = block.split(/\n{2,}/);
+        paragraphs.forEach((paragraph) => {
+          const trimmed = paragraph.trim();
+          if (!trimmed) return;
+          const lines = trimmed.split("\n");
+          if (lines.every((line) => /^[-*]\s+/.test(line.trim()))) {
+            const list = document.createElement("ul");
+            lines.forEach((line) => {
+              const item = document.createElement("li");
+              appendAssistantInline(item, line.trim().replace(/^[-*]\s+/, ""));
+              list.appendChild(item);
+            });
+            fragment.appendChild(list);
+            return;
+          }
+          const p = document.createElement("p");
+          appendAssistantInline(p, trimmed);
+          fragment.appendChild(p);
+        });
+      });
+      return fragment;
+    }
+
+    function renderAssistantContent(bubble, text) {
+      clear(bubble);
+      bubble.appendChild(formatAssistantMarkdown(text));
+    }
+
     function typeJarvisBubble(article, bubble, text) {
       if (!article || !bubble) return;
       const content = String(text || "");
       if (!content || content.length > 1800 || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-        bubble.textContent = content;
+        renderAssistantContent(bubble, content);
         return;
       }
       article.classList.add("typing");
@@ -924,6 +1031,7 @@
           window.setTimeout(step, 12);
         } else {
           article.classList.remove("typing");
+          renderAssistantContent(bubble, content);
         }
       };
       step();
@@ -1170,7 +1278,11 @@
         const content = String(message.content || "");
         if (content.startsWith("Studio run running:")) return;
         const article = document.createElement("article");
-        article.className = `message ${message.role === "operator" ? "operator" : "jarvis"}`;
+        if (message.role === "operator") {
+          article.className = "message operator";
+        } else {
+          article.className = "message jarvis assistant-transcript";
+        }
         const bubble = document.createElement("div");
         bubble.className = "bubble";
         const messageKey = message.id || `${message.created_at || ""}:${content.slice(0, 40)}`;
@@ -1179,7 +1291,11 @@
           animatedMessageIds.add(messageKey);
           typeJarvisBubble(article, bubble, content);
         } else {
-          bubble.textContent = content;
+          if (message.role === "operator") {
+            bubble.textContent = content;
+          } else {
+            renderAssistantContent(bubble, content);
+          }
         }
         article.appendChild(bubble);
         if (message.role === "operator") {
@@ -1964,10 +2080,14 @@
     el("studio-search").addEventListener("keydown", (event) => {
       if (event.key === "Enter") searchStudio();
     });
-    el("studio-composer").addEventListener("keydown", (event) => {
-      if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) sendComposer();
+    const composer = el("studio-composer");
+    composer.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        sendComposer();
+      }
     });
-    el("studio-composer").addEventListener("paste", (event) => {
+    composer.addEventListener("paste", (event) => {
       const files = event.clipboardData && event.clipboardData.files;
       if (files && files.length) {
         addFileContext(files);
@@ -1979,11 +2099,11 @@
         addTextContext("Pasted text", text);
       }
     });
-    el("studio-composer").addEventListener("drop", (event) => {
+    composer.addEventListener("drop", (event) => {
       event.preventDefault();
       addFileContext(event.dataTransfer && event.dataTransfer.files);
     });
-    el("studio-composer").addEventListener("dragover", (event) => event.preventDefault());
+    composer.addEventListener("dragover", (event) => event.preventDefault());
     el("studio-file-input").addEventListener("change", (event) => {
       addFileContext(event.target.files);
       event.target.value = "";

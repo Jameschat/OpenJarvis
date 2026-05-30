@@ -102,6 +102,26 @@ def test_studio_has_typing_thinking_and_agent_colours():
     assert "agent-claude" in html
 
 
+def test_studio_uses_codex_style_assistant_transcript_blocks():
+    html = (ROOT / "jarvis_web" / "studio.html").read_text(encoding="utf-8")
+
+    assert "assistant-transcript" in html
+    assert "renderAssistantContent" in html
+    assert "formatAssistantMarkdown" in html
+    assert 'article.className = "message jarvis assistant-transcript"' in html
+    assert "assistant-code" in html
+
+
+def test_studio_composer_enter_sends_shift_enter_newline():
+    html = (ROOT / "jarvis_web" / "studio.html").read_text(encoding="utf-8")
+
+    assert 'composer.addEventListener("keydown"' in html
+    assert 'event.key === "Enter"' in html
+    assert "!event.shiftKey" in html
+    assert "event.preventDefault()" in html
+    assert "sendComposer()" in html
+
+
 def test_studio_has_qwen_profile_and_context_controls():
     html = (ROOT / "jarvis_web" / "studio.html").read_text(encoding="utf-8")
     source = (ROOT / "src" / "openjarvis" / "cli" / "brain_server.py").read_text(encoding="utf-8")
