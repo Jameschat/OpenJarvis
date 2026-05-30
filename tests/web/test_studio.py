@@ -37,6 +37,7 @@ def test_studio_html_exists_and_wires_real_endpoints():
         "/studio/projects",
         "/studio/chats",
         "/studio/runs",
+        "/studio/preview",
         "/studio/search",
         "/chat_events",
         "/orch_events",
@@ -63,6 +64,16 @@ def test_studio_buttons_are_not_inert():
                     "id=",
                 )
             ), line
+
+
+def test_studio_has_project_preview_action():
+    html = (ROOT / "jarvis_web" / "studio.html").read_text(encoding="utf-8")
+    source = (ROOT / "src" / "openjarvis" / "cli" / "brain_server.py").read_text(encoding="utf-8")
+
+    assert 'data-studio-action="open-preview"' in html
+    assert "openProjectPreview" in html
+    assert "/studio/preview" in html
+    assert "_handle_studio_preview" in source
 
 
 def test_studio_has_boot_screen_that_fades_after_state_load():

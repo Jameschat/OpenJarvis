@@ -28,6 +28,7 @@ def test_qwen_tool_manifest_exposes_local_browser_visual_check():
 
     assert "browser_visual_check" in manifest
     assert "local Jarvis page" in manifest
+    assert "project_preview" in manifest
 
 
 def test_qwen_tool_manifest_exposes_patch_proposal():
@@ -210,6 +211,22 @@ def test_qwen_browser_visual_check_runs_local_probe(monkeypatch, tmp_path):
     assert results[0]["ok"] is True
     assert results[0]["title"] == "Jarvis Studio"
     assert results[0]["screenshot_path"].endswith(".png")
+
+
+def test_qwen_project_preview_starts_active_repo_preview(monkeypatch, tmp_path):
+    from openjarvis.tools import qwen_tool_bridge
+
+    (tmp_path / "index.html").write_text("<h1>Westhill</h1>", encoding="utf-8")
+    monkeypatch.setenv("OPENJARVIS_QWEN_REPO_ROOT", str(tmp_path))
+
+    results = qwen_tool_bridge.execute_tool_requests(
+        [{"id": "r1", "tool": "project_preview", "args": {}}]
+    )
+
+    assert results[0]["ok"] is True
+    assert results[0]["tool"] == "project_preview"
+    assert results[0]["url"].startswith("http://127.0.0.1:")
+    assert results[0]["root"] == str(tmp_path.resolve())
 
 
 def test_qwen_repo_patch_proposal_writes_auditable_plan(monkeypatch, tmp_path):

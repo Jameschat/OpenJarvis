@@ -1418,6 +1418,18 @@ def _studio_state() -> Dict[str, Any]:
         }
     state["plugins"] = _studio_plugins()
     try:
+        from openjarvis.tools.project_preview import start_project_preview
+
+        active_project = (state.get("projects") or [{}])[0]
+        repo_root = active_project.get("repo_root")
+        if repo_root:
+            state["preview"] = {
+                "available": (Path(str(repo_root)) / "index.html").exists(),
+                "project_id": active_project.get("id"),
+            }
+    except Exception:
+        state["preview"] = {"available": False}
+    try:
         state["orchestration"] = orch_bridge.get_snapshot()
     except Exception:
         state["orchestration"] = {"tasks": [], "agents": []}
@@ -1786,6 +1798,8 @@ class _Handler(SimpleHTTPRequestHandler):
             self._json_response(200, {"plugins": _studio_plugins()})
         elif self.path == "/studio/qwen-profile":
             self._json_response(200, _studio_qwen_profile())
+        elif self.path == "/studio/preview":
+            self._handle_studio_preview_get()
         elif self.path == "/studio/automations":
             try:
                 from openjarvis.tools import agent_runner
@@ -1895,6 +1909,8 @@ class _Handler(SimpleHTTPRequestHandler):
             self._handle_studio_run_create()
         elif self.path == "/studio/qwen-profile":
             self._handle_studio_qwen_profile()
+        elif self.path == "/studio/preview":
+            self._handle_studio_preview()
         elif self.path == "/studio/qwen-proposals/apply":
             self._handle_studio_qwen_proposal_apply()
         elif self.path.startswith("/studio/runs/") and self.path.endswith("/evidence"):
@@ -2059,6 +2075,47 @@ class _Handler(SimpleHTTPRequestHandler):
             self._json_response(400, {"error": str(exc)})
         except Exception:
             logger.exception("/studio/qwen-profile failed")
+            self._json_response(500, {"error": "internal error", "ref": _err_ref()})
+
+    def _handle_studio_preview_get(self) -> None:
+        try:
+            from openjarvis.tools.studio_store import StudioStore
+
+            projects = StudioStore().list_projects()
+            active = projects[0] if projects else {}
+            repo_root = str(active.get("repo_root") or "")
+            self._json_response(
+                200,
+                {
+                    "available": bool(repo_root and (Path(repo_root) / "index.html").exists()),
+                    "project_id": active.get("id", ""),
+                    "repo_root": repo_root,
+                },
+            )
+        except Exception:
+            logger.exception("/studio/preview get failed")
+            self._json_response(500, {"error": "internal error", "ref": _err_ref()})
+
+    def _handle_studio_preview(self) -> None:
+        try:
+            from openjarvis.tools.project_preview import start_project_preview
+            from openjarvis.tools.studio_store import StudioStore
+
+            data = self._read_json_body()
+            project_id = str(data.get("project_id") or "openjarvis")
+            store = StudioStore()
+            project = next(
+                (item for item in store.list_projects() if item.get("id") == project_id),
+                None,
+            )
+            if not project:
+                return self._json_response(404, {"error": "project not found"})
+            result = start_project_preview(Path(str(project.get("repo_root") or "")))
+            self._json_response(200 if result.get("ok") else 400, result)
+        except ValueError as exc:
+            self._json_response(400, {"error": str(exc)})
+        except Exception:
+            logger.exception("/studio/preview failed")
             self._json_response(500, {"error": "internal error", "ref": _err_ref()})
 
     def _handle_studio_qwen_proposal_apply(self) -> None:

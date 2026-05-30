@@ -887,11 +887,13 @@
       <div class="mobile-menu">
         <button class="pill-btn" type="button" data-studio-action="toggle-left">Menu</button>
         <button class="pill-btn" type="button" data-studio-action="toggle-context">Context</button>
+        <button class="pill-btn" type="button" data-studio-action="open-preview">Preview</button>
         <strong>J.A.R.V.I.S. Studio</strong>
       </div>
       <header class="thread-head">
         <div class="thread-title" id="studio-thread-title">Jarvis local Qwen workspace</div>
         <span class="row-meta" id="studio-model-label">qwen3.6-27b-local</span>
+        <button class="pill-btn" type="button" data-studio-action="open-preview">Open Preview</button>
         <button class="dots" type="button" data-studio-action="refresh-state">...</button>
       </header>
       <section id="studio-thread" aria-live="polite"></section>
@@ -1016,6 +1018,7 @@
       projects: "/studio/projects",
       chats: "/studio/chats",
       runs: "/studio/runs",
+      preview: "/studio/preview",
       search: "/studio/search",
       chatEvents: "/chat_events",
       orchEvents: "/orch_events",
@@ -2232,6 +2235,16 @@
       renderQwenProfile(result);
     }
 
+    async function openProjectPreview() {
+      const result = await apiPost(API.preview, { project_id: activeProjectId });
+      if (!result.ok || !result.url) {
+        setContextStatus(result.error || "Project preview unavailable. Add index.html to the project root.");
+        return;
+      }
+      setContextStatus(`Project preview opened: ${result.url}`);
+      window.open(result.url, "_blank", "noopener,noreferrer");
+    }
+
     async function applyQwenProposal(proposalId) {
       if (!proposalId) return;
       await apiPost(API.qwenProposalApply, {
@@ -2292,6 +2305,7 @@
         if (action === "toggle-left") el("studio-sidebar").classList.toggle("mobile-open");
         if (action === "toggle-context") el("studio-context").classList.toggle("mobile-open");
         if (action === "attach-context") el("studio-file-input").click();
+        if (action === "open-preview") await openProjectPreview();
         if (action === "set-qwen-profile") await setQwenProfile(target.dataset.profile || "fast");
         if (action === "apply-qwen-proposal") await applyQwenProposal(target.dataset.proposalId);
         if (action === "toggle-approved") { studioState.approved = !studioState.approved; target.textContent = studioState.approved ? "Approved run" : "Default permissions"; }

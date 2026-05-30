@@ -184,7 +184,13 @@ def tool_manifest() -> str:
             "tool": "browser_visual_check",
             "tier": "verify",
             "args": {"url": "local Jarvis page URL", "full_page": "optional boolean"},
-            "description": "Open a local Jarvis page and capture a screenshot/text excerpt for visual QA.",
+            "description": "Open a local Jarvis or project preview URL and capture a screenshot/text excerpt for visual QA.",
+        },
+        {
+            "tool": "project_preview",
+            "tier": "verify",
+            "args": {},
+            "description": "Start a safe localhost preview server for the active project if it has index.html.",
         },
         {
             "tool": "verify_in_sandbox",
@@ -369,6 +375,8 @@ def _execute_one(request: dict[str, Any]) -> dict[str, Any]:
             return _repo_patch_proposal(request_id, args)
         if tool == "browser_visual_check":
             return _browser_visual_check(request_id, args)
+        if tool == "project_preview":
+            return _project_preview(request_id)
         if tool == "verify_in_sandbox":
             return _verify_in_sandbox(request_id, args)
         if tool == "web_search":
@@ -819,7 +827,7 @@ def _browser_visual_check(request_id: str, args: dict[str, Any]) -> dict[str, An
             "tool": "browser_visual_check",
             "ok": False,
             "blocked": True,
-            "reason": "browser_visual_check is limited to local Jarvis pages",
+            "reason": "browser_visual_check is limited to local Jarvis pages and project preview URLs",
         }
     out_dir = _visual_check_dir()
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -830,6 +838,13 @@ def _browser_visual_check(request_id: str, args: dict[str, Any]) -> dict[str, An
         bool(args.get("full_page", False)),
     )
     return {"id": request_id, "tool": "browser_visual_check", **result}
+
+
+def _project_preview(request_id: str) -> dict[str, Any]:
+    from openjarvis.tools.project_preview import start_project_preview
+
+    result = start_project_preview(_repo_root())
+    return {"id": request_id, "tool": "project_preview", **result}
 
 
 def _browser_visual_check_impl(url: str, screenshot_path: Path, full_page: bool) -> dict[str, Any]:
