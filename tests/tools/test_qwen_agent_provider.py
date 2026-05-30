@@ -603,6 +603,58 @@ def test_qwen_provider_uses_persisted_quality_profile(monkeypatch, tmp_path):
     )
 
 
+def test_qwen_provider_uses_persisted_remote_profile(monkeypatch, tmp_path):
+    from openjarvis.tools import agent_runner
+    from openjarvis.tools.agent_runner import Task
+
+    class DummyMessage:
+        content = "Remote 35B profile result."
+
+    class DummyChoice:
+        message = DummyMessage()
+
+    class DummyCompletions:
+        def create(self, **kwargs):
+            assert kwargs["model"] == "qwen3.6-35b-a3b-remote"
+            return types.SimpleNamespace(choices=[DummyChoice()])
+
+    class DummyClient:
+        def __init__(self, **kwargs):
+            self.chat = types.SimpleNamespace(completions=DummyCompletions())
+
+    class DummyRegistry:
+        def mark_running(self, task_id, workspace):
+            pass
+
+        def mark_finished(self, task_id, exit_code, error=None):
+            assert exit_code == 0
+
+    profile_path = tmp_path / ".openjarvis" / "studio" / "qwen_profile.json"
+    profile_path.parent.mkdir(parents=True)
+    profile_path.write_text('{"active":"remote"}', encoding="utf-8")
+    monkeypatch.setattr(agent_runner.Path, "home", lambda: tmp_path)
+    monkeypatch.delenv("OPENJARVIS_QWEN_PROFILE", raising=False)
+    monkeypatch.setitem(sys.modules, "openai", types.SimpleNamespace(OpenAI=DummyClient))
+    monkeypatch.setattr(agent_runner, "RUNS_DIR", tmp_path / "runs")
+    monkeypatch.setattr(agent_runner, "_reg", DummyRegistry())
+    monkeypatch.setattr(agent_runner, "_build_brain_context", lambda: "")
+    monkeypatch.setattr(agent_runner, "_write_agent_task_note", lambda *args, **kwargs: None)
+
+    agent_runner._run_qwen_task(
+        Task(
+            id="task-qwen-remote",
+            title="Remote profile",
+            agent_id="qwen-planner",
+            prompt="Plan it.",
+        ),
+        {"id": "qwen-planner", "role": "Plan.", "model": "qwen3.6-27b-local"},
+    )
+
+    assert "Remote 35B profile result." in (
+        tmp_path / "runs" / "task-qwen-remote" / "RESULT.md"
+    ).read_text(encoding="utf-8")
+
+
 def test_qwen_quality_profile_retries_local_when_litellm_lacks_alias(monkeypatch, tmp_path):
     from openjarvis.tools import agent_runner
     from openjarvis.tools.agent_runner import Task

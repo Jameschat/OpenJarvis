@@ -1337,7 +1337,7 @@ def _load_studio_qwen_profile() -> str:
             profile = str(data.get("active") or "").strip().lower()
         except Exception:
             profile = ""
-    if profile not in {"fast", "quality"}:
+    if profile not in {"fast", "quality", "remote"}:
         profile = "fast"
     os.environ["OPENJARVIS_QWEN_PROFILE"] = profile
     return profile
@@ -1368,6 +1368,13 @@ def _studio_qwen_profile() -> Dict[str, Any]:
             "model": "qwen3.6-27b-quality",
             "base_url": "http://127.0.0.1:8083/v1",
             "summary": "Q5_K_S BeeLlama DFlash quality lane",
+        },
+        "remote": {
+            "id": "remote",
+            "label": "Remote 35B",
+            "model": "qwen3.6-35b-a3b-remote",
+            "base_url": "http://192.168.1.191:4000/v1",
+            "summary": "RTX 3090 Qwen 35B-A3B TurboQuant worker",
         },
     }
     return {"active": profile, "profiles": profiles}

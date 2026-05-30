@@ -141,6 +141,8 @@ def test_studio_has_qwen_profile_and_context_controls():
     assert "/studio/qwen-profile" in html
     assert 'data-profile="fast"' in html
     assert 'data-profile="quality"' in html
+    assert 'data-profile="remote"' in html
+    assert "qwen3.6-35b-a3b-remote" in source
     assert "setQwenProfile" in html
     assert 'id="studio-file-input"' in html
     assert "composerAttachments" in html

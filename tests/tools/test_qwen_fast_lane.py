@@ -57,6 +57,25 @@ def test_default_litellm_config_exposes_studio_quality_alias():
     ]["fallbacks"]
 
 
+def test_default_litellm_config_exposes_remote_35b_worker_alias():
+    config_path = Path("configs/litellm.yaml")
+
+    data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    remote = next(
+        item for item in data["model_list"] if item["model_name"] == "qwen3.6-35b-a3b-remote"
+    )
+
+    assert remote["litellm_params"]["model"] == "openai/qwen3.6-35b-a3b-rotorquant"
+    assert remote["litellm_params"]["api_base"] == "http://192.168.1.191:4000/v1"
+    assert {
+        "qwen3.6-35b-a3b-remote": [
+            "qwen3.6-27b-local",
+            "qwen3.6-27b-beellama",
+            "qwen3.6-27b-ollama",
+        ]
+    } in data["litellm_settings"]["fallbacks"]
+
+
 def test_fastlane_server_command_uses_llama_cpp_speculative_defaults():
     command = qwen_fast_lane.build_llama_server_command(
         llama_server_path=Path("C:/llama/llama-server.exe"),

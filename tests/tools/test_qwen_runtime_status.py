@@ -18,6 +18,34 @@ def test_qwen_runtime_status_defaults_include_current_active_lane():
     assert status["active_lane"] == "wsl-mtp-froggeric"
     assert status["active_alias"] == "qwen3.6-27b-local"
     assert status["active_online"] is False
+
+
+def test_qwen_runtime_status_defaults_include_remote_35b_worker():
+    seen = []
+
+    def checker(port, host="127.0.0.1"):
+        seen.append((host, port))
+        return host == "192.168.1.191" and port == 4000
+
+    status = load_qwen_runtime_status(
+        path=Path("definitely-missing-qwen-status.json"),
+        port_checker=checker,
+    )
+    remote = next(lane for lane in status["lanes"] if lane["id"] == "remote-35b-a3b")
+
+    assert remote["alias"] == "qwen3.6-35b-a3b-remote"
+    assert remote["host"] == "192.168.1.191"
+    assert remote["port"] == 4000
+    assert remote["online"] is True
+    assert ("192.168.1.191", 4000) in seen
+
+
+def test_qwen_runtime_status_defaults_include_current_lane_metadata():
+    status = load_qwen_runtime_status(
+        path=Path("definitely-missing-qwen-status.json"),
+        port_checker=lambda _port: False,
+    )
+
     assert "do not promote vLLM" in status["promotion_verdict"]
     active = next(lane for lane in status["lanes"] if lane["id"] == "wsl-mtp-froggeric")
     assert active["context_tokens"] == 16384
@@ -25,6 +53,7 @@ def test_qwen_runtime_status_defaults_include_current_active_lane():
         "wsl-mtp-froggeric",
         "vllm-int4-mtp",
         "rotorquant-35b-a3b",
+        "remote-35b-a3b",
     }
 
 
@@ -61,6 +90,7 @@ def test_qwen_runtime_status_loads_json_override(tmp_path):
     assert status["promotion_verdict"] == "Promote after verified 128K context benchmark."
     assert status["lanes"][0]["online"] is True
     assert status["lanes"][0]["benchmark"]["short_tok_s"] == 142.0
+    assert any(lane["id"] == "remote-35b-a3b" for lane in status["lanes"])
 
 
 def test_qwen_runtime_status_falls_back_on_bad_json(tmp_path):

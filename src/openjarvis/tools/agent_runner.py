@@ -2139,7 +2139,7 @@ def _active_qwen_profile() -> str:
             profile = str(data.get("active") or "").strip().lower()
         except Exception:
             profile = ""
-    return profile if profile in {"fast", "quality"} else "fast"
+    return profile if profile in {"fast", "quality", "remote"} else "fast"
 
 
 def _qwen_should_think(task_prompt: str) -> bool:
@@ -2212,9 +2212,13 @@ def _run_qwen_task(task: Task, agent_spec: Dict[str, Any]) -> None:
     _reg.mark_running(task.id, str(ws))
 
     model = (agent_spec.get("model") or "qwen3.6-27b-local").strip()
-    requested_quality_profile = model == "qwen3.6-27b-local" and _active_qwen_profile() == "quality"
+    active_qwen_profile = _active_qwen_profile()
+    requested_quality_profile = model == "qwen3.6-27b-local" and active_qwen_profile == "quality"
+    requested_remote_profile = model == "qwen3.6-27b-local" and active_qwen_profile == "remote"
     if requested_quality_profile:
         model = "qwen3.6-27b-quality"
+    elif requested_remote_profile:
+        model = "qwen3.6-35b-a3b-remote"
     role = (agent_spec.get("role") or "Local Qwen agent.").strip()
     workspace_write = bool(agent_spec.get("workspace_write"))
     brain_block = _build_brain_context()
@@ -2312,7 +2316,7 @@ def _run_qwen_task(task: Task, agent_spec: Dict[str, Any]) -> None:
                 )
             except Exception as exc:
                 message = str(exc).lower()
-                if requested_quality_profile and "invalid model name" in message:
+                if (requested_quality_profile or requested_remote_profile) and "invalid model name" in message:
                     resp = client.chat.completions.create(
                         model="qwen3.6-27b-local",
                         messages=messages,

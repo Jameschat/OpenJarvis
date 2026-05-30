@@ -66,6 +66,21 @@ _DEFAULT_STATUS: dict[str, Any] = {
             "verdict": "hold",
             "notes": "Very fast short output; daily target reduced to 128K because Studio has memory handoff.",
         },
+        {
+            "id": "remote-35b-a3b",
+            "label": "Remote 35B-A3B Worker",
+            "alias": "qwen3.6-35b-a3b-remote",
+            "host": "192.168.1.191",
+            "port": 4000,
+            "role": "remote-worker",
+            "context_tokens": 128000,
+            "benchmark": {
+                "tiny_tok_s": 120.94,
+                "tiny_prompt_tok_s": 406.42,
+            },
+            "verdict": "use-for-planning-review",
+            "notes": "Second PC RTX 3090 via LiteLLM; tested from main PC with jarvis-remote-ok.",
+        },
     ],
 }
 
@@ -220,17 +235,35 @@ def load_qwen_runtime_status_from_data(
     if not isinstance(lanes, list) or not lanes:
         status = default_qwen_runtime_status()
         lanes = status["lanes"]
+    else:
+        default_lanes = default_qwen_runtime_status()["lanes"]
+        lane_ids = {
+            str(lane.get("id"))
+            for lane in lanes
+            if isinstance(lane, dict) and lane.get("id")
+        }
+        for default_lane in default_lanes:
+            lane_id = str(default_lane.get("id") or "")
+            if lane_id and lane_id not in lane_ids:
+                lanes.append(dict(default_lane))
 
     normalized_lanes: list[dict[str, Any]] = []
     for raw_lane in lanes:
         if not isinstance(raw_lane, dict):
             continue
         lane = dict(raw_lane)
+        host = str(lane.get("host") or "127.0.0.1")
         try:
             port = int(lane.get("port", 0))
         except (TypeError, ValueError):
             port = 0
-        lane["online"] = checker(port) if port > 0 else False
+        if port > 0:
+            try:
+                lane["online"] = checker(port, host=host)
+            except TypeError:
+                lane["online"] = checker(port)
+        else:
+            lane["online"] = False
         normalized_lanes.append(lane)
 
     if not normalized_lanes:
