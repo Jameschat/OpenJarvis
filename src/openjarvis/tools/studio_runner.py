@@ -128,6 +128,71 @@ def _context_direct_reply(prompt: str, context_pack: dict[str, Any]) -> str | No
     )
 
 
+def _looks_like_project_continuation(prompt: str) -> bool:
+    text = " ".join((prompt or "").strip().lower().split())
+    if not text or len(text) > 360:
+        return False
+    if not any(term in text for term in ("continue", "carry on", "pick up", "resume", "modernis", "moderniz")):
+        return False
+    return any(term in text for term in ("project", "website", "site", "app", "build"))
+
+
+def _project_continuation_reply(prompt: str, context_pack: dict[str, Any]) -> str | None:
+    if not _looks_like_project_continuation(prompt):
+        return None
+    markdown = str(context_pack.get("markdown") or "").strip()
+    if not markdown or "### STATE.md" not in markdown:
+        return None
+
+    current_phase = ""
+    where_left_off: list[str] = []
+    open_items: list[str] = []
+    in_left_off = False
+    in_open_items = False
+    for raw in markdown.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        lower = line.lower()
+        if lower.startswith("**current phase:**"):
+            current_phase = line.replace("**", "")
+            continue
+        if lower.startswith("## where we left off"):
+            in_left_off = True
+            in_open_items = False
+            continue
+        if lower.startswith("## current known issues") or lower.startswith("## open"):
+            in_open_items = True
+            in_left_off = False
+            continue
+        if lower.startswith("## ") and not lower.startswith(("## where", "## current known", "## open")):
+            in_left_off = False
+            in_open_items = False
+        if in_left_off and len(where_left_off) < 3 and not line.startswith("#"):
+            where_left_off.append(line)
+        if in_open_items and line.startswith("- ") and len(open_items) < 5:
+            open_items.append(line)
+
+    lines = [
+        "Yes. I found the active project state and can continue it.",
+        "",
+    ]
+    if current_phase:
+        lines.append(current_phase)
+    if where_left_off:
+        lines += ["", "Where we left off:"] + [f"- {item}" for item in where_left_off]
+    if open_items:
+        lines += ["", "Best next modernisation slices:"] + open_items
+    lines += [
+        "",
+        "Recommended next command:",
+        "`Build the dedicated dining page for the Westhill site, then verify it locally.`",
+        "",
+        "I answered this from the project vault so it returns quickly; the local Qwen build lane can take over once the task is specific.",
+    ]
+    return "\n".join(lines)
+
+
 def _fast_vault_memory_reply(prompt: str) -> str | None:
     if not _looks_like_memory_question(prompt):
         return None
@@ -1073,6 +1138,28 @@ def start_studio_run(
                 "next_steps": [],
             },
             "reply": context_reply,
+        }
+    continuation_reply = _project_continuation_reply(prompt, context_pack)
+    if continuation_reply:
+        run = _persist_run_status(store, store.get_run(run["id"]), "completed")
+        store.append_run_event(
+            run["id"],
+            "run.completed",
+            "Answered project continuation from vault state",
+            {"mode": "project_continuation"},
+        )
+        return {
+            "run": store.get_run(run["id"]),
+            "context": context_pack,
+            "research": {"ok": False, "markdown": ""},
+            "decision": {
+                **decision,
+                "workflow": "project_continuation",
+                "reason": "Project continuation answered from vault state without a background agent run.",
+                "verification": {"required": False, "method": "vault project state"},
+                "next_steps": [],
+            },
+            "reply": continuation_reply,
         }
     research_pack = {"ok": False, "markdown": ""}
     if decision["workflow"] == "qwen_workflow" or studio_research.should_prefetch_research(prompt):

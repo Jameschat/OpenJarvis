@@ -743,3 +743,51 @@ def test_start_studio_run_routes_named_vault_project(monkeypatch, tmp_path):
     assert result["run"]["project_id"] == "westhill-hotel"
     assert queued["project_id"] == "studio-westhill-hotel"
     assert Path(queued["repo_root"]).resolve() == site.resolve()
+
+
+def test_start_studio_run_answers_project_continuation_without_queueing(monkeypatch, tmp_path):
+    monkeypatch.setattr(studio_runner.studio_store, "STUDIO_ROOT", tmp_path / "studio")
+    monkeypatch.setattr(
+        studio_runner.studio_context,
+        "build_project_context_pack",
+        lambda prompt, project=None: {
+            "ok": True,
+            "warnings": [],
+            "markdown": "\n".join(
+                [
+                    "## Active project",
+                    "Project: westhill-hotel",
+                    "",
+                    "### STATE.md",
+                    "## Where we left off",
+                    "Phase 1 is complete. The homepage and Jersey pages are built.",
+                    "The site has not yet been deployed to Netlify.",
+                    "",
+                    "## Current known issues / open items",
+                    "- **Events enquiry form** — needs Netlify Forms.",
+                    "- **Newsletter form** — footer subscribe input is UI-only.",
+                    "",
+                    "### ROADMAP.md",
+                    "**Current phase:** Phase 2 — Page completion & polish",
+                ]
+            ),
+        },
+    )
+    queued = []
+    monkeypatch.setattr(studio_runner, "_queue_agent_task", lambda **kwargs: queued.append(kwargs) or "task")
+
+    store = studio_runner.studio_store.StudioStore(tmp_path / "studio")
+    store.ensure_project("westhill-hotel", title="Westhill Country Hotel", repo_root=str(tmp_path))
+    chat = store.create_chat("westhill-hotel", title="New chat")
+
+    result = studio_runner.start_studio_run(
+        "westhill-hotel",
+        chat["id"],
+        "can we continue with the westhill country hotel website, modernising it",
+    )
+
+    assert result["run"]["status"] == "completed"
+    assert result["decision"]["workflow"] == "project_continuation"
+    assert "Where we left off" in result["reply"]
+    assert "Build the dedicated dining page" in result["reply"]
+    assert queued == []
