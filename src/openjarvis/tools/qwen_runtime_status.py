@@ -11,6 +11,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
+from openjarvis.tools.node_identity import load_node_identity
+
 
 DEFAULT_QWEN_RUNTIME_STATUS_PATH = (
     Path.home() / ".openjarvis" / "qwen_runtime_status.json"
@@ -285,6 +287,7 @@ def load_qwen_runtime_status_from_data(
         active_lane_id = str(active.get("id") or "")
 
     return {
+        "node": load_node_identity(),
         "active_lane": active_lane_id,
         "active_alias": active.get("alias", ""),
         "active_online": bool(active.get("online")),
