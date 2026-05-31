@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from openjarvis.tools import studio_runner
+from openjarvis.tools import agent_runner, studio_runner
 from openjarvis.tools.studio_store import StudioStore
 
 
@@ -823,3 +823,52 @@ def test_start_studio_run_answers_new_project_platform_brief_without_queueing(mo
     assert "Security baseline" in result["reply"]
     assert "IMAP/OAuth email import" in result["reply"]
     assert queued == []
+
+
+def test_cancel_studio_run_marks_running_run_and_tasks_cancelled(monkeypatch, tmp_path):
+    monkeypatch.setattr(studio_runner.studio_store, "STUDIO_ROOT", tmp_path / "studio")
+    cancelled_running = []
+    cancelled_todo = []
+    monkeypatch.setattr(agent_runner, "cancel_running_task", lambda task_id: cancelled_running.append(task_id) or False)
+    monkeypatch.setattr(agent_runner, "cancel_task", lambda task_id: cancelled_todo.append(task_id) or True)
+
+    store = studio_runner.studio_store.StudioStore(tmp_path / "studio")
+    store.ensure_project("openjarvis", title="OpenJarvis", repo_root=str(tmp_path))
+    chat = store.create_chat("openjarvis", title="New chat")
+    run = store.create_run("openjarvis", chat["id"], "Long Qwen task", workflow="execute")
+    run["status"] = "running"
+    run["tasks"] = ["task-live"]
+    store._write_json(store._run_path(run["id"]), run)
+
+    result = studio_runner.cancel_studio_run(run["id"])
+    chat_after = store.get_chat(chat["id"])
+
+    assert result["run"]["status"] == "cancelled"
+    assert result["run"]["cancelled"] is True
+    assert cancelled_running == ["task-live"]
+    assert cancelled_todo == ["task-live"]
+    assert "Cancelled the running Studio task" in chat_after["messages"][-1]["content"]
+
+
+def test_sync_completed_outputs_does_not_overwrite_cancelled_run(monkeypatch, tmp_path):
+    monkeypatch.setattr(studio_runner.studio_store, "STUDIO_ROOT", tmp_path / "studio")
+    monkeypatch.setattr(
+        studio_runner,
+        "_load_agent_task_index",
+        lambda: {"task-live": {"id": "task-live", "status": "done", "agent_id": "qwen-planner"}},
+    )
+
+    store = studio_runner.studio_store.StudioStore(tmp_path / "studio")
+    store.ensure_project("openjarvis", title="OpenJarvis", repo_root=str(tmp_path))
+    chat = store.create_chat("openjarvis", title="New chat")
+    run = store.create_run("openjarvis", chat["id"], "Long Qwen task", workflow="execute")
+    run["status"] = "cancelled"
+    run["cancelled"] = True
+    run["tasks"] = ["task-live"]
+    store._write_json(store._run_path(run["id"]), run)
+
+    synced = studio_runner.sync_completed_run_outputs(store)
+    updated = store.get_run(run["id"])
+
+    assert synced == 0
+    assert updated["status"] == "cancelled"

@@ -1333,6 +1333,13 @@ class _Registry:
         plan_callback: Optional[Tuple[str, str, int]] = None  # (project_id, step_id, exit_code)
         with self._lock:
             t = self.tasks[task_id]
+            if t.status == "cancelled":
+                s = self.stats[t.agent_id]
+                s.status = "idle"
+                s.current_task = None
+                s.current_task_id = None
+                self._save_unlocked()
+                return
             t.ended_at = time.time()
             t.exit_code = exit_code
             t.error = error
@@ -1695,10 +1702,15 @@ class _Registry:
     def cancel_task(self, task_id: str) -> bool:
         with self._lock:
             t = self.tasks.get(task_id)
-            if t is None or t.status not in ("todo",):
+            if t is None or t.status not in ("todo", "running"):
                 return False
             t.status = "cancelled"
             t.ended_at = time.time()
+            s = self.stats[t.agent_id]
+            if s.current_task_id == t.id:
+                s.status = "idle"
+                s.current_task = None
+                s.current_task_id = None
             self._save_unlocked()
             return True
 

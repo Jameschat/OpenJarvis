@@ -585,6 +585,11 @@
       color: #111;
       font-weight: 800;
     }
+    .send-btn.stop-active {
+      background: #ff5b6e;
+      color: #fff;
+      box-shadow: 0 0 18px rgba(255,91,110,0.32);
+    }
     .studio-context {
       background: #151517;
       border-left: 1px solid var(--line);
@@ -916,7 +921,7 @@
               <i class="remote-worker-led" aria-hidden="true"></i>
               <span>Remote offline</span>
             </span>
-            <button class="send-btn" type="button" data-studio-action="send-message">↑</button>
+            <button class="send-btn" id="studio-send-button" type="button" data-studio-action="send-message" aria-label="Send message">↑</button>
           </div>
         </div>
       </section>
@@ -2064,11 +2069,35 @@
       setText("studio-provider-label", state.provider || "auto");
       setText("studio-automation-count", (state.automations || []).length);
       renderQwenProfile(state.qwen_profile);
+      renderSendButton();
       scheduleStudioRefresh();
     }
 
     function hasActiveRuns() {
       return (studioState.runs || []).some((run) => ["queued", "running"].includes(run.status));
+    }
+
+    function activeRun() {
+      return (studioState.runs || []).find((run) => ["queued", "running"].includes(run.status));
+    }
+
+    function renderSendButton() {
+      const button = el("studio-send-button");
+      if (!button) return;
+      const run = activeRun();
+      if (run && run.id) {
+        button.classList.add("stop-active");
+        button.dataset.studioAction = "stop-active";
+        button.textContent = "■";
+        button.setAttribute("aria-label", "Stop current Jarvis task");
+        button.title = "Stop current Jarvis task";
+      } else {
+        button.classList.remove("stop-active");
+        button.dataset.studioAction = "send-message";
+        button.textContent = "↑";
+        button.setAttribute("aria-label", "Send message");
+        button.title = "Send message";
+      }
     }
 
     function scheduleStudioRefresh() {
@@ -2147,6 +2176,21 @@
       });
       activeChatId = result.run && result.run.chat_id ? result.run.chat_id : activeChatId;
       clearSteerState();
+      await loadStudioState();
+    }
+
+    async function cancelActiveRun() {
+      const run = activeRun();
+      const runId = run && run.id;
+      if (!runId) return;
+      setContextStatus("Stopping current Jarvis task...");
+      studioState = {
+        ...studioState,
+        runs: (studioState.runs || []).map((item) => item.id === runId ? { ...item, status: "cancelled" } : item)
+      };
+      renderState(studioState);
+      await apiPost(`/studio/runs/${runId}/cancel`, {});
+      setContextStatus("Stopped current Jarvis task.");
       await loadStudioState();
     }
 
@@ -2325,6 +2369,7 @@
         if (action === "toggle-approved") { studioState.approved = !studioState.approved; target.textContent = studioState.approved ? "Approved run" : "Default permissions"; }
         if (action === "open-agent-list") renderAgents(studioState.orchestration || {});
         if (action === "send-message") await sendComposer();
+        if (action === "stop-active") await cancelActiveRun();
       } catch (error) {
         console.error(error);
       }

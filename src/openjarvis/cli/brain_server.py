@@ -1911,6 +1911,8 @@ class _Handler(SimpleHTTPRequestHandler):
             self._handle_studio_chat_lifecycle("delete")
         elif self.path == "/studio/runs":
             self._handle_studio_run_create()
+        elif self.path.startswith("/studio/runs/") and self.path.endswith("/cancel"):
+            self._handle_studio_run_cancel()
         elif self.path == "/studio/qwen-profile":
             self._handle_studio_qwen_profile()
         elif self.path == "/studio/preview":
@@ -2064,6 +2066,21 @@ class _Handler(SimpleHTTPRequestHandler):
             self._json_response(400, {"error": str(exc)})
         except Exception:
             logger.exception("/studio/runs evidence failed")
+            self._json_response(500, {"error": "internal error", "ref": _err_ref()})
+
+    def _handle_studio_run_cancel(self) -> None:
+        try:
+            from urllib.parse import urlparse
+            from openjarvis.tools.studio_runner import cancel_studio_run
+
+            path_only = urlparse(self.path).path
+            run_id = path_only.split("/")[-2]
+            result = cancel_studio_run(run_id)
+            self._json_response(200, result)
+        except KeyError as exc:
+            self._json_response(404, {"error": f"run not found: {exc}"})
+        except Exception:
+            logger.exception("/studio/runs cancel failed")
             self._json_response(500, {"error": "internal error", "ref": _err_ref()})
 
     def _handle_studio_qwen_profile(self) -> None:

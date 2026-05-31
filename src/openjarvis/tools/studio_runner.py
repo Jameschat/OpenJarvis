@@ -1027,6 +1027,46 @@ def _mark_studio_run_timed_out(
         )
 
 
+def cancel_studio_run(run_id: str, store: studio_store.StudioStore | None = None) -> dict[str, Any]:
+    """Cancel a Studio run and suppress any late background result from the chat."""
+    from openjarvis.tools import agent_runner
+
+    store = store or studio_store.StudioStore()
+    run = store.get_run(run_id)
+    task_ids = [str(task_id) for task_id in run.get("tasks", []) if task_id]
+    for task_id in task_ids:
+        try:
+            agent_runner.cancel_running_task(task_id)
+        except Exception:
+            pass
+        try:
+            agent_runner.cancel_task(task_id)
+        except Exception:
+            pass
+
+    updated = store.get_run(run_id)
+    updated["status"] = "cancelled"
+    updated["cancelled"] = True
+    updated["cancelled_at"] = studio_store.utc_now()
+    updated["updated_at"] = updated["cancelled_at"]
+    store._write_json(store._run_path(updated["id"]), updated)
+    store.append_run_event(
+        updated["id"],
+        "run.cancelled",
+        "Studio run cancelled by operator",
+        {"tasks": task_ids},
+    )
+    updated = store.get_run(run_id)
+    if not _chat_has_result_message(store, updated["chat_id"], updated["id"]):
+        store.add_message(
+            updated["chat_id"],
+            "jarvis",
+            "Cancelled the running Studio task. I will ignore any late output from that run.",
+            run_id=updated["id"],
+        )
+    return {"ok": True, "run": store.get_run(run_id), "tasks": task_ids}
+
+
 def sync_completed_run_outputs(store: studio_store.StudioStore | None = None) -> int:
     """Pull completed background agent task outputs back into Studio chats."""
     store = store or studio_store.StudioStore()

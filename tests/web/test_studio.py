@@ -143,6 +143,15 @@ def test_studio_composer_enter_sends_shift_enter_newline():
     assert "sendComposer()" in html
 
 
+def test_studio_composer_exposes_stop_button_for_active_runs():
+    html = (ROOT / "jarvis_web" / "studio.html").read_text(encoding="utf-8")
+
+    assert "/studio/runs/${runId}/cancel" in html
+    assert "cancelActiveRun()" in html
+    assert "stop-active" in html
+    assert 'setAttribute("aria-label", "Stop current Jarvis task")' in html
+
+
 def test_studio_sidebar_plugins_and_automations_are_expandable():
     html = (ROOT / "jarvis_web" / "studio.html").read_text(encoding="utf-8")
 
