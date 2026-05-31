@@ -85,6 +85,13 @@ def test_studio_has_worker_update_action():
     assert "/studio/worker-update" in html
     assert "_handle_studio_worker_update" in source
     assert 'id="studio-worker-update-button"' in html
+    assert 'id="studio-worker-update-progress"' in html
+    assert "setWorkerUpdateProgress" in html
+    assert "worker-update-progress-fill" in html
+    assert "worker-update-progress-percent" in html
+    assert "workerUpdateInFlight" in html
+    assert "Pulling latest Jarvis changes" in html
+    assert "Running worker smoke test" in html
 
 
 def test_studio_context_panel_wraps_runtime_text():

@@ -557,6 +557,50 @@
       color: var(--muted);
       font-size: 11px;
     }
+    .worker-update-progress {
+      display: none;
+      flex: 1 1 100%;
+      gap: 7px;
+      align-items: center;
+      padding: 7px 9px;
+      border: 1px solid rgba(98,230,255,0.2);
+      border-radius: 10px;
+      background: rgba(98,230,255,0.06);
+      color: #d7fbff;
+      font-size: 11px;
+    }
+    .worker-update-progress.active { display: flex; }
+    .worker-update-progress.failed {
+      border-color: rgba(255,104,104,0.34);
+      background: rgba(255,104,104,0.08);
+    }
+    .worker-update-progress-track {
+      flex: 1;
+      min-width: 120px;
+      height: 7px;
+      border-radius: 999px;
+      border: 1px solid rgba(98,230,255,0.24);
+      background: rgba(255,255,255,0.06);
+      overflow: hidden;
+    }
+    .worker-update-progress-fill {
+      display: block;
+      width: 0%;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, #62e6ff, #65f3bc);
+      transition: width 240ms ease;
+    }
+    .worker-update-progress-label {
+      min-width: 178px;
+      overflow-wrap: anywhere;
+    }
+    .worker-update-progress-percent {
+      min-width: 34px;
+      text-align: right;
+      color: #78f2ff;
+      font-variant-numeric: tabular-nums;
+    }
     .context-chip {
       display: inline-flex;
       align-items: center;
@@ -945,6 +989,11 @@
             </span>
             <button class="pill-btn" id="studio-worker-update-button" type="button" data-studio-action="update-worker">Update Node</button>
             <button class="send-btn" id="studio-send-button" type="button" data-studio-action="send-message" aria-label="Send message">↑</button>
+            <div class="worker-update-progress" id="studio-worker-update-progress" aria-live="polite">
+              <div class="worker-update-progress-track"><i class="worker-update-progress-fill" id="studio-worker-update-progress-fill"></i></div>
+              <span class="worker-update-progress-label" id="studio-worker-update-progress-label">Idle</span>
+              <span class="worker-update-progress-percent" id="studio-worker-update-progress-percent">0%</span>
+            </div>
           </div>
         </div>
       </section>
@@ -2314,15 +2363,73 @@
       window.open(result.url, "_blank", "noopener,noreferrer");
     }
 
+    let workerUpdateInFlight = false;
+
+    function setWorkerUpdateProgress(percent, label, active = true, failed = false) {
+      const root = el("studio-worker-update-progress");
+      const fill = el("studio-worker-update-progress-fill");
+      const text = el("studio-worker-update-progress-label");
+      const pct = el("studio-worker-update-progress-percent");
+      if (!root || !fill || !text || !pct) return;
+      const normalizedPercent = Math.max(0, Math.min(100, Number(percent || 0)));
+      root.classList.toggle("active", active);
+      root.classList.toggle("failed", Boolean(failed));
+      fill.style.width = `${normalizedPercent}%`;
+      text.textContent = label || "";
+      pct.textContent = `${Math.round(normalizedPercent)}%`;
+    }
+
     async function updateWorkerNode() {
-      setContextStatus("Worker update started. Pulling latest Jarvis changes on this node...");
-      const result = await apiPost(API.workerUpdate, {});
-      if (result.ok) {
-        setContextStatus("Worker update complete: latest Jarvis changes pulled and worker smoke test passed.");
-      } else {
-        setContextStatus(result.error || result.stderr || "Worker update failed.");
+      if (workerUpdateInFlight) return;
+      workerUpdateInFlight = true;
+      const buttons = Array.from(document.querySelectorAll('[data-studio-action="update-worker"]'));
+      buttons.forEach((button) => {
+        button.disabled = true;
+        button.dataset.previousText = button.textContent || "Update Node";
+        button.textContent = "Updating...";
+      });
+      setWorkerUpdateProgress(8, "Starting worker update...");
+      setContextStatus("Worker update started. Preparing to pull latest Jarvis changes on this node...");
+      const stages = [
+        [24, "Checking worker role and update script..."],
+        [42, "Pulling latest Jarvis changes..."],
+        [68, "Applying local worker files..."],
+        [84, "Running worker smoke test..."],
+        [92, "Waiting for final result..."]
+      ];
+      let stageIndex = 0;
+      const progressTimer = setInterval(() => {
+        if (stageIndex < stages.length) {
+          const [percent, label] = stages[stageIndex];
+          setWorkerUpdateProgress(percent, label);
+          setContextStatus(label);
+          stageIndex += 1;
+        }
+      }, 1800);
+      try {
+        const result = await apiPost(API.workerUpdate, {});
+        clearInterval(progressTimer);
+        if (result.ok) {
+          setWorkerUpdateProgress(100, "Update complete. Worker smoke test passed.");
+          setContextStatus("Worker update complete: latest Jarvis changes pulled and worker smoke test passed.");
+        } else {
+          setWorkerUpdateProgress(100, "Update failed. See status message.", true, true);
+          setContextStatus(result.error || result.stderr || "Worker update failed.");
+        }
+        await loadStudioState();
+      } catch (error) {
+        clearInterval(progressTimer);
+        setWorkerUpdateProgress(100, "Update failed. Request did not complete.", true, true);
+        setContextStatus(error.message || "Worker update failed.");
+      } finally {
+        buttons.forEach((button) => {
+          button.disabled = false;
+          button.textContent = button.dataset.previousText || "Update Node";
+          delete button.dataset.previousText;
+        });
+        workerUpdateInFlight = false;
+        setTimeout(() => setWorkerUpdateProgress(0, "Idle", false), 5000);
       }
-      await loadStudioState();
     }
 
     async function applyQwenProposal(proposalId) {
