@@ -8,7 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from openjarvis.tools import studio_context, studio_research, studio_store, studio_workflows
+from openjarvis.tools import project_preview, studio_context, studio_research, studio_store, studio_workflows
 
 STUDIO_RUN_STALE_AFTER_SECONDS = 300
 STUDIO_CONTEXT_CHAR_LIMIT = int(os.environ.get("OPENJARVIS_STUDIO_CONTEXT_CHAR_LIMIT", "512000"))
@@ -247,6 +247,273 @@ def _new_project_planning_reply(prompt: str) -> str | None:
             "",
             "I answered this directly so Studio does not wait on a slow background Qwen run. Qwen can take over once the project scaffold exists.",
         ]
+    )
+
+
+def _recent_chat_text(store: studio_store.StudioStore, chat_id: str, limit: int = 8) -> str:
+    try:
+        chat = store.get_chat(chat_id)
+    except KeyError:
+        return ""
+    messages = chat.get("messages") or []
+    return "\n".join(str(message.get("content") or "") for message in messages[-limit:] if isinstance(message, dict))
+
+
+def _looks_like_phase_one_email_portal_followup(
+    prompt: str,
+    store: studio_store.StudioStore,
+    chat_id: str,
+) -> bool:
+    text = " ".join((prompt or "").strip().lower().split())
+    if text not in {"continue phase 1", "continue phase one", "start phase 1", "start phase one"}:
+        return False
+    recent = _recent_chat_text(store, chat_id).lower()
+    return "local email client portal" in recent
+
+
+def _projects_root() -> Path:
+    return Path(os.environ.get("OPENJARVIS_PROJECTS_ROOT", r"E:\Claude"))
+
+
+def _write_if_missing(path: Path, content: str) -> bool:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists():
+        return False
+    path.write_text(content, encoding="utf-8")
+    return True
+
+
+def _create_email_portal_phase1_scaffold(
+    store: studio_store.StudioStore,
+    *,
+    chat_id: str,
+) -> dict[str, Any]:
+    project_id = "local-email-client-portal"
+    title = "Local Email Client Portal"
+    project_dir = _projects_root() / project_id
+    vault_dir = BRAIN_ROOT / "Projects" / project_id
+    created: list[str] = []
+
+    files = {
+        project_dir / "README.md": "\n".join(
+            [
+                "# Local Email Client Portal",
+                "",
+                "Local-first portal for importing email, categorising messages by client, and storing attachments under each client.",
+                "",
+                "## Phase 1",
+                "- Confirm requirements and non-goals.",
+                "- Define the data model and secure storage approach.",
+                "- Keep email access read-only until import safety is proven.",
+                "- Build a small local HTML portal scaffold before connecting real mailboxes.",
+                "",
+            ]
+        ),
+        project_dir / ".gitignore": "\n".join(
+            [
+                ".env",
+                ".env.*",
+                "secrets/",
+                "data/",
+                "clients/",
+                "__pycache__/",
+                ".venv/",
+                "",
+            ]
+        ),
+        project_dir / "docs" / "SECURITY.md": "\n".join(
+            [
+                "# Security Model",
+                "",
+                "## Baseline",
+                "- Local-first storage by default.",
+                "- Email credentials and OAuth tokens must live in an encrypted secrets store, never in git or the vault.",
+                "- Portal access requires login and session timeout.",
+                "- Import starts read-only: no email delete, send, move, or mailbox mutation in v1.",
+                "- Attachments are stored under client folders only after file type checks and duplicate detection.",
+                "- Audit log all imports, attachment writes, client merges, deletes, exports, and settings changes.",
+                "",
+                "## Open Decisions",
+                "- Choose mailbox auth: IMAP app password versus OAuth provider flow.",
+                "- Choose encrypted local storage implementation.",
+                "- Decide whether this stays single-user local or becomes LAN multi-user.",
+                "",
+            ]
+        ),
+        project_dir / "docs" / "DATA_MODEL.md": "\n".join(
+            [
+                "# Data Model Draft",
+                "",
+                "## Entities",
+                "- Client: name, aliases, domains, contacts, notes.",
+                "- EmailMessage: provider id, mailbox, sender, recipients, subject, body text, date, client id.",
+                "- Attachment: filename, content hash, mime type, size, source email id, client id, storage path.",
+                "- ImportRun: mailbox, started/finished timestamps, counts, errors.",
+                "- AuditEvent: actor, action, target, timestamp, metadata.",
+                "",
+            ]
+        ),
+        vault_dir / "PROJECT.md": "\n".join(
+            [
+                "---",
+                f"slug: {project_id}",
+                f"path: {project_dir}",
+                "status: planning",
+                "---",
+                "",
+                "# Local Email Client Portal",
+                "",
+                "Local-first secure portal for importing email, grouping messages by client, and storing attachments under client folders.",
+                "",
+            ]
+        ),
+        vault_dir / "REQUIREMENTS.md": "\n".join(
+            [
+                "# Requirements",
+                "",
+                "## Must Have",
+                "- Import email from one or more mailboxes using read-only access.",
+                "- Categorise emails into client names using sender, domain, subject, contacts, and manual corrections.",
+                "- Store attachments under `clients/<client-name>/files/` with duplicate detection.",
+                "- Provide a local HTML portal for clients, messages, files, search, and review queue.",
+                "- Protect secrets and require portal login.",
+                "",
+                "## Non-Goals For V1",
+                "- Sending email.",
+                "- Deleting or moving mailbox messages.",
+                "- Cloud sync.",
+                "- Multi-tenant client access.",
+                "",
+            ]
+        ),
+        vault_dir / "ROADMAP.md": "\n".join(
+            [
+                "# Roadmap",
+                "",
+                "**Current phase:** Phase 1 - Project scaffold and security model",
+                "",
+                "## Phase 1",
+                "- [x] Create project and vault scaffold.",
+                "- [x] Draft requirements.",
+                "- [x] Draft security model.",
+                "- [x] Draft initial data model.",
+                "- [ ] Confirm mailbox provider and authentication method.",
+                "",
+                "## Phase 2",
+                "- [ ] Build local portal shell.",
+                "- [ ] Add mailbox connection settings UI.",
+                "- [ ] Add read-only email import prototype.",
+                "",
+                "## Phase 3",
+                "- [ ] Add client categorisation review queue.",
+                "- [ ] Add attachment extraction and storage.",
+                "- [ ] Add audit log and backup/export.",
+                "",
+            ]
+        ),
+        vault_dir / "STATE.md": "\n".join(
+            [
+                "# State",
+                "",
+                f"**Last touched:** {datetime.now().date()} - Phase 1 scaffold created by Jarvis Studio",
+                "",
+                "## Where We Left Off",
+                "Phase 1 scaffold is created. Requirements, security model, data model, roadmap, and project context are in place.",
+                "",
+                "## Next Action",
+                "Confirm which mailbox provider to connect first and whether auth should use OAuth or IMAP/app password.",
+                "",
+            ]
+        ),
+        vault_dir / "CONTEXT.md": "\n".join(
+            [
+                "# Context",
+                "",
+                f"- Project path: `{project_dir}`",
+                "- Security doc: `docs/SECURITY.md`",
+                "- Data model draft: `docs/DATA_MODEL.md`",
+                "- Keep secrets out of git and vault.",
+                "- Email import must be read-only until explicitly approved otherwise.",
+                "",
+            ]
+        ),
+    }
+    for path, content in files.items():
+        if _write_if_missing(path, content):
+            created.append(str(path))
+
+    project = store.ensure_project(
+        project_id,
+        title=title,
+        repo_root=str(project_dir),
+        vault_project=project_id,
+    )
+    return {"project": project, "project_dir": project_dir, "vault_dir": vault_dir, "created": created}
+
+
+def _phase_one_email_portal_reply(
+    prompt: str,
+    store: studio_store.StudioStore,
+    chat_id: str,
+) -> tuple[str, dict[str, Any]] | None:
+    if not _looks_like_phase_one_email_portal_followup(prompt, store, chat_id):
+        return None
+    result = _create_email_portal_phase1_scaffold(store, chat_id=chat_id)
+    created_count = len(result["created"])
+    reply = "\n".join(
+        [
+            "Phase 1 scaffold is created for **Local Email Client Portal**.",
+            "",
+            f"Project folder: `{result['project_dir']}`",
+            f"Vault project: `{result['vault_dir']}`",
+            f"Files created: {created_count}",
+            "",
+            "Created the v1 requirements, roadmap, state, context, security model, and data model draft.",
+            "",
+            "Next decision:",
+            "`Which mailbox should we connect first, and should v1 use OAuth or IMAP/app password?`",
+            "",
+            "I handled this directly so Jarvis does not burn GPU time thinking about a deterministic scaffold step.",
+        ]
+    )
+    return reply, result
+
+
+def _looks_like_project_preview_request(prompt: str) -> bool:
+    text = " ".join((prompt or "").strip().lower().split())
+    if not text or len(text) > 360:
+        return False
+    return any(term in text for term in ("preview", "show me", "open")) and any(
+        term in text for term in ("website", "site", "web page", "homepage")
+    )
+
+
+def _project_preview_reply(prompt: str, project: dict[str, Any]) -> tuple[str, dict[str, Any]] | None:
+    if not _looks_like_project_preview_request(prompt):
+        return None
+    repo_root = Path(str(project.get("repo_root") or ""))
+    if not repo_root:
+        return None
+    result = project_preview.start_project_preview(repo_root)
+    if not result.get("ok"):
+        return (
+            "I could not start a website preview for this project. "
+            f"Reason: {result.get('error') or 'no index.html found'}",
+            result,
+        )
+    url = str(result.get("url") or "")
+    return (
+        "\n".join(
+            [
+                "Website preview is running.",
+                "",
+                f"Open: `{url}`",
+                f"Project folder: `{repo_root}`",
+                "",
+                "I handled this directly so Qwen does not waste time asking for a browser tool.",
+            ]
+        ),
+        result,
     )
 
 
@@ -1200,6 +1467,58 @@ def start_studio_run(
                 "next_steps": [],
             },
             "reply": memory_reply,
+        }
+    phase_one_reply = _phase_one_email_portal_reply(prompt, store, chat_id)
+    if phase_one_reply:
+        reply, scaffold = phase_one_reply
+        run = _persist_run_status(store, store.get_run(run["id"]), "completed")
+        store.append_run_event(
+            run["id"],
+            "run.completed",
+            "Created phase 1 project scaffold directly",
+            {
+                "mode": "phase1_project_scaffold",
+                "project_id": scaffold["project"]["id"],
+                "project_dir": str(scaffold["project_dir"]),
+                "vault_dir": str(scaffold["vault_dir"]),
+                "created": scaffold["created"],
+            },
+        )
+        return {
+            "run": store.get_run(run["id"]),
+            "context": {"ok": True, "markdown": "", "warnings": []},
+            "research": {"ok": False, "markdown": ""},
+            "decision": {
+                **decision,
+                "workflow": "phase1_project_scaffold",
+                "reason": "Phase 1 scaffold created from the prior Studio project brief without queuing Qwen.",
+                "verification": {"required": False, "method": "file scaffold"},
+                "next_steps": ["Confirm mailbox auth method.", "Build local portal shell.", "Add read-only importer."],
+            },
+            "reply": reply,
+        }
+    preview_reply = _project_preview_reply(prompt, project)
+    if preview_reply:
+        reply, preview = preview_reply
+        run = _persist_run_status(store, store.get_run(run["id"]), "completed")
+        store.append_run_event(
+            run["id"],
+            "run.completed",
+            "Started project preview directly",
+            {"mode": "project_preview", "preview": preview},
+        )
+        return {
+            "run": store.get_run(run["id"]),
+            "context": {"ok": True, "markdown": "", "warnings": []},
+            "research": {"ok": False, "markdown": ""},
+            "decision": {
+                **decision,
+                "workflow": "project_preview",
+                "reason": "Website preview request handled by Studio preview server without queuing Qwen.",
+                "verification": {"required": False, "method": "localhost preview"},
+                "next_steps": ["Open the preview URL.", "Request visual changes if needed."],
+            },
+            "reply": reply,
         }
     context_pack = studio_context.build_project_context_pack(prompt, project=project)
     store.append_run_event(

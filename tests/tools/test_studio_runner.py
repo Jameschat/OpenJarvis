@@ -872,3 +872,119 @@ def test_sync_completed_outputs_does_not_overwrite_cancelled_run(monkeypatch, tm
 
     assert synced == 0
     assert updated["status"] == "cancelled"
+
+
+def test_continue_phase_one_after_email_portal_brief_creates_project_scaffold(monkeypatch, tmp_path):
+    studio_root = tmp_path / "studio"
+    projects_root = tmp_path / "projects"
+    brain_root = tmp_path / "Brain"
+    monkeypatch.setattr(studio_runner.studio_store, "STUDIO_ROOT", studio_root)
+    monkeypatch.setattr(studio_runner, "BRAIN_ROOT", brain_root)
+    monkeypatch.setenv("OPENJARVIS_PROJECTS_ROOT", str(projects_root))
+    queued = []
+    monkeypatch.setattr(studio_runner, "_queue_agent_task", lambda **kwargs: queued.append(kwargs) or "task")
+
+    store = studio_runner.studio_store.StudioStore(studio_root)
+    store.ensure_project("openjarvis", title="OpenJarvis", repo_root=str(tmp_path))
+    chat = store.create_chat("openjarvis", title="Local email portal")
+    store.add_message(chat["id"], "jarvis", "Yes. Start this as **Local Email Client Portal**.")
+
+    result = studio_runner.start_studio_run("openjarvis", chat["id"], "continue phase 1")
+
+    project_dir = projects_root / "local-email-client-portal"
+    vault_dir = brain_root / "Projects" / "local-email-client-portal"
+    assert result["run"]["status"] == "completed"
+    assert result["decision"]["workflow"] == "phase1_project_scaffold"
+    assert (project_dir / "README.md").exists()
+    assert (project_dir / "docs" / "SECURITY.md").exists()
+    assert (vault_dir / "PROJECT.md").exists()
+    assert (vault_dir / "REQUIREMENTS.md").exists()
+    assert (vault_dir / "ROADMAP.md").exists()
+    assert (vault_dir / "STATE.md").exists()
+    assert (vault_dir / "CONTEXT.md").exists()
+    assert "Phase 1 scaffold is created" in result["reply"]
+    assert queued == []
+
+
+def test_website_preview_request_starts_project_preview_without_qwen(monkeypatch, tmp_path):
+    site = tmp_path / "site"
+    site.mkdir()
+    (site / "index.html").write_text("<h1>Preview</h1>", encoding="utf-8")
+    monkeypatch.setattr(studio_runner.studio_store, "STUDIO_ROOT", tmp_path / "studio")
+    monkeypatch.setattr(
+        studio_runner.studio_context,
+        "build_project_context_pack",
+        lambda prompt, project=None: {"ok": True, "markdown": "", "warnings": []},
+    )
+    monkeypatch.setattr(
+        studio_runner.project_preview,
+        "start_project_preview",
+        lambda repo_root: {"ok": True, "url": "http://127.0.0.1:8128/", "repo_root": str(repo_root)},
+    )
+    queued = []
+    monkeypatch.setattr(studio_runner, "_queue_agent_task", lambda **kwargs: queued.append(kwargs) or "task")
+
+    store = studio_runner.studio_store.StudioStore(tmp_path / "studio")
+    store.ensure_project("westhill-hotel", title="Westhill", repo_root=str(site))
+    chat = store.create_chat("westhill-hotel", title="New chat")
+
+    result = studio_runner.start_studio_run(
+        "westhill-hotel",
+        chat["id"],
+        "can you show me the preview of the website as it currently is built",
+    )
+
+    assert result["run"]["status"] == "completed"
+    assert result["decision"]["workflow"] == "project_preview"
+    assert "http://127.0.0.1:8128/" in result["reply"]
+    assert queued == []
+
+
+def test_common_studio_request_matrix_routes_without_hanging(monkeypatch, tmp_path):
+    studio_root = tmp_path / "studio"
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    (project_root / "index.html").write_text("<h1>Site</h1>", encoding="utf-8")
+    monkeypatch.setattr(studio_runner.studio_store, "STUDIO_ROOT", studio_root)
+    monkeypatch.setattr(studio_runner, "BRAIN_ROOT", tmp_path / "Brain")
+    monkeypatch.setenv("OPENJARVIS_PROJECTS_ROOT", str(tmp_path / "projects"))
+    monkeypatch.setattr(
+        studio_runner.studio_context,
+        "build_project_context_pack",
+        lambda prompt, project=None: {"ok": True, "markdown": "Project context", "warnings": []},
+    )
+    monkeypatch.setattr(
+        studio_runner.project_preview,
+        "start_project_preview",
+        lambda repo_root: {"ok": True, "url": "http://127.0.0.1:8128/", "repo_root": str(repo_root)},
+    )
+    queued: list[dict] = []
+    monkeypatch.setattr(studio_runner, "_queue_agent_task", lambda **kwargs: queued.append(kwargs) or f"task-{len(queued)}")
+
+    store = studio_runner.studio_store.StudioStore(studio_root)
+    store.ensure_project("openjarvis", title="OpenJarvis", repo_root=str(project_root))
+    chat = store.create_chat("openjarvis", title="Matrix")
+    store.add_message(chat["id"], "jarvis", "Yes. Start this as **Local Email Client Portal**.")
+
+    cases = [
+        ("morning jarvis", "completed", "direct_chat"),
+        ("what qwen model are you running jarvis?", "completed", "direct_chat"),
+        (
+            "new project - localised platform that imports emails, categorizes by client, stores attachments, html portal, secure",
+            "completed",
+            "new_project_brief",
+        ),
+        ("continue phase 1", "completed", "phase1_project_scaffold"),
+        ("can you show me the preview of the website", "completed", "project_preview"),
+        ("Fix the DCA backtest HTTP 500 and add a regression test", "running", "debug"),
+        ("Research the best tools for local Qwen agent memory", "running", "qwen_workflow"),
+        ("Create a dedicated dining page for this website", "running", "execute"),
+        ("Build a complete Codex replica with projects, plugins, automations, memory, and task loops", "blocked", "spec"),
+    ]
+
+    for prompt, expected_status, expected_workflow in cases:
+        result = studio_runner.start_studio_run("openjarvis", chat["id"], prompt)
+        assert result["run"]["status"] == expected_status, prompt
+        assert result["decision"]["workflow"] == expected_workflow, prompt
+        if expected_status == "running":
+            assert result["run"]["tasks"], prompt

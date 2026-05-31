@@ -836,6 +836,60 @@ def test_qwen_provider_uses_reasoning_content_only_as_fallback(monkeypatch, tmp_
     assert "Fallback reasoning result." in result.read_text(encoding="utf-8")
 
 
+def test_studio_qwen_provider_rejects_reasoning_only_output(monkeypatch, tmp_path):
+    from openjarvis.tools import agent_runner
+    from openjarvis.tools.agent_runner import Task
+
+    class DummyMessage:
+        content = ""
+        reasoning_content = "Hidden thinking but no answer."
+
+    class DummyChoice:
+        message = DummyMessage()
+
+    class DummyCompletions:
+        def create(self, **kwargs):
+            assert kwargs["extra_body"] == {
+                "chat_template_kwargs": {"enable_thinking": False}
+            }
+            return types.SimpleNamespace(choices=[DummyChoice()])
+
+    class DummyClient:
+        def __init__(self, **kwargs):
+            self.chat = types.SimpleNamespace(completions=DummyCompletions())
+
+    marked = {}
+
+    class DummyRegistry:
+        def mark_running(self, task_id, workspace):
+            pass
+
+        def mark_finished(self, task_id, exit_code, error=None):
+            marked["exit_code"] = exit_code
+            marked["error"] = error
+
+    monkeypatch.setitem(sys.modules, "openai", types.SimpleNamespace(OpenAI=DummyClient))
+    monkeypatch.setattr(agent_runner, "PROJECTS_DIR", tmp_path / "projects")
+    monkeypatch.setattr(agent_runner, "_reg", DummyRegistry())
+    monkeypatch.setattr(agent_runner, "_build_brain_context", lambda: "")
+    monkeypatch.setattr(agent_runner, "_write_agent_task_note", lambda *args, **kwargs: None)
+
+    task = Task(
+        id="task-studio-qwen-reasoning",
+        title="Studio reasoning fallback",
+        agent_id="qwen-researcher",
+        project_id="studio-openjarvis",
+        prompt="Plan the project.",
+    )
+    agent_runner._run_qwen_task(
+        task,
+        {"id": "qwen-researcher", "role": "Research.", "model": "qwen3.6-27b-local"},
+    )
+
+    assert marked["exit_code"] == -1
+    assert "empty content" in marked["error"]
+
+
 def test_qwen_builder_writes_safe_workspace_files(monkeypatch, tmp_path):
     from openjarvis.tools import agent_runner
     from openjarvis.tools.agent_runner import Task

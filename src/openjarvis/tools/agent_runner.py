@@ -2289,10 +2289,10 @@ def _run_qwen_task(task: Task, agent_spec: Dict[str, Any]) -> None:
         is_studio_task = bool(task.project_id and str(task.project_id).startswith("studio-"))
         qwen_timeout = 90 if is_studio_task else 600
         qwen_max_tokens = 900 if is_studio_task else 2500
-        # v1.3 thinking-mode (background tasks only, complex by default). Reasoning
-        # tokens are spent before the visible answer, so when thinking is on we must
-        # widen the token + time budget or the answer gets truncated/blank.
-        qwen_thinking = _qwen_should_think(task.prompt or "")
+        # v1.3 thinking-mode (background tasks only, complex by default). Studio
+        # chat must stay responsive and visible-answer-first; hidden reasoning
+        # can burn the whole budget and make the UI look hung.
+        qwen_thinking = False if is_studio_task else _qwen_should_think(task.prompt or "")
         if qwen_thinking:
             qwen_max_tokens = max(qwen_max_tokens, 2500)
             qwen_timeout = max(qwen_timeout, 300)
@@ -2356,7 +2356,13 @@ def _run_qwen_task(task: Task, agent_spec: Dict[str, Any]) -> None:
             if not resp.choices:
                 return ""
             message = resp.choices[0].message
-            return (message.content or getattr(message, "reasoning_content", "") or "").strip()
+            content = (message.content or "").strip()
+            if content:
+                return content
+            reasoning = (getattr(message, "reasoning_content", "") or "").strip()
+            if reasoning and not is_studio_task:
+                return reasoning
+            return ""
 
         content = _call_local_qwen(prompt)
         if not content.strip():
