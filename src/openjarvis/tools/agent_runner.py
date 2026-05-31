@@ -2102,6 +2102,10 @@ def _write_qwen_workspace_files(content: str, workspace: Path) -> List[str]:
     return written
 
 
+def _strip_qwen_workspace_files(content: str) -> str:
+    return _QWEN_WORKSPACE_FILES_RE.sub("", content or "").strip()
+
+
 def _litellm_proxy_healthy(base_url: str) -> bool:
     """Fast local health check so Qwen tasks do not hang on a wedged proxy."""
     try:
@@ -2517,18 +2521,7 @@ def _run_qwen_task(task: Task, agent_spec: Dict[str, Any]) -> None:
                 f"Last exit code: {verify_verdict.get('exit_code', 'n/a')}\n"
             )
 
-        result_md = (
-            f"# {task.title}\n\n"
-            f"Provider: qwen\n\n"
-            f"Model: {model}\n\n"
-            f"Agent: {task.agent_id}\n\n"
-            "## Result\n\n"
-            f"{content.strip()}\n\n"
-            f"{qwen_quality_loop.format_quality_report(quality)}"
-            f"{verify_block}"
-        )
-        result_path = ws / (f"{task.id}.RESULT.md" if task.project_id else "RESULT.md")
-        result_path.write_text(result_md, encoding="utf-8")
+        written_files: list[str] = []
         if workspace_write:
             written_files = _write_qwen_workspace_files(content, ws)
             if written_files:
@@ -2536,7 +2529,27 @@ def _run_qwen_task(task: Task, agent_spec: Dict[str, Any]) -> None:
                     json.dumps({"files": written_files}, indent=2) + "\n",
                     encoding="utf-8",
                 )
-        stdout_log.write_text(content, encoding="utf-8")
+        visible_content = _strip_qwen_workspace_files(content)
+        if written_files:
+            visible_content = (
+                f"{visible_content}\n\n"
+                "Files written:\n"
+                + "\n".join(f"- `{name}`" for name in written_files)
+            ).strip()
+
+        result_md = (
+            f"# {task.title}\n\n"
+            f"Provider: qwen\n\n"
+            f"Model: {model}\n\n"
+            f"Agent: {task.agent_id}\n\n"
+            "## Result\n\n"
+            f"{visible_content.strip()}\n\n"
+            f"{qwen_quality_loop.format_quality_report(quality)}"
+            f"{verify_block}"
+        )
+        result_path = ws / (f"{task.id}.RESULT.md" if task.project_id else "RESULT.md")
+        result_path.write_text(result_md, encoding="utf-8")
+        stdout_log.write_text(visible_content, encoding="utf-8")
         stderr_log.write_text("", encoding="utf-8")
         _reg.mark_finished(task.id, exit_code=0)
         try:

@@ -951,6 +951,12 @@ def test_qwen_builder_writes_safe_workspace_files(monkeypatch, tmp_path):
     assert (tmp_path / "task-build" / "index.html").read_text(encoding="utf-8") == (
         "<h1>Hello Jarvis</h1>"
     )
+    result = (tmp_path / "task-build" / "RESULT.md").read_text(encoding="utf-8")
+    assert "Built a tiny page." in result
+    assert "qwen_workspace_files" not in result
+    assert "index.html" in (tmp_path / "task-build" / "FILES_WRITTEN.json").read_text(
+        encoding="utf-8"
+    )
 
 
 def test_qwen_workspace_files_reject_path_escape(tmp_path):

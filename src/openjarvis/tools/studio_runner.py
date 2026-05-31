@@ -1042,6 +1042,26 @@ def _read_task_result(task: dict[str, Any]) -> str:
     return ""
 
 
+def _task_written_file_summary(task: dict[str, Any]) -> str:
+    workspace = task.get("workspace")
+    if not workspace:
+        return ""
+    path = Path(str(workspace)) / "FILES_WRITTEN.json"
+    if not path.exists() or not path.is_file():
+        return ""
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8-sig"))
+    except (OSError, json.JSONDecodeError):
+        return ""
+    files = payload.get("files") if isinstance(payload, dict) else None
+    if not isinstance(files, list) or not files:
+        return ""
+    names = [str(item) for item in files if item][:12]
+    if not names:
+        return ""
+    return "Files written:\n" + "\n".join(f"- `{name}`" for name in names)
+
+
 def _task_output_files(task: dict[str, Any]) -> list[dict[str, Any]]:
     workspace = task.get("workspace")
     task_id = str(task.get("id") or "")
@@ -1079,6 +1099,34 @@ def _task_output_files(task: dict[str, Any]) -> list[dict[str, Any]]:
         )
     outputs.extend(_qwen_tool_result_outputs(root, task_id, seen))
     return outputs
+
+
+def _studio_agent_for_request(prompt: str, workflow: str) -> str:
+    text = (prompt or "").lower()
+    if workflow == "qwen_workflow":
+        return "qwen-researcher"
+    if any(term in text for term in ("test", "verify", "review", "audit", "check")):
+        return "qwen-tester"
+    if any(
+        term in text
+        for term in (
+            "build",
+            "create",
+            "make",
+            "implement",
+            "code",
+            "website",
+            "web page",
+            "landing page",
+            "app",
+            "application",
+            "component",
+            "script",
+            "portal",
+        )
+    ):
+        return "qwen-builder"
+    return "qwen-planner"
 
 
 def _safe_artifact_path(value: Any) -> str:
@@ -1382,7 +1430,13 @@ def sync_completed_run_outputs(store: studio_store.StudioStore | None = None) ->
 
         if not _chat_has_result_message(store, updated["chat_id"], updated["id"]):
             result_parts = [_read_task_result(task) for task in tasks if task]
+            artifact_parts = [_task_written_file_summary(task) for task in tasks if task]
             result_text = "\n\n".join(part for part in result_parts if part).strip()
+            artifact_text = "\n\n".join(part for part in artifact_parts if part).strip()
+            if result_text and artifact_text:
+                result_text = f"{result_text}\n\n{artifact_text}"
+            elif artifact_text:
+                result_text = artifact_text
             if not result_text:
                 if status == "failed":
                     reason = "; ".join(
@@ -1629,7 +1683,7 @@ def start_studio_run(
             "decision": decision,
         }
 
-    agent_id = "qwen-researcher" if decision["workflow"] == "qwen_workflow" else "qwen-planner"
+    agent_id = _studio_agent_for_request(prompt, decision["workflow"])
     task_prompt = (
         f"{context_pack.get('markdown', '')}\n\n"
         f"{research_pack.get('markdown', '')}\n\n"

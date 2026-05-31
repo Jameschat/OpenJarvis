@@ -39,7 +39,7 @@ def test_start_run_records_context_workflow_and_task(monkeypatch, tmp_path):
     )
 
     assert result["run"]["status"] == "running"
-    assert created_tasks[0]["agent_id"] == "qwen-planner"
+    assert created_tasks[0]["agent_id"] == "qwen-builder"
     assert created_tasks[0]["prompt"].startswith("ctx")
     assert "Operator request:\nBuild thing" in created_tasks[0]["prompt"]
     assert [e["type"] for e in result["run"]["events"]][:3] == [
@@ -47,6 +47,30 @@ def test_start_run_records_context_workflow_and_task(monkeypatch, tmp_path):
         "run.context_built",
         "run.workflow_selected",
     ]
+
+
+def test_start_run_routes_test_requests_to_qwen_tester(monkeypatch, tmp_path):
+    created_tasks = []
+    monkeypatch.setattr(studio_runner.studio_store, "STUDIO_ROOT", tmp_path)
+    monkeypatch.setattr(
+        studio_runner.studio_context,
+        "build_project_context_pack",
+        lambda prompt, project=None: {"markdown": "ctx", "warnings": []},
+    )
+    monkeypatch.setattr(
+        studio_runner,
+        "_queue_agent_task",
+        lambda **kwargs: created_tasks.append(kwargs) or "task-1",
+    )
+
+    result = studio_runner.start_studio_run(
+        project_id="openjarvis",
+        chat_id="chat-1",
+        prompt="test the website and verify the buttons work",
+    )
+
+    assert result["run"]["status"] == "running"
+    assert created_tasks[0]["agent_id"] == "qwen-tester"
 
 
 def test_start_run_blocks_when_approval_required(monkeypatch, tmp_path):
@@ -235,6 +259,53 @@ def test_sync_completed_run_outputs_appends_agent_result(monkeypatch, tmp_path):
     assert updated["status"] == "completed"
     assert any(e["type"] == "run.completed" for e in updated["events"])
     assert any("Finished result." in m["content"] for m in chat["messages"])
+
+
+def test_sync_completed_run_outputs_appends_written_file_summary(monkeypatch, tmp_path):
+    monkeypatch.setattr(studio_runner.studio_store, "STUDIO_ROOT", tmp_path / "studio")
+    store = studio_runner.studio_store.StudioStore(tmp_path / "studio")
+    store.ensure_project("openjarvis", title="OpenJarvis")
+    chat = store.create_chat("openjarvis", title="Chat")
+    run = store.create_run("openjarvis", chat["id"], "Build page", workflow="execute")
+    run["status"] = "running"
+    run["tasks"] = ["task-build"]
+    store._write_json(store._run_path(run["id"]), run)
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    (workspace / "task-build.RESULT.md").write_text("Built the page.", encoding="utf-8")
+    (workspace / "FILES_WRITTEN.json").write_text(
+        json.dumps({"files": ["index.html", "styles.css"]}),
+        encoding="utf-8",
+    )
+    state_path = tmp_path / "agent-state.json"
+    state_path.write_text(
+        json.dumps(
+            {
+                "tasks": [
+                    {
+                        "id": "task-build",
+                        "status": "done",
+                        "workspace": str(workspace),
+                        "exit_code": 0,
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    from openjarvis.tools import agent_runner
+
+    monkeypatch.setattr(agent_runner, "STATE_FILE", state_path)
+
+    studio_runner.sync_completed_run_outputs(store)
+
+    chat = store.get_chat(chat["id"])
+    result_message = next(m["content"] for m in chat["messages"] if m.get("run_id") == run["id"])
+    assert "Built the page." in result_message
+    assert "Files written" in result_message
+    assert "index.html" in result_message
+    assert "styles.css" in result_message
 
 
 def test_enrich_runs_for_studio_includes_task_outputs(monkeypatch, tmp_path):
