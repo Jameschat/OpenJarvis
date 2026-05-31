@@ -791,3 +791,35 @@ def test_start_studio_run_answers_project_continuation_without_queueing(monkeypa
     assert "Where we left off" in result["reply"]
     assert "Build the dedicated dining page" in result["reply"]
     assert queued == []
+
+
+def test_start_studio_run_answers_new_project_platform_brief_without_queueing(monkeypatch, tmp_path):
+    monkeypatch.setattr(studio_runner.studio_store, "STUDIO_ROOT", tmp_path / "studio")
+    monkeypatch.setattr(
+        studio_runner.studio_context,
+        "build_project_context_pack",
+        lambda prompt, project=None: {"ok": True, "markdown": "", "warnings": []},
+    )
+    queued = []
+    monkeypatch.setattr(studio_runner, "_queue_agent_task", lambda **kwargs: queued.append(kwargs) or "task")
+
+    store = studio_runner.studio_store.StudioStore(tmp_path / "studio")
+    store.ensure_project("openjarvis", title="OpenJarvis", repo_root=str(tmp_path))
+    chat = store.create_chat("openjarvis", title="New chat")
+
+    result = studio_runner.start_studio_run(
+        "openjarvis",
+        chat["id"],
+        (
+            "new project - localised platform, that can import all my emails, categorize them "
+            "into client name, store attached files into a files folder under that clients name, "
+            "it can be a html based portal, but it also needs to be secure"
+        ),
+    )
+
+    assert result["run"]["status"] == "completed"
+    assert result["decision"]["workflow"] == "new_project_brief"
+    assert "Local Email Client Portal" in result["reply"]
+    assert "Security baseline" in result["reply"]
+    assert "IMAP/OAuth email import" in result["reply"]
+    assert queued == []

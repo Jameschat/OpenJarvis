@@ -193,6 +193,63 @@ def _project_continuation_reply(prompt: str, context_pack: dict[str, Any]) -> st
     return "\n".join(lines)
 
 
+def _looks_like_new_project_planning(prompt: str) -> bool:
+    text = " ".join((prompt or "").strip().lower().split())
+    if not text or len(text) > 1200:
+        return False
+    project_terms = ("new project", "start a project", "planning a new project", "project -")
+    if not any(term in text for term in project_terms):
+        return False
+    return any(term in text for term in ("platform", "portal", "app", "website", "system", "tool"))
+
+
+def _new_project_planning_reply(prompt: str) -> str | None:
+    if not _looks_like_new_project_planning(prompt):
+        return None
+    text = (prompt or "").lower()
+    if not any(term in text for term in ("email", "emails", "attachment", "client")):
+        return (
+            "I can start this as a new project brief.\n\n"
+            "Recommended first step: create the project folder and define `PROJECT.md`, "
+            "`REQUIREMENTS.md`, `ROADMAP.md`, `STATE.md`, and `CONTEXT.md`, then build a small "
+            "HTML portal prototype before adding integrations."
+        )
+
+    return "\n".join(
+        [
+            "Yes. Start this as **Local Email Client Portal**.",
+            "",
+            "Core product shape:",
+            "- Local HTML-based portal with a secure backend running on your machine or LAN.",
+            "- IMAP/OAuth email import for one or more mailboxes.",
+            "- Client detection from sender domain, sender name, subject, existing contacts, and manual corrections.",
+            "- Per-client file storage: `clients/<client-name>/files/` for attachments, with duplicate detection.",
+            "- Client timeline showing emails, attachments, notes, and follow-up status.",
+            "- Search across clients, email body, filenames, dates, and attachment metadata.",
+            "",
+            "Security baseline:",
+            "- Local-first storage by default; no cloud sync unless explicitly enabled.",
+            "- Encrypted secrets store for email tokens/passwords, never committed to git or vault.",
+            "- Login required for the portal, with session timeout.",
+            "- Attachment scanning and file type allow/deny rules before opening files.",
+            "- Audit log for imports, file moves, client merges, deletes, and exports.",
+            "- Role-ready design, even if v1 only has you as the admin.",
+            "",
+            "Build phases:",
+            "1. Project scaffold: requirements, data model, and secure local config.",
+            "2. Email importer: read-only mailbox connection, message index, attachment extraction.",
+            "3. Client categorisation: rule-based first, then Qwen-assisted suggestions with manual approval.",
+            "4. Portal UI: clients, inbox review queue, files, search, and audit log.",
+            "5. Hardening: auth, encrypted token storage, backup/export, permission checks.",
+            "",
+            "Recommended next command:",
+            "`Create the project files for Local Email Client Portal and draft the v1 requirements, roadmap, and security model.`",
+            "",
+            "I answered this directly so Studio does not wait on a slow background Qwen run. Qwen can take over once the project scaffold exists.",
+        ]
+    )
+
+
 def _fast_vault_memory_reply(prompt: str) -> str | None:
     if not _looks_like_memory_question(prompt):
         return None
@@ -1160,6 +1217,28 @@ def start_studio_run(
                 "next_steps": [],
             },
             "reply": continuation_reply,
+        }
+    new_project_reply = _new_project_planning_reply(prompt)
+    if new_project_reply:
+        run = _persist_run_status(store, store.get_run(run["id"]), "completed")
+        store.append_run_event(
+            run["id"],
+            "run.completed",
+            "Answered new project planning prompt directly",
+            {"mode": "new_project_brief"},
+        )
+        return {
+            "run": store.get_run(run["id"]),
+            "context": context_pack,
+            "research": {"ok": False, "markdown": ""},
+            "decision": {
+                **decision,
+                "workflow": "new_project_brief",
+                "reason": "New project planning prompt answered directly before queuing a background agent.",
+                "verification": {"required": False, "method": "structured project brief"},
+                "next_steps": ["Create canonical project files.", "Confirm security model.", "Build v1 scaffold."],
+            },
+            "reply": new_project_reply,
         }
     research_pack = {"ok": False, "markdown": ""}
     if decision["workflow"] == "qwen_workflow" or studio_research.should_prefetch_research(prompt):
