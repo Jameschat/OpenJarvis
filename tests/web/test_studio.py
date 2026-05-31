@@ -84,6 +84,15 @@ def test_studio_has_worker_update_action():
     assert "updateWorkerNode" in html
     assert "/studio/worker-update" in html
     assert "_handle_studio_worker_update" in source
+    assert 'id="studio-worker-update-button"' in html
+
+
+def test_studio_context_panel_wraps_runtime_text():
+    html = (ROOT / "jarvis_web" / "studio.html").read_text(encoding="utf-8")
+
+    assert "grid-template-columns: 18px minmax(0,1fr)" in html
+    assert "overflow-wrap: anywhere" in html
+    assert ".source-row .row-meta" in html
 
 
 def test_studio_has_boot_screen_that_fades_after_state_load():

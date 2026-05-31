@@ -85,7 +85,7 @@
       height: 100vh;
       height: 100dvh;
       display: grid;
-      grid-template-columns: 304px minmax(0, 1fr) 344px;
+      grid-template-columns: 304px minmax(0, 1fr) minmax(360px, 23vw);
       background: #171719;
     }
     .studio-sidebar {
@@ -596,6 +596,7 @@
       display: grid;
       grid-template-rows: auto auto minmax(0,1fr);
       min-width: 0;
+      max-width: 520px;
     }
     .context-head {
       padding: 12px 14px;
@@ -627,12 +628,15 @@
       display: grid;
       gap: 10px;
       align-content: start;
+      min-width: 0;
     }
     .context-card {
       border: 1px solid var(--line);
       background: #1b1b1f;
       border-radius: 10px;
       padding: 10px;
+      min-width: 0;
+      overflow: hidden;
     }
     .context-meter {
       display: grid;
@@ -741,19 +745,37 @@
     .source-row,
     .browser-row {
       display: grid;
-      grid-template-columns: 18px minmax(0,1fr) auto;
+      grid-template-columns: 18px minmax(0,1fr);
       gap: 8px;
       align-items: center;
       color: #dcdce2;
       font-size: 12px;
       min-width: 0;
     }
+    .source-row,
+    .browser-row {
+      grid-template-columns: 18px minmax(0,1fr);
+    }
+    .output-row {
+      grid-template-columns: 18px minmax(0,1fr);
+    }
     .output-row span:nth-child(2),
     .source-row span:nth-child(2),
     .browser-row span:nth-child(2) {
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+      white-space: normal;
+      min-width: 0;
+    }
+    .source-row .row-meta,
+    .browser-row .row-meta,
+    .output-row .row-meta {
+      grid-column: 2;
+      margin-left: 0;
+      color: var(--muted);
+      font-size: 10px;
+      overflow-wrap: anywhere;
+      white-space: normal;
     }
     .output-icon,
     .source-icon,
@@ -921,6 +943,7 @@
               <i class="remote-worker-led" aria-hidden="true"></i>
               <span>Remote offline</span>
             </span>
+            <button class="pill-btn" id="studio-worker-update-button" type="button" data-studio-action="update-worker">Update Node</button>
             <button class="send-btn" id="studio-send-button" type="button" data-studio-action="send-message" aria-label="Send message">↑</button>
           </div>
         </div>
