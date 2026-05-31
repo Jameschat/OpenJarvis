@@ -233,6 +233,7 @@ def load_qwen_runtime_status_from_data(
     port_checker: Callable[[int], bool] | None = None,
 ) -> dict[str, Any]:
     checker = port_checker or port_is_open
+    node = load_node_identity()
     lanes = status.get("lanes")
     if not isinstance(lanes, list) or not lanes:
         status = default_qwen_runtime_status()
@@ -264,6 +265,16 @@ def load_qwen_runtime_status_from_data(
                 lane["online"] = checker(port, host=host)
             except TypeError:
                 lane["online"] = checker(port)
+            if (
+                not lane["online"]
+                and node.get("is_worker")
+                and str(lane.get("role") or "") == "remote-worker"
+                and host not in {"127.0.0.1", "localhost"}
+            ):
+                try:
+                    lane["online"] = checker(port, host="127.0.0.1")
+                except TypeError:
+                    lane["online"] = checker(port)
         else:
             lane["online"] = False
         normalized_lanes.append(lane)
@@ -287,7 +298,7 @@ def load_qwen_runtime_status_from_data(
         active_lane_id = str(active.get("id") or "")
 
     return {
-        "node": load_node_identity(),
+        "node": node,
         "active_lane": active_lane_id,
         "active_alias": active.get("alias", ""),
         "active_online": bool(active.get("online")),

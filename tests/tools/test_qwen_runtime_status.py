@@ -57,6 +57,25 @@ def test_qwen_runtime_status_defaults_include_remote_35b_worker():
     assert ("192.168.1.191", 4000) in seen
 
 
+def test_worker_node_checks_remote_lane_via_localhost_fallback(monkeypatch):
+    monkeypatch.setenv("JARVIS_NODE_ROLE", "worker")
+    seen = []
+
+    def checker(port, host="127.0.0.1"):
+        seen.append((host, port))
+        return host == "127.0.0.1" and port == 4000
+
+    status = load_qwen_runtime_status(
+        path=Path("definitely-missing-qwen-status.json"),
+        port_checker=checker,
+    )
+    remote = next(lane for lane in status["lanes"] if lane["id"] == "remote-35b-a3b")
+
+    assert remote["online"] is True
+    assert ("192.168.1.191", 4000) in seen
+    assert ("127.0.0.1", 4000) in seen
+
+
 def test_qwen_runtime_status_defaults_include_current_lane_metadata():
     status = load_qwen_runtime_status(
         path=Path("definitely-missing-qwen-status.json"),
