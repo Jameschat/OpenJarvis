@@ -33,6 +33,9 @@ export function StudioPage() {
   const [composerValue, setComposerValue] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<Array<Record<string, unknown>>>([]);
+  const [contextOpen, setContextOpen] = useState(false);
+  const [contextDraft, setContextDraft] = useState('');
+  const [contextItems, setContextItems] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async (projectId?: string, chatId?: string) => {
@@ -59,6 +62,14 @@ export function StudioPage() {
 
   const selectedChat = useMemo(() => getSelectedChat(state.chats || [], selectedChatId), [state.chats, selectedChatId]);
   const activeRun = getActiveRun(state);
+  const activeRuntimeLane = state.qwen_runtime?.lanes?.find((lane) => lane.active) || state.qwen_runtime?.lanes?.[0];
+  const settingsItems = useMemo(() => [
+    { label: 'Project', value: state.project_id || selectedProjectId || 'openjarvis' },
+    { label: 'Chat', value: selectedChat?.title || selectedChatId || 'New chat' },
+    { label: 'Qwen profile', value: String(state.qwen_profile?.active || 'fast') },
+    { label: 'Runtime', value: String(activeRuntimeLane?.label || activeRuntimeLane?.alias || state.qwen_runtime?.active || 'qwen local') },
+    { label: 'Provider', value: String(state.provider || 'auto') },
+  ], [activeRuntimeLane, selectedChat?.title, selectedChatId, selectedProjectId, state.project_id, state.provider, state.qwen_profile?.active, state.qwen_runtime?.active]);
   const handleSelectProject = async (projectId: string) => {
     setSelectedProjectId(projectId);
     setSelectedChatId('');
@@ -120,14 +131,30 @@ export function StudioPage() {
     }
   };
 
+  const handleAddContext = () => {
+    const nextContext = contextDraft.trim();
+    if (!nextContext) return;
+    setContextItems((items) => [...items, nextContext]);
+    setContextDraft('');
+  };
+
+  const handleRemoveContext = (index: number) => {
+    setContextItems((items) => items.filter((_, itemIndex) => itemIndex !== index));
+  };
+
   const handleSend = async () => {
     const prompt = composerValue.trim();
     if (!prompt || activeRun) return;
     const projectId = selectedProjectId || state.project_id || state.projects?.[0]?.id || 'openjarvis';
     const chatId = selectedChat?.id || selectedChatId || undefined;
+    const promptWithContext = contextItems.length
+      ? `[Studio attached context]\n${contextItems.map((item, index) => `${index + 1}. ${item}`).join('\n\n')}\n\n[Operator request]\n${prompt}`
+      : prompt;
     setComposerValue('');
     try {
-      await startStudioRun({ projectId, chatId, prompt, approved: true });
+      await startStudioRun({ projectId, chatId, prompt: promptWithContext, approved: true });
+      setContextItems([]);
+      setContextOpen(false);
       await refresh(projectId, chatId);
     } catch (error: any) {
       toast.error('Studio run failed', { description: error?.message || String(error) });
@@ -183,6 +210,7 @@ export function StudioPage() {
         chats={state.chats || []}
         plugins={state.plugins || []}
         automations={state.automations || []}
+        settingsItems={settingsItems}
         selectedProjectId={selectedProjectId}
         selectedChatId={selectedChatId}
         searchQuery={searchQuery}
@@ -207,10 +235,17 @@ export function StudioPage() {
           value={composerValue}
           activeRunId={activeRun?.id}
           qwenProfile={state.qwen_profile?.active || 'fast'}
+          contextOpen={contextOpen}
+          contextDraft={contextDraft}
+          contextItems={contextItems}
           onChange={setComposerValue}
           onSend={handleSend}
           onCancel={handleCancel}
           onProfileChange={changeProfile}
+          onToggleContext={() => setContextOpen((open) => !open)}
+          onContextDraftChange={setContextDraft}
+          onAddContext={handleAddContext}
+          onRemoveContext={handleRemoveContext}
         />
       </main>
       <StudioContextRail

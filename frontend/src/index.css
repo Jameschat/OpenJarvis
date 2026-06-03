@@ -920,6 +920,12 @@
     color: var(--color-text-secondary);
   }
 
+  .studio-pill.active {
+    border-color: color-mix(in srgb, var(--color-accent) 55%, var(--color-border));
+    color: var(--color-accent);
+    background: var(--color-accent-subtle);
+  }
+
   .studio-profile-button {
     border-radius: 999px;
     cursor: pointer;
@@ -1109,6 +1115,67 @@
     text-transform: uppercase;
     letter-spacing: 0.08em;
     color: var(--color-text-secondary);
+  }
+
+  .studio-context-drawer {
+    display: grid;
+    gap: 8px;
+    padding: 10px;
+    border: 1px solid var(--color-border);
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--color-bg-secondary) 92%, transparent);
+  }
+
+  .studio-context-drawer-header,
+  .studio-context-item {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    font-size: 12px;
+  }
+
+  .studio-context-drawer-header span {
+    color: var(--color-text-tertiary);
+  }
+
+  .studio-context-items {
+    display: grid;
+    gap: 6px;
+  }
+
+  .studio-context-item {
+    padding: 7px 8px;
+    border-radius: 8px;
+    background: var(--color-bg-tertiary);
+    color: var(--color-text-secondary);
+  }
+
+  .studio-context-item span {
+    min-width: 0;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .studio-context-input {
+    min-height: 76px;
+    resize: vertical;
+    border: 1px solid var(--color-border);
+    border-radius: 10px;
+    padding: 9px 10px;
+    background: var(--color-bg-tertiary);
+    color: var(--color-text);
+    font-size: 12px;
+    outline: none;
+  }
+
+  .studio-context-add {
+    justify-self: start;
+    min-height: 30px;
+    padding: 6px 10px;
   }
 
   .studio-progress-row,

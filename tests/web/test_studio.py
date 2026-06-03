@@ -142,6 +142,8 @@ def test_tauri_frontend_sidebar_controls_are_wired():
         "studio-sidebar-drawer",
         "pluginsOpen",
         "automationsOpen",
+        "settingsOpen",
+        "settingsItems",
     ]:
         assert marker in sidebar
     for marker in [
@@ -151,6 +153,26 @@ def test_tauri_frontend_sidebar_controls_are_wired():
         ".studio-sidebar-drawer",
     ]:
         assert marker in css
+
+
+def test_tauri_frontend_context_control_is_wired():
+    page = (ROOT / "frontend" / "src" / "pages" / "StudioPage.tsx").read_text(encoding="utf-8")
+    composer = (ROOT / "frontend" / "src" / "components" / "Studio" / "StudioComposer.tsx").read_text(encoding="utf-8")
+    css = (ROOT / "frontend" / "src" / "index.css").read_text(encoding="utf-8")
+
+    for marker in [
+        "contextOpen",
+        "contextDraft",
+        "contextItems",
+        "handleAddContext",
+        "[Studio attached context]",
+        "onToggleContext",
+        "onAddContext",
+        "onRemoveContext",
+        "studio-context-drawer",
+        "studio-context-input",
+    ]:
+        assert marker in page or marker in composer or marker in css
 
 
 def test_studio_buttons_are_not_inert():

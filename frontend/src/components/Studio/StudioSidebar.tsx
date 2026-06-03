@@ -7,6 +7,7 @@ interface StudioSidebarProps {
   chats: StudioChat[];
   plugins: Array<Record<string, unknown>>;
   automations: Array<Record<string, unknown>>;
+  settingsItems: Array<{ label: string; value: string }>;
   selectedProjectId: string;
   selectedChatId: string;
   searchQuery: string;
@@ -24,6 +25,7 @@ export function StudioSidebar({
   chats,
   plugins,
   automations,
+  settingsItems,
   selectedProjectId,
   selectedChatId,
   searchQuery,
@@ -38,6 +40,7 @@ export function StudioSidebar({
   const [openMenuChatId, setOpenMenuChatId] = useState('');
   const [pluginsOpen, setPluginsOpen] = useState(false);
   const [automationsOpen, setAutomationsOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   return (
     <aside className="studio-sidebar">
@@ -168,7 +171,20 @@ export function StudioSidebar({
             )}
           </div>
         )}
-        <button className="studio-sidebar-link" type="button" disabled title="Studio settings are wired in the next Studio phase">Settings</button>
+        <button className="studio-sidebar-link" type="button" onClick={() => setSettingsOpen((open) => !open)}>
+          {settingsOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          Settings
+        </button>
+        {settingsOpen && (
+          <div className="studio-sidebar-drawer">
+            {settingsItems.map((item) => (
+              <div className="studio-drawer-row" key={item.label}>
+                <span>{item.label}</span>
+                <strong>{item.value}</strong>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </aside>
   );
