@@ -489,6 +489,37 @@ def test_enrich_runs_for_studio_includes_live_task_progress(monkeypatch, tmp_pat
     assert enriched[0]["progress_summary"] == "qwen-planner running for 65s"
 
 
+def test_enrich_runs_for_studio_surfaces_ecc_lite_skills():
+    enriched = studio_runner.enrich_runs_for_studio(
+        [
+            {
+                "id": "run-ecc",
+                "status": "running",
+                "events": [
+                    {
+                        "type": "run.task_queued",
+                        "details": {
+                            "task_id": "task-ecc",
+                            "agent_id": "qwen-builder",
+                            "ecc_lite_skills": [
+                                "agentic-engineering",
+                                "verification-loop",
+                                "browser-qa",
+                            ],
+                        },
+                    }
+                ],
+            }
+        ]
+    )
+
+    assert enriched[0]["ecc_lite_skills"] == [
+        "agentic-engineering",
+        "verification-loop",
+        "browser-qa",
+    ]
+
+
 def test_subtract_file_activity_hides_baseline_and_secrets():
     current = [
         {"path": "uv.lock", "additions": 12, "deletions": 2},

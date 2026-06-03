@@ -1332,6 +1332,17 @@ def _task_progress_detail(task: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _run_ecc_lite_skills(run: dict[str, Any]) -> list[str]:
+    for event in run.get("events") or []:
+        if not isinstance(event, dict) or event.get("type") != "run.task_queued":
+            continue
+        details = event.get("details") if isinstance(event.get("details"), dict) else {}
+        skills = details.get("ecc_lite_skills") if isinstance(details, dict) else []
+        if isinstance(skills, list):
+            return [str(skill) for skill in skills if skill]
+    return []
+
+
 def enrich_runs_for_studio(runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Attach lightweight task/output details for the Studio progress panel."""
     task_index = _load_agent_task_index()
@@ -1366,6 +1377,7 @@ def enrich_runs_for_studio(runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
             (detail.get("progress_summary") for detail in task_details if detail.get("progress_summary")),
             "",
         )
+        copy["ecc_lite_skills"] = _run_ecc_lite_skills(copy)
         copy["outputs"] = outputs[:12]
         activity = _capture_run_file_activity(copy)
         if not activity and isinstance(copy.get("file_activity_final"), list):

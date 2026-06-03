@@ -111,6 +111,15 @@ def test_studio_context_panel_is_independently_scrollable():
     assert "min-height: 0" in html
 
 
+def test_studio_progress_panel_shows_ecc_lite_skills():
+    html = (ROOT / "jarvis_web" / "studio.html").read_text(encoding="utf-8")
+
+    assert "renderEccLiteSkills" in html
+    assert "ecc-lite-skill-list" in html
+    assert "ECC skills" in html
+    assert "run.ecc_lite_skills" in html
+
+
 def test_studio_has_boot_screen_that_fades_after_state_load():
     html = (ROOT / "jarvis_web" / "studio.html").read_text(encoding="utf-8")
     assert "drawBootRain" in html

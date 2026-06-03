@@ -794,6 +794,23 @@
       font-size: 10px;
       margin-top: 2px;
     }
+    .ecc-lite-skill-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      margin-top: 7px;
+    }
+    .ecc-lite-skill {
+      border: 1px solid rgba(98,230,255,0.28);
+      border-radius: 999px;
+      padding: 3px 7px;
+      background: rgba(98,230,255,0.08);
+      color: #b7f5ff;
+      font-size: 9px;
+      line-height: 1.1;
+      max-width: 100%;
+      overflow-wrap: anywhere;
+    }
     .output-row,
     .source-row,
     .browser-row {
@@ -1663,6 +1680,21 @@
       return "pending";
     }
 
+    function renderEccLiteSkills(parent, run) {
+      const skills = (run && run.ecc_lite_skills) || [];
+      if (!skills.length) return;
+      const wrap = document.createElement("div");
+      wrap.className = "ecc-lite-skill-list";
+      wrap.setAttribute("aria-label", "ECC skills");
+      skills.slice(0, 6).forEach((skill) => {
+        const chip = document.createElement("span");
+        chip.className = "ecc-lite-skill";
+        chip.textContent = skill;
+        wrap.appendChild(chip);
+      });
+      parent.appendChild(wrap);
+    }
+
     function renderProgressPanel(runs) {
       const root = el("studio-progress-list");
       if (!root) return;
@@ -1693,6 +1725,7 @@
         sub.className = "progress-subtext";
         sub.textContent = detail || "";
         text.appendChild(sub);
+        if (type === "queued") renderEccLiteSkills(text, run);
         item.append(dot, text);
         root.appendChild(item);
       });
