@@ -49,6 +49,38 @@ def test_studio_html_exists_and_wires_real_endpoints():
         assert marker in html
 
 
+def test_tauri_frontend_has_studio_route_and_components():
+    app = (ROOT / "frontend" / "src" / "App.tsx").read_text(encoding="utf-8")
+    sidebar = (ROOT / "frontend" / "src" / "components" / "Sidebar" / "Sidebar.tsx").read_text(encoding="utf-8")
+    page = (ROOT / "frontend" / "src" / "pages" / "StudioPage.tsx").read_text(encoding="utf-8")
+
+    assert "StudioPage" in app
+    assert 'path="studio"' in app
+    assert "label: 'Studio'" in sidebar or 'label: "Studio"' in sidebar
+    assert "StudioSidebar" in page
+    assert "StudioThread" in page
+    assert "StudioComposer" in page
+    assert "StudioContextRail" in page
+
+
+def test_tauri_frontend_has_studio_api_client():
+    api = (ROOT / "frontend" / "src" / "lib" / "studio-api.ts").read_text(encoding="utf-8")
+
+    for marker in [
+        "fetchStudioState",
+        "startStudioRun",
+        "cancelStudioRun",
+        "setStudioQwenProfile",
+        "startStudioPreview",
+        "updateStudioWorker",
+        "/studio/state",
+        "/studio/runs",
+        "/studio/qwen-profile",
+        "/studio/worker-update",
+    ]:
+        assert marker in api
+
+
 def test_studio_buttons_are_not_inert():
     html = (ROOT / "jarvis_web" / "studio.html").read_text(encoding="utf-8")
     assert "closest('[data-studio-action]')" in html
