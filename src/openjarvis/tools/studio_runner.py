@@ -55,6 +55,89 @@ _LIGHTWEIGHT_CHAT_PREFIXES = (
     "good evening",
 )
 
+_ECC_LITE_SKILL_GUIDANCE = {
+    "agentic-engineering": "Use agentic decomposition: define success, split into concrete work units, and keep outputs verifiable.",
+    "autonomous-agent-harness": "For multi-step autonomous work, keep a clear loop of plan, act, observe, reflect, and stop condition.",
+    "verification-loop": "Do not treat a task as done without evidence. Name the check, result, and remaining risk.",
+    "tdd-workflow": "For code changes, prefer failing test, minimal fix, passing verification, then focused cleanup.",
+    "iterative-retrieval": "For uncertain facts, retrieve in passes, compare sources, and only then summarize.",
+    "browser-qa": "For web/UI work, request preview and browser_visual_check evidence before final claims.",
+    "search-first": "For current or missing information, request web_search/github_search before guessing.",
+    "plan-orchestrate": "Turn broad requests into ordered steps with acceptance criteria and owner/agent fit.",
+    "security-review": "Check secrets, auth, privacy, permission, and destructive-action risk before proposing execution.",
+    "benchmark-optimization-loop": "For performance work, record baseline, one change, retest, and compare evidence.",
+}
+
+
+def _select_ecc_lite_skills(prompt: str, workflow: str) -> list[str]:
+    text = " ".join((prompt or "").strip().lower().split())
+    selected: list[str] = []
+
+    def add(*names: str) -> None:
+        for name in names:
+            if name not in selected:
+                selected.append(name)
+
+    if workflow in {"execute", "debug", "spec"} or any(
+        term in text
+        for term in (
+            "build",
+            "create",
+            "code",
+            "fix",
+            "implement",
+            "app",
+            "website",
+            "web page",
+            "frontend",
+            "backend",
+            "portal",
+        )
+    ):
+        add("agentic-engineering", "plan-orchestrate", "verification-loop", "tdd-workflow")
+    if any(term in text for term in ("code", "fix", "implement", "test", "regression", "debug")):
+        add("tdd-workflow")
+    if any(term in text for term in ("website", "web page", "frontend", "ui", "browser", "preview", "visual")):
+        add("browser-qa")
+    if workflow == "qwen_workflow" or any(term in text for term in ("research", "search", "github", "internet", "latest", "look up")):
+        add("search-first", "iterative-retrieval", "verification-loop")
+    if any(term in text for term in ("secure", "security", "auth", "password", "secret", "client data", "email")):
+        add("security-review")
+    if any(term in text for term in ("benchmark", "performance", "tok/s", "tokens", "speed", "throughput", "qwen")):
+        add("benchmark-optimization-loop", "verification-loop")
+    if any(term in text for term in ("autonomous", "agent", "agents", "workflow", "department", "multi-step")):
+        add("autonomous-agent-harness", "agentic-engineering", "plan-orchestrate")
+
+    if not selected and workflow not in {"direct_chat", "context_direct"}:
+        add("plan-orchestrate", "verification-loop")
+    return selected[:6]
+
+
+def _build_ecc_lite_guidance(prompt: str, workflow: str) -> str:
+    skill_names = _select_ecc_lite_skills(prompt, workflow)
+    if not skill_names:
+        return ""
+    lines = [
+        "== ECC-LITE AGENT OPERATING LAYER ==",
+        "Use these installed Jarvis/ECC skills as operating guidance for this task.",
+        "If you need the full skill text, request the safe tool `skill_guidance` with the skill name.",
+        "Do not run ECC commands, hooks, shell scripts, installs, or direct edits unless the tool bridge explicitly allows it.",
+        "",
+        "Required skill guidance:",
+    ]
+    for name in skill_names:
+        lines.append(f"- {name}: {_ECC_LITE_SKILL_GUIDANCE[name]}")
+    lines.extend(
+        [
+            "",
+            "Expected execution loop:",
+            "1. State the concrete objective and acceptance criteria.",
+            "2. Request any needed read/research/procedure tools through `qwen_tool_requests`.",
+            "3. Produce the smallest useful output with verification evidence and next action.",
+        ]
+    )
+    return "\n".join(lines)
+
 
 def _lightweight_chat_reply(prompt: str) -> str | None:
     text = " ".join((prompt or "").strip().lower().split())
@@ -1684,9 +1767,12 @@ def start_studio_run(
         }
 
     agent_id = _studio_agent_for_request(prompt, decision["workflow"])
+    ecc_lite_skills = _select_ecc_lite_skills(prompt, decision["workflow"])
+    ecc_guidance = _build_ecc_lite_guidance(prompt, decision["workflow"])
     task_prompt = (
         f"{context_pack.get('markdown', '')}\n\n"
         f"{research_pack.get('markdown', '')}\n\n"
+        f"{ecc_guidance}\n\n"
         f"Operator request:\n{prompt}\n\n"
         "Return concrete progress, blockers, and verification needed."
     )
@@ -1704,7 +1790,11 @@ def start_studio_run(
         run["id"],
         "run.task_queued",
         f"Queued {agent_id}",
-        {"task_id": task_id, "agent_id": agent_id},
+        {
+            "task_id": task_id,
+            "agent_id": agent_id,
+            "ecc_lite_skills": ecc_lite_skills,
+        },
     )
     return {
         "run": store.get_run(run["id"]),

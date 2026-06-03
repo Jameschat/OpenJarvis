@@ -49,6 +49,50 @@ def test_start_run_records_context_workflow_and_task(monkeypatch, tmp_path):
     ]
 
 
+def test_start_run_injects_ecc_lite_guidance_for_build_tasks(monkeypatch, tmp_path):
+    created_tasks = []
+    monkeypatch.setattr(studio_runner.studio_store, "STUDIO_ROOT", tmp_path)
+    monkeypatch.setattr(
+        studio_runner.studio_context,
+        "build_project_context_pack",
+        lambda prompt, project=None: {"markdown": "ctx", "warnings": []},
+    )
+    monkeypatch.setattr(
+        studio_runner.studio_workflows,
+        "select_workflow",
+        lambda prompt: {
+            "workflow": "execute",
+            "reason": "direct",
+            "verification": {"required": True},
+            "model": "qwen3.6-27b-local",
+            "requires_operator_approval": False,
+            "risks": [],
+            "next_steps": [],
+        },
+    )
+    monkeypatch.setattr(
+        studio_runner,
+        "_queue_agent_task",
+        lambda **kwargs: created_tasks.append(kwargs) or "task-1",
+    )
+
+    result = studio_runner.start_studio_run(
+        project_id="openjarvis",
+        chat_id="chat-1",
+        prompt="Build a modern website and verify it in the browser",
+    )
+
+    assert result["run"]["status"] == "running"
+    task_prompt = created_tasks[0]["prompt"]
+    assert "ECC-LITE AGENT OPERATING LAYER" in task_prompt
+    assert "skill_guidance" in task_prompt
+    assert "agentic-engineering" in task_prompt
+    assert "plan-orchestrate" in task_prompt
+    assert "verification-loop" in task_prompt
+    assert "browser-qa" in task_prompt
+    assert "tdd-workflow" in task_prompt
+
+
 def test_start_run_routes_test_requests_to_qwen_tester(monkeypatch, tmp_path):
     created_tasks = []
     monkeypatch.setattr(studio_runner.studio_store, "STUDIO_ROOT", tmp_path)
