@@ -52,6 +52,8 @@ FIELD_MAPPING: Dict[str, tuple[str, str]] = {
     "disable_model_invocation": ("field", "disable_model_invocation"),
     "platforms": ("openjarvis_meta", "platforms"),
     "prerequisites": ("openjarvis_meta", "prerequisites"),
+    "origin": ("openjarvis_meta", "origin"),
+    "tools": ("openjarvis_meta", "tools"),
 }
 
 # Naming pattern: lowercase alnum + hyphens, no leading/trailing/consecutive hyphens

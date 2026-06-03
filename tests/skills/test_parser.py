@@ -211,3 +211,22 @@ class TestTolerantFieldMapping:
         # Platforms get rendered into a compatibility string under metadata
         oj = manifest.metadata.get("openjarvis", {})
         assert "platforms" in oj or "compatibility" in oj
+
+    def test_ecc_origin_and_tools_fields_mapped(self, caplog):
+        import logging
+
+        parser = SkillParser()
+        with caplog.at_level(logging.WARNING):
+            manifest = parser.parse_frontmatter(
+                {
+                    "name": "test",
+                    "description": "x",
+                    "origin": "ECC",
+                    "tools": ["Read", "Grep"],
+                }
+            )
+        oj = manifest.metadata.get("openjarvis", {})
+        assert oj["origin"] == "ECC"
+        assert oj["tools"] == ["Read", "Grep"]
+        assert not any("origin" in record.message for record in caplog.records)
+        assert not any("tools" in record.message for record in caplog.records)
