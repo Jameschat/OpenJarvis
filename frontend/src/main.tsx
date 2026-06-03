@@ -23,6 +23,18 @@ function applyTheme() {
 
 applyTheme();
 
+function redirectTauriToStudio() {
+  if (
+    typeof window !== 'undefined' &&
+    window.__TAURI_INTERNALS__ &&
+    window.location.pathname === '/'
+  ) {
+    window.history.replaceState(null, '', '/studio');
+  }
+}
+
+redirectTauriToStudio();
+
 // Fetch the API base URL from the Tauri backend before rendering.
 // This ensures JARVIS_PORT is defined in one place (the Rust backend).
 // In non-Tauri environments this is a no-op.

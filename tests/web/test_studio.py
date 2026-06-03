@@ -89,6 +89,23 @@ def test_tauri_frontend_has_studio_api_client():
         assert marker in api
 
 
+def test_tauri_desktop_app_targets_jarvis_studio_runtime():
+    app = (ROOT / "frontend" / "src" / "App.tsx").read_text(encoding="utf-8")
+    main = (ROOT / "frontend" / "src" / "main.tsx").read_text(encoding="utf-8")
+    api = (ROOT / "frontend" / "src" / "lib" / "api.ts").read_text(encoding="utf-8")
+    tauri = (ROOT / "frontend" / "src-tauri" / "src" / "lib.rs").read_text(encoding="utf-8")
+    config = (ROOT / "frontend" / "src-tauri" / "tauri.conf.json").read_text(encoding="utf-8")
+
+    assert "const JARVIS_PORT: u16 = 7710" in tauri
+    assert "http://127.0.0.1:7710" in api
+    assert "redirectTauriToStudio" in main
+    assert "window.history.replaceState(null, '', '/studio')" in main
+    assert "useState(true)" in app
+    assert '"productName": "J.A.R.V.I.S. Studio"' in config
+    assert '"title": "J.A.R.V.I.S. Studio"' in config
+    assert '"createUpdaterArtifacts": false' in config
+
+
 def test_tauri_frontend_has_studio_shell_styles():
     css = (ROOT / "frontend" / "src" / "index.css").read_text(encoding="utf-8")
 

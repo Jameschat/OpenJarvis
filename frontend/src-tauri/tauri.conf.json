@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "OpenJarvis",
+  "productName": "J.A.R.V.I.S. Studio",
   "version": "0.1.0",
   "identifier": "com.openjarvis.desktop",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "OpenJarvis",
+        "title": "J.A.R.V.I.S. Studio",
         "width": 1280,
         "height": 800,
         "minWidth": 900,
@@ -30,7 +30,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "createUpdaterArtifacts": true,
+    "createUpdaterArtifacts": false,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
