@@ -70,7 +70,7 @@ export function StudioPage() {
     const prompt = composerValue.trim();
     if (!prompt || activeRun) return;
     const projectId = selectedProjectId || state.projects?.[0]?.id || 'openjarvis';
-    const chatId = selectedChat?.id || selectedChatId || 'default';
+    const chatId = selectedChat?.id || selectedChatId || undefined;
     setComposerValue('');
     try {
       await startStudioRun({ projectId, chatId, prompt, approved: true });

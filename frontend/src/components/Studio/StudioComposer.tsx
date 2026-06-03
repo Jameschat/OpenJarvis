@@ -36,7 +36,7 @@ export function StudioComposer({
         placeholder="Ask Jarvis to plan, build, test, search memory, or run a local Qwen workflow..."
       />
       <div className="studio-composer-actions">
-        <button className="studio-pill" type="button">
+        <button className="studio-pill" type="button" disabled title="Context attachments are wired in the next Studio phase">
           <Paperclip size={14} />
           Context
         </button>

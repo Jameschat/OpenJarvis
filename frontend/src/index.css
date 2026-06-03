@@ -945,6 +945,11 @@
     cursor: pointer;
   }
 
+  .studio-shell button:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+  }
+
   .studio-send-button {
     margin-left: auto;
     width: 34px;

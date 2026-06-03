@@ -20,12 +20,12 @@ export function StudioSidebar({
 }: StudioSidebarProps) {
   return (
     <aside className="studio-sidebar">
-      <button className="studio-sidebar-primary" type="button">
+      <button className="studio-sidebar-primary" type="button" disabled title="New chat action is wired in the next Studio phase">
         <Plus size={16} />
         New chat
       </button>
 
-      <button className="studio-sidebar-link" type="button">
+      <button className="studio-sidebar-link" type="button" disabled title="Search is wired in the next Studio phase">
         <Search size={15} />
         Search
       </button>
@@ -68,9 +68,9 @@ export function StudioSidebar({
       </section>
 
       <div className="studio-sidebar-footer">
-        <button className="studio-sidebar-link" type="button">Plugins</button>
-        <button className="studio-sidebar-link" type="button">Automations</button>
-        <button className="studio-sidebar-link" type="button">Settings</button>
+        <button className="studio-sidebar-link" type="button" disabled title="Plugin browser is wired in the next Studio phase">Plugins</button>
+        <button className="studio-sidebar-link" type="button" disabled title="Automation browser is wired in the next Studio phase">Automations</button>
+        <button className="studio-sidebar-link" type="button" disabled title="Studio settings are wired in the next Studio phase">Settings</button>
       </div>
     </aside>
   );

@@ -20,7 +20,7 @@ export async function fetchStudioState(_projectId?: string, _chatId?: string): P
 
 export async function startStudioRun(input: {
   projectId: string;
-  chatId: string;
+  chatId?: string;
   prompt: string;
   approved?: boolean;
   branchFromMessageId?: string;
@@ -29,7 +29,7 @@ export async function startStudioRun(input: {
     method: 'POST',
     body: JSON.stringify({
       project_id: input.projectId,
-      chat_id: input.chatId,
+      chat_id: input.chatId || '',
       prompt: input.prompt,
       approved: Boolean(input.approved),
       branch_from_message_id: input.branchFromMessageId || '',
