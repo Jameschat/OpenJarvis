@@ -5,7 +5,14 @@ import { StudioContextRail } from '../components/Studio/StudioContextRail';
 import { StudioSidebar } from '../components/Studio/StudioSidebar';
 import { StudioThread } from '../components/Studio/StudioThread';
 import type { StudioChat, StudioState } from '../components/Studio/types';
-import { cancelStudioRun, fetchStudioState, startStudioRun } from '../lib/studio-api';
+import {
+  cancelStudioRun,
+  fetchStudioState,
+  setStudioQwenProfile,
+  startStudioPreview,
+  startStudioRun,
+  updateStudioWorker,
+} from '../lib/studio-api';
 
 function getActiveRun(state: StudioState) {
   return (state.runs || []).find((run) => ['running', 'queued', 'pending'].includes(String(run.status || '').toLowerCase()));
@@ -83,6 +90,38 @@ export function StudioPage() {
     }
   };
 
+  const changeProfile = async (profile: 'fast' | 'quality' | 'remote') => {
+    try {
+      await setStudioQwenProfile(profile);
+      await refresh();
+      toast.success(`Qwen profile set to ${profile}`);
+    } catch (error: any) {
+      toast.error('Could not change Qwen profile', { description: error?.message || String(error) });
+    }
+  };
+
+  const openPreview = async () => {
+    const projectId = loadedProjectId || selectedProjectId || state.projects?.[0]?.id || 'openjarvis';
+    try {
+      const result = await startStudioPreview(projectId);
+      const url = typeof result.url === 'string' ? result.url : '';
+      if (url) window.open(url, '_blank', 'noopener,noreferrer');
+      await refresh();
+    } catch (error: any) {
+      toast.error('Could not open preview', { description: error?.message || String(error) });
+    }
+  };
+
+  const updateWorker = async () => {
+    try {
+      await updateStudioWorker();
+      await refresh();
+      toast.success('Worker update started');
+    } catch (error: any) {
+      toast.error('Could not update worker', { description: error?.message || String(error) });
+    }
+  };
+
   return (
     <div className="studio-shell">
       <StudioSidebar
@@ -109,9 +148,15 @@ export function StudioPage() {
           onChange={setComposerValue}
           onSend={handleSend}
           onCancel={handleCancel}
+          onProfileChange={changeProfile}
         />
       </main>
-      <StudioContextRail state={state} activeRun={activeRun} />
+      <StudioContextRail
+        state={state}
+        activeRun={activeRun}
+        onOpenPreview={openPreview}
+        onUpdateWorker={updateWorker}
+      />
     </div>
   );
 }

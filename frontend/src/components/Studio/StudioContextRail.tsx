@@ -5,6 +5,8 @@ import type { StudioAgent, StudioRun, StudioState } from './types';
 interface StudioContextRailProps {
   state: StudioState;
   activeRun?: StudioRun;
+  onOpenPreview: () => void;
+  onUpdateWorker: () => void;
 }
 
 function StatusCard({ title, children }: { title: string; children: ReactNode }) {
@@ -25,13 +27,19 @@ function AgentRow({ agent }: { agent: StudioAgent }) {
   );
 }
 
-export function StudioContextRail({ state, activeRun }: StudioContextRailProps) {
+export function StudioContextRail({ state, activeRun, onOpenPreview, onUpdateWorker }: StudioContextRailProps) {
   const runtimeLane = state.qwen_runtime?.lanes?.find((lane) => lane.active) || state.qwen_runtime?.lanes?.[0];
   const tasks = activeRun?.task_details || activeRun?.tasks || [];
   const outputs = activeRun?.outputs || [];
 
   return (
     <aside className="studio-context-rail">
+      <section className="studio-card">
+        <h2>Desktop Actions</h2>
+        <button type="button" className="studio-row" onClick={onOpenPreview}>Open Preview</button>
+        <button type="button" className="studio-row" onClick={onUpdateWorker}>Update Worker</button>
+      </section>
+
       <StatusCard title="Progress">
         {tasks.length === 0 ? (
           <div className="studio-muted">No active task steps</div>

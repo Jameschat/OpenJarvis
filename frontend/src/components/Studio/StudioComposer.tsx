@@ -8,6 +8,7 @@ interface StudioComposerProps {
   onChange: (value: string) => void;
   onSend: () => void;
   onCancel: () => void;
+  onProfileChange: (profile: 'fast' | 'quality' | 'remote') => void;
 }
 
 export function StudioComposer({
@@ -17,6 +18,7 @@ export function StudioComposer({
   onChange,
   onSend,
   onCancel,
+  onProfileChange,
 }: StudioComposerProps) {
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && !event.shiftKey) {
@@ -40,6 +42,27 @@ export function StudioComposer({
         </button>
         <span className="studio-pill">Default permissions</span>
         <span className="studio-pill">Qwen {qwenProfile || 'fast'}</span>
+        <button
+          type="button"
+          className={`studio-profile-button ${qwenProfile === 'fast' ? 'active' : ''}`}
+          onClick={() => onProfileChange('fast')}
+        >
+          Fast
+        </button>
+        <button
+          type="button"
+          className={`studio-profile-button ${qwenProfile === 'quality' ? 'active' : ''}`}
+          onClick={() => onProfileChange('quality')}
+        >
+          Quality
+        </button>
+        <button
+          type="button"
+          className={`studio-profile-button ${qwenProfile === 'remote' ? 'active' : ''}`}
+          onClick={() => onProfileChange('remote')}
+        >
+          Remote
+        </button>
         <button
           className="studio-send-button"
           onClick={activeRunId ? onCancel : onSend}

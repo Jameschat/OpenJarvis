@@ -898,6 +898,7 @@
 
   .studio-chip,
   .studio-pill,
+  .studio-profile-button,
   .studio-sidebar-primary,
   .studio-sidebar-link,
   .studio-row-button,
@@ -910,12 +911,38 @@
   }
 
   .studio-pill,
-  .studio-chip {
+  .studio-chip,
+  .studio-profile-button {
     display: inline-flex;
     align-items: center;
     gap: 6px;
     padding: 6px 10px;
     color: var(--color-text-secondary);
+  }
+
+  .studio-profile-button {
+    border-radius: 999px;
+    cursor: pointer;
+  }
+
+  .studio-profile-button.active {
+    border-color: color-mix(in srgb, var(--color-accent) 55%, var(--color-border));
+    color: var(--color-accent);
+    background: var(--color-accent-subtle);
+  }
+
+  .studio-row {
+    width: 100%;
+    min-height: 32px;
+    display: flex;
+    align-items: center;
+    padding: 7px 9px;
+    border: 1px solid var(--color-border);
+    border-radius: 9px;
+    background: var(--color-bg-tertiary);
+    color: var(--color-text);
+    font-size: 12px;
+    cursor: pointer;
   }
 
   .studio-send-button {

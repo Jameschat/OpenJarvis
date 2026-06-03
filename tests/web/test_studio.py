@@ -96,6 +96,23 @@ def test_tauri_frontend_has_studio_shell_styles():
         assert marker in css
 
 
+def test_tauri_frontend_studio_exposes_core_actions():
+    page = (ROOT / "frontend" / "src" / "pages" / "StudioPage.tsx").read_text(encoding="utf-8")
+    composer = (ROOT / "frontend" / "src" / "components" / "Studio" / "StudioComposer.tsx").read_text(encoding="utf-8")
+    rail = (ROOT / "frontend" / "src" / "components" / "Studio" / "StudioContextRail.tsx").read_text(encoding="utf-8")
+
+    for marker in [
+        "setStudioQwenProfile",
+        "startStudioPreview",
+        "updateStudioWorker",
+        "cancelStudioRun",
+        "onProfileChange",
+        "onOpenPreview",
+        "onUpdateWorker",
+    ]:
+        assert marker in page or marker in composer or marker in rail
+
+
 def test_studio_buttons_are_not_inert():
     html = (ROOT / "jarvis_web" / "studio.html").read_text(encoding="utf-8")
     assert "closest('[data-studio-action]')" in html
