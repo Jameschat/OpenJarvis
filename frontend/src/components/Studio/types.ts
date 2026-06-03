@@ -68,6 +68,13 @@ export interface StudioRuntimeLane {
   active?: boolean;
   latest_tok_s?: number;
   status?: string;
+  role?: string;
+  host?: string;
+  port?: number;
+  context_tokens?: number;
+  verdict?: string;
+  notes?: string;
+  benchmark?: Record<string, unknown>;
 }
 
 export interface StudioState {
@@ -80,8 +87,20 @@ export interface StudioState {
   plugins?: Array<Record<string, unknown>>;
   automations?: Array<Record<string, unknown>>;
   qwen_profile?: StudioQwenProfile;
-  qwen_runtime?: { lanes?: StudioRuntimeLane[]; active?: string };
-  runtime_health?: Record<string, unknown>;
+  qwen_runtime?: {
+    lanes?: StudioRuntimeLane[];
+    active?: string;
+    active_lane?: string;
+    active_alias?: string;
+    active_online?: boolean;
+    promotion_verdict?: string;
+  };
+  runtime_health?: {
+    ok?: boolean;
+    summary?: string;
+    services?: Array<Record<string, unknown>>;
+    checked_at?: string;
+  };
   preview?: Record<string, unknown>;
   system?: Record<string, unknown>;
   provider?: string;

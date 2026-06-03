@@ -1144,8 +1144,11 @@ def _qwen_runtime_status() -> Dict[str, Any]:
     """
     from openjarvis.tools.qwen_runtime_status import load_qwen_runtime_status
 
+    def _studio_port_is_open(port: int, host: str = "127.0.0.1") -> bool:
+        return _port_is_open(host, port)
+
     return load_qwen_runtime_status(
-        port_checker=lambda port: _port_is_open("127.0.0.1", port)
+        port_checker=_studio_port_is_open
     )
 
 

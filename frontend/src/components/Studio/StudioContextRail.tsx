@@ -5,6 +5,8 @@ import type { StudioAgent, StudioRun, StudioState } from './types';
 interface StudioContextRailProps {
   state: StudioState;
   activeRun?: StudioRun;
+  lastLoadedAt?: string;
+  backendOnline?: boolean;
   onOpenPreview: () => void;
   onUpdateWorker: () => void;
 }
@@ -37,8 +39,39 @@ function textValue(value: unknown, fallback = ''): string {
   return String(value);
 }
 
-export function StudioContextRail({ state, activeRun, onOpenPreview, onUpdateWorker }: StudioContextRailProps) {
+function percentValue(value: unknown): string {
+  if (typeof value === 'number') return `${Math.round(value)}%`;
+  if (typeof value === 'string' && value.trim()) return value;
+  return 'pending';
+}
+
+function runtimeSpeed(lane: Record<string, unknown>): string {
+  const benchmark = lane.benchmark;
+  if (benchmark && typeof benchmark === 'object') {
+    const latest = (benchmark as Record<string, unknown>).latest_tok_s;
+    const tiny = (benchmark as Record<string, unknown>).tiny_tok_s;
+    const studio = (benchmark as Record<string, unknown>).studio_json_tok_s;
+    const value = latest || tiny || studio;
+    if (typeof value === 'number') return `${value.toFixed(1)} tok/s`;
+  }
+  return '';
+}
+
+export function StudioContextRail({
+  state,
+  activeRun,
+  lastLoadedAt,
+  backendOnline = true,
+  onOpenPreview,
+  onUpdateWorker,
+}: StudioContextRailProps) {
   const runtimeLane = state.qwen_runtime?.lanes?.find((lane) => lane.active) || state.qwen_runtime?.lanes?.[0];
+  const qwenRuntime = state.qwen_runtime;
+  const runtimeHealth = state.runtime_health;
+  const runtimeServices = state.runtime_health?.services || [];
+  const system = state.system || {};
+  const gpu = (system.gpu || {}) as Record<string, unknown>;
+  const remoteLane = qwenRuntime?.lanes?.find((lane) => String(lane.id || '').includes('remote') || lane.role === 'remote-worker');
   const tasks = activeRun?.task_details || activeRun?.tasks || [];
   const outputs = activeRun?.outputs || [];
   const fileActivity = activeRun?.file_activity || [];
@@ -48,6 +81,10 @@ export function StudioContextRail({ state, activeRun, onOpenPreview, onUpdateWor
     <aside className="studio-context-rail">
       <section className="studio-card">
         <h2>Desktop Actions</h2>
+        <div className={`studio-native-status ${backendOnline ? 'online' : 'offline'}`}>
+          <span>{backendOnline ? 'Native app connected' : 'Backend unavailable'}</span>
+          <strong>{lastLoadedAt || 'not loaded'}</strong>
+        </div>
         <button type="button" className="studio-row" onClick={onOpenPreview}>Open Preview</button>
         <button type="button" className="studio-row" onClick={onUpdateWorker}>Update Worker</button>
       </section>
@@ -102,6 +139,61 @@ export function StudioContextRail({ state, activeRun, onOpenPreview, onUpdateWor
           <span>{runtimeLane?.label || runtimeLane?.alias || state.qwen_runtime?.active || 'qwen3.6-27b-local'}</span>
           <strong>{runtimeLane?.online === false ? 'offline' : 'online'}</strong>
         </div>
+        {qwenRuntime?.promotion_verdict ? (
+          <p className="studio-run-summary-note">{qwenRuntime.promotion_verdict}</p>
+        ) : null}
+      </StatusCard>
+
+      <StatusCard title="Remote Worker">
+        <div className="studio-metric-row">
+          <span className={`studio-led ${remoteLane?.online === false ? 'offline' : 'online'}`} />
+          <span>{remoteLane?.label || 'Remote 35B worker'}</span>
+          <strong>{remoteLane?.online === false ? 'offline' : 'online'}</strong>
+        </div>
+        <div className="studio-metric-row">
+          <span>{remoteLane?.host || '192.168.1.191'}:{remoteLane?.port || 4000}</span>
+          <strong>{remoteLane?.context_tokens ? `${remoteLane.context_tokens / 1000}K ctx` : '128K ctx'}</strong>
+        </div>
+      </StatusCard>
+
+      <StatusCard title="Runtime Readiness">
+        <p className="studio-run-summary-note">{runtimeHealth?.summary || 'Runtime health pending.'}</p>
+        {runtimeServices.slice(0, 6).map((service, index) => (
+          <div className="studio-metric-row" key={String(service.id || service.label || index)}>
+            <span className={`studio-led ${service.ok === false ? 'offline' : 'online'}`} />
+            <span>{textValue(service.label || service.id, 'Runtime service')}</span>
+            <strong>{service.ok === false ? 'down' : 'ok'}</strong>
+          </div>
+        ))}
+      </StatusCard>
+
+      <StatusCard title="System Health">
+        <div className="studio-metric-row">
+          <span>GPU</span>
+          <strong>{textValue(gpu.name, 'RTX')} {percentValue(gpu.util_percent)}</strong>
+        </div>
+        <div className="studio-metric-row">
+          <span>VRAM</span>
+          <strong>{percentValue(gpu.memory_percent)}</strong>
+        </div>
+        <div className="studio-metric-row">
+          <span>CPU</span>
+          <strong>{percentValue(system.cpu_percent)}</strong>
+        </div>
+        <div className="studio-metric-row">
+          <span>RAM</span>
+          <strong>{percentValue(system.ram_percent)}</strong>
+        </div>
+      </StatusCard>
+
+      <StatusCard title="Qwen Lanes">
+        {(qwenRuntime?.lanes || []).slice(0, 5).map((lane) => (
+          <div className="studio-progress-row studio-runtime-lane" key={lane.id || lane.alias || lane.label}>
+            <span className={`studio-led ${lane.online === false ? 'offline' : 'online'}`} />
+            <span>{lane.label || lane.alias || lane.id}</span>
+            <strong>{runtimeSpeed(lane as Record<string, unknown>) || lane.verdict || lane.status || ''}</strong>
+          </div>
+        ))}
       </StatusCard>
 
       <StatusCard title="Outputs">

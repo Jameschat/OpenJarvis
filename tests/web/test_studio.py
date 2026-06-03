@@ -253,6 +253,38 @@ def test_tauri_frontend_context_rail_shows_live_run_summary():
         assert marker in rail or marker in css
 
 
+def test_tauri_frontend_has_native_runtime_parity_panels():
+    page = (ROOT / "frontend" / "src" / "pages" / "StudioPage.tsx").read_text(encoding="utf-8")
+    composer = (ROOT / "frontend" / "src" / "components" / "Studio" / "StudioComposer.tsx").read_text(encoding="utf-8")
+    rail = (ROOT / "frontend" / "src" / "components" / "Studio" / "StudioContextRail.tsx").read_text(encoding="utf-8")
+    css = (ROOT / "frontend" / "src" / "index.css").read_text(encoding="utf-8")
+
+    for marker in [
+        "loadError",
+        "Retry connection",
+        "Native desktop",
+        "studio-backend-banner",
+        "Runtime Readiness",
+        "System Health",
+        "Remote Worker",
+        "Qwen Lanes",
+        "promotion_verdict",
+        "runtime_health?.services",
+        "gpu.memory_percent",
+        "remoteProfileOnline",
+        "Remote unavailable",
+    ]:
+        assert marker in page or marker in composer or marker in rail or marker in css
+
+
+def test_studio_runtime_status_checks_remote_worker_host():
+    source = (ROOT / "src" / "openjarvis" / "cli" / "brain_server.py").read_text(encoding="utf-8")
+
+    assert 'def _studio_port_is_open(port: int, host: str = "127.0.0.1")' in source
+    assert "return _port_is_open(host, port)" in source
+    assert "port_checker=_studio_port_is_open" in source
+
+
 def test_studio_buttons_are_not_inert():
     html = (ROOT / "jarvis_web" / "studio.html").read_text(encoding="utf-8")
     assert "closest('[data-studio-action]')" in html

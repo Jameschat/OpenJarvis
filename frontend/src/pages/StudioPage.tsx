@@ -5,6 +5,7 @@ import { StudioContextRail } from '../components/Studio/StudioContextRail';
 import { StudioSidebar } from '../components/Studio/StudioSidebar';
 import { StudioThread } from '../components/Studio/StudioThread';
 import type { StudioChat, StudioMessage, StudioState } from '../components/Studio/types';
+import { getBase, isTauri } from '../lib/api';
 import {
   archiveStudioChat,
   cancelStudioRun,
@@ -39,13 +40,23 @@ export function StudioPage() {
   const [steeringMessageId, setSteeringMessageId] = useState('');
   const [steeringSummary, setSteeringSummary] = useState('');
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [lastLoadedAt, setLastLoadedAt] = useState('');
 
   const refresh = useCallback(async (projectId?: string, chatId?: string) => {
-    const nextState = await fetchStudioState(projectId || selectedProjectId, chatId || selectedChatId);
-    setState(nextState);
-    setSelectedProjectId(nextState.project_id || projectId || nextState.projects?.[0]?.id || '');
-    setSelectedChatId(nextState.chat_id || chatId || nextState.chats?.[0]?.id || '');
-    setLoading(false);
+    try {
+      const nextState = await fetchStudioState(projectId || selectedProjectId, chatId || selectedChatId);
+      setState(nextState);
+      setSelectedProjectId(nextState.project_id || projectId || nextState.projects?.[0]?.id || '');
+      setSelectedChatId(nextState.chat_id || chatId || nextState.chats?.[0]?.id || '');
+      setLoadError('');
+      setLastLoadedAt(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+      setLoading(false);
+    } catch (error: any) {
+      setLoadError(error?.message || String(error));
+      setLoading(false);
+      throw error;
+    }
   }, [selectedChatId, selectedProjectId]);
 
   useEffect(() => {
@@ -65,6 +76,14 @@ export function StudioPage() {
   const selectedChat = useMemo(() => getSelectedChat(state.chats || [], selectedChatId), [state.chats, selectedChatId]);
   const activeRun = getActiveRun(state);
   const activeRuntimeLane = state.qwen_runtime?.lanes?.find((lane) => lane.active) || state.qwen_runtime?.lanes?.[0];
+  const remoteProfileOnline = Boolean(
+    state.qwen_runtime?.lanes?.some((lane) => {
+      const id = String(lane.id || '');
+      const role = String(lane.role || '');
+      return (id.includes('remote') || role === 'remote-worker') && lane.online !== false;
+    })
+  );
+  const backendOnline = !loadError && state.runtime_health?.ok !== false;
   const settingsItems = useMemo(() => [
     { label: 'Project', value: state.project_id || selectedProjectId || 'openjarvis' },
     { label: 'Chat', value: selectedChat?.title || selectedChatId || 'New chat' },
@@ -195,6 +214,10 @@ export function StudioPage() {
   };
 
   const changeProfile = async (profile: 'fast' | 'quality' | 'remote') => {
+    if (profile === 'remote' && !remoteProfileOnline) {
+      toast.error('Remote unavailable', { description: 'The remote Qwen worker is offline, so Studio will stay on the local profile.' });
+      return;
+    }
     try {
       await setStudioQwenProfile(profile);
       await refresh();
@@ -251,8 +274,26 @@ export function StudioPage() {
             <h1>Jarvis Studio</h1>
             <p>{loading ? 'Loading Studio...' : 'Local Qwen workspace with Codex-style project sessions.'}</p>
           </div>
-          <span>{state.qwen_profile?.active || state.qwen_runtime?.active || 'qwen3.6-27b-local'}</span>
+          <div className="studio-header-actions">
+            <span className="studio-native-badge">{isTauri() ? 'Native desktop' : 'Browser preview'}</span>
+            <span className={`studio-backend-badge ${backendOnline ? 'online' : 'offline'}`}>
+              {backendOnline ? 'Backend online' : 'Backend offline'}
+            </span>
+            <span>{state.qwen_profile?.active || state.qwen_runtime?.active_alias || state.qwen_runtime?.active || 'qwen3.6-27b-local'}</span>
+            <button type="button" className="studio-mini-action studio-refresh-action" onClick={() => refresh().catch(() => {})}>
+              Refresh
+            </button>
+          </div>
         </header>
+        {loadError && (
+          <section className="studio-backend-banner">
+            <div>
+              <strong>Jarvis backend is not responding</strong>
+              <span>{getBase()} returned: {loadError}</span>
+            </div>
+            <button type="button" onClick={() => refresh().catch(() => {})}>Retry connection</button>
+          </section>
+        )}
         <StudioThread
           messages={selectedChat?.messages || []}
           activeRun={activeRun}
@@ -263,6 +304,7 @@ export function StudioPage() {
           value={composerValue}
           activeRunId={activeRun?.id}
           qwenProfile={state.qwen_profile?.active || 'fast'}
+          remoteProfileOnline={remoteProfileOnline}
           contextOpen={contextOpen}
           contextDraft={contextDraft}
           contextItems={contextItems}
@@ -281,6 +323,8 @@ export function StudioPage() {
       <StudioContextRail
         state={state}
         activeRun={activeRun}
+        lastLoadedAt={lastLoadedAt}
+        backendOnline={backendOnline}
         onOpenPreview={openPreview}
         onUpdateWorker={updateWorker}
       />

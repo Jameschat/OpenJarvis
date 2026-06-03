@@ -5,6 +5,7 @@ interface StudioComposerProps {
   value: string;
   activeRunId?: string;
   qwenProfile: string;
+  remoteProfileOnline?: boolean;
   contextOpen: boolean;
   contextDraft: string;
   contextItems: string[];
@@ -24,6 +25,7 @@ export function StudioComposer({
   value,
   activeRunId,
   qwenProfile,
+  remoteProfileOnline = true,
   contextOpen,
   contextDraft,
   contextItems,
@@ -114,8 +116,10 @@ export function StudioComposer({
           type="button"
           className={`studio-profile-button ${qwenProfile === 'remote' ? 'active' : ''}`}
           onClick={() => onProfileChange('remote')}
+          disabled={!remoteProfileOnline}
+          title={remoteProfileOnline ? 'Use remote Qwen worker' : 'Remote unavailable'}
         >
-          Remote
+          {remoteProfileOnline ? 'Remote' : 'Remote unavailable'}
         </button>
         <button
           className="studio-send-button"
