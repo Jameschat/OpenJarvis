@@ -52,6 +52,37 @@ export function StudioContextRail({ state, activeRun, onOpenPreview, onUpdateWor
         <button type="button" className="studio-row" onClick={onUpdateWorker}>Update Worker</button>
       </section>
 
+      <StatusCard title="Run Summary">
+        {activeRun ? (
+          <>
+            <div className="studio-run-summary-grid">
+              <span>Status</span>
+              <strong>{activeRun.status || 'running'}</strong>
+              <span>Workflow</span>
+              <strong>{activeRun.workflow || 'direct'}</strong>
+              <span>Steps</span>
+              <strong>{tasks.length}</strong>
+              <span>Outputs</span>
+              <strong>{outputs.length}</strong>
+            </div>
+            {activeRun.progress_summary ? (
+              <p className="studio-run-summary-note">{activeRun.progress_summary}</p>
+            ) : null}
+            <button
+              type="button"
+              className="studio-mini-action studio-run-copy"
+              onClick={() => copyText(activeRun.id)}
+              title="Copy run id"
+            >
+              <Copy size={12} />
+              Copy run id
+            </button>
+          </>
+        ) : (
+          <div className="studio-muted">No active run</div>
+        )}
+      </StatusCard>
+
       <StatusCard title="Progress">
         {tasks.length === 0 ? (
           <div className="studio-muted">No active task steps</div>

@@ -220,6 +220,22 @@ def test_tauri_frontend_context_rail_shows_codex_style_panels():
         assert marker in css
 
 
+def test_tauri_frontend_context_rail_shows_live_run_summary():
+    rail = (ROOT / "frontend" / "src" / "components" / "Studio" / "StudioContextRail.tsx").read_text(encoding="utf-8")
+    css = (ROOT / "frontend" / "src" / "index.css").read_text(encoding="utf-8")
+
+    for marker in [
+        "Run Summary",
+        "activeRun.status",
+        "activeRun.workflow",
+        "activeRun.progress_summary",
+        "studio-run-summary-grid",
+        "studio-run-summary-note",
+        "Copy run id",
+    ]:
+        assert marker in rail or marker in css
+
+
 def test_studio_buttons_are_not_inert():
     html = (ROOT / "jarvis_web" / "studio.html").read_text(encoding="utf-8")
     assert "closest('[data-studio-action]')" in html
