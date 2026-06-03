@@ -8,6 +8,7 @@ interface StudioComposerProps {
   contextOpen: boolean;
   contextDraft: string;
   contextItems: string[];
+  steeringSummary?: string;
   onChange: (value: string) => void;
   onSend: () => void;
   onCancel: () => void;
@@ -16,6 +17,7 @@ interface StudioComposerProps {
   onContextDraftChange: (value: string) => void;
   onAddContext: () => void;
   onRemoveContext: (index: number) => void;
+  onCancelSteer: () => void;
 }
 
 export function StudioComposer({
@@ -25,6 +27,7 @@ export function StudioComposer({
   contextOpen,
   contextDraft,
   contextItems,
+  steeringSummary,
   onChange,
   onSend,
   onCancel,
@@ -33,6 +36,7 @@ export function StudioComposer({
   onContextDraftChange,
   onAddContext,
   onRemoveContext,
+  onCancelSteer,
 }: StudioComposerProps) {
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && !event.shiftKey) {
@@ -43,6 +47,15 @@ export function StudioComposer({
 
   return (
     <footer className="studio-composer">
+      {steeringSummary && (
+        <section className="studio-steer-banner">
+          <div>
+            <strong>Steering from message</strong>
+            <span>{steeringSummary}</span>
+          </div>
+          <button type="button" onClick={onCancelSteer}>Cancel steer</button>
+        </section>
+      )}
       {contextOpen && (
         <section className="studio-context-drawer">
           <div className="studio-context-drawer-header">

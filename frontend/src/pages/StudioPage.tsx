@@ -4,7 +4,7 @@ import { StudioComposer } from '../components/Studio/StudioComposer';
 import { StudioContextRail } from '../components/Studio/StudioContextRail';
 import { StudioSidebar } from '../components/Studio/StudioSidebar';
 import { StudioThread } from '../components/Studio/StudioThread';
-import type { StudioChat, StudioState } from '../components/Studio/types';
+import type { StudioChat, StudioMessage, StudioState } from '../components/Studio/types';
 import {
   archiveStudioChat,
   cancelStudioRun,
@@ -36,6 +36,8 @@ export function StudioPage() {
   const [contextOpen, setContextOpen] = useState(false);
   const [contextDraft, setContextDraft] = useState('');
   const [contextItems, setContextItems] = useState<string[]>([]);
+  const [steeringMessageId, setSteeringMessageId] = useState('');
+  const [steeringSummary, setSteeringSummary] = useState('');
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async (projectId?: string, chatId?: string) => {
@@ -142,6 +144,18 @@ export function StudioPage() {
     setContextItems((items) => items.filter((_, itemIndex) => itemIndex !== index));
   };
 
+  const handleSteerMessage = (message: StudioMessage) => {
+    if (!message?.id) return;
+    setSteeringMessageId(String(message.id));
+    setSteeringSummary(String(message.content || '').replace(/\s+/g, ' ').slice(0, 140));
+    setComposerValue('');
+  };
+
+  const handleCancelSteer = () => {
+    setSteeringMessageId('');
+    setSteeringSummary('');
+  };
+
   const handleSend = async () => {
     const prompt = composerValue.trim();
     if (!prompt || activeRun) return;
@@ -152,10 +166,19 @@ export function StudioPage() {
       : prompt;
     setComposerValue('');
     try {
-      await startStudioRun({ projectId, chatId, prompt: promptWithContext, approved: true });
+      const result = await startStudioRun({
+        projectId,
+        chatId,
+        prompt: promptWithContext,
+        approved: true,
+        branchFromMessageId: steeringMessageId || undefined,
+      });
+      const resultRun = result.run as { chat_id?: string } | undefined;
+      const nextChatId = resultRun?.chat_id || chatId;
       setContextItems([]);
       setContextOpen(false);
-      await refresh(projectId, chatId);
+      handleCancelSteer();
+      await refresh(projectId, nextChatId);
     } catch (error: any) {
       toast.error('Studio run failed', { description: error?.message || String(error) });
     }
@@ -230,7 +253,12 @@ export function StudioPage() {
           </div>
           <span>{state.qwen_profile?.active || state.qwen_runtime?.active || 'qwen3.6-27b-local'}</span>
         </header>
-        <StudioThread messages={selectedChat?.messages || []} activeRun={activeRun} />
+        <StudioThread
+          messages={selectedChat?.messages || []}
+          activeRun={activeRun}
+          steeringMessageId={steeringMessageId}
+          onSteerMessage={handleSteerMessage}
+        />
         <StudioComposer
           value={composerValue}
           activeRunId={activeRun?.id}
@@ -238,6 +266,7 @@ export function StudioPage() {
           contextOpen={contextOpen}
           contextDraft={contextDraft}
           contextItems={contextItems}
+          steeringSummary={steeringSummary}
           onChange={setComposerValue}
           onSend={handleSend}
           onCancel={handleCancel}
@@ -246,6 +275,7 @@ export function StudioPage() {
           onContextDraftChange={setContextDraft}
           onAddContext={handleAddContext}
           onRemoveContext={handleRemoveContext}
+          onCancelSteer={handleCancelSteer}
         />
       </main>
       <StudioContextRail

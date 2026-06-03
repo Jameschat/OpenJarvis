@@ -4,6 +4,8 @@ import type { StudioMessage, StudioRun } from './types';
 interface StudioThreadProps {
   messages: StudioMessage[];
   activeRun?: StudioRun;
+  steeringMessageId?: string;
+  onSteerMessage: (message: StudioMessage) => void;
 }
 
 function formatTime(value?: string): string {
@@ -13,7 +15,7 @@ function formatTime(value?: string): string {
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-export function StudioThread({ messages, activeRun }: StudioThreadProps) {
+export function StudioThread({ messages, activeRun, steeringMessageId, onSteerMessage }: StudioThreadProps) {
   const listRef = useRef<HTMLDivElement>(null);
   const visibleMessages = useMemo(() => messages || [], [messages]);
 
@@ -40,7 +42,18 @@ export function StudioThread({ messages, activeRun }: StudioThreadProps) {
                 key={message.id || `${message.role}-${index}`}
               >
                 <div className="studio-message-body">{message.content}</div>
-                <time>{formatTime(message.created_at)}</time>
+                <div className="studio-message-meta">
+                  <time>{formatTime(message.created_at)}</time>
+                  {isOperator && message.id && (
+                    <button
+                      className={`studio-message-action ${message.id === steeringMessageId ? 'active' : ''}`}
+                      type="button"
+                      onClick={() => onSteerMessage(message)}
+                    >
+                      Steer
+                    </button>
+                  )}
+                </div>
               </article>
             );
           })}

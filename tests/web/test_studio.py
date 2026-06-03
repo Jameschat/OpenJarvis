@@ -175,6 +175,26 @@ def test_tauri_frontend_context_control_is_wired():
         assert marker in page or marker in composer or marker in css
 
 
+def test_tauri_frontend_message_steering_is_wired():
+    page = (ROOT / "frontend" / "src" / "pages" / "StudioPage.tsx").read_text(encoding="utf-8")
+    thread = (ROOT / "frontend" / "src" / "components" / "Studio" / "StudioThread.tsx").read_text(encoding="utf-8")
+    composer = (ROOT / "frontend" / "src" / "components" / "Studio" / "StudioComposer.tsx").read_text(encoding="utf-8")
+    css = (ROOT / "frontend" / "src" / "index.css").read_text(encoding="utf-8")
+
+    for marker in [
+        "steeringMessageId",
+        "steeringSummary",
+        "handleSteerMessage",
+        "branchFromMessageId",
+        "onSteerMessage",
+        "Steer",
+        "Cancel steer",
+        "studio-steer-banner",
+        "studio-message-action",
+    ]:
+        assert marker in page or marker in thread or marker in composer or marker in css
+
+
 def test_studio_buttons_are_not_inert():
     html = (ROOT / "jarvis_web" / "studio.html").read_text(encoding="utf-8")
     assert "closest('[data-studio-action]')" in html
