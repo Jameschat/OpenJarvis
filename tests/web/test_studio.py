@@ -102,6 +102,15 @@ def test_studio_context_panel_wraps_runtime_text():
     assert ".source-row .row-meta" in html
 
 
+def test_studio_context_panel_is_independently_scrollable():
+    html = (ROOT / "jarvis_web" / "studio.html").read_text(encoding="utf-8")
+
+    assert "#studio-context-panel" in html
+    assert "overflow-y: auto" in html
+    assert "scrollbar-gutter: stable" in html
+    assert "min-height: 0" in html
+
+
 def test_studio_has_boot_screen_that_fades_after_state_load():
     html = (ROOT / "jarvis_web" / "studio.html").read_text(encoding="utf-8")
     assert "drawBootRain" in html
