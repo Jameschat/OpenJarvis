@@ -81,6 +81,21 @@ def test_tauri_frontend_has_studio_api_client():
         assert marker in api
 
 
+def test_tauri_frontend_has_studio_shell_styles():
+    css = (ROOT / "frontend" / "src" / "index.css").read_text(encoding="utf-8")
+
+    for marker in [
+        ".studio-shell",
+        ".studio-left-rail",
+        ".studio-main-workspace",
+        ".studio-context-rail",
+        ".studio-composer",
+        ".studio-card",
+        ".studio-chip",
+    ]:
+        assert marker in css
+
+
 def test_studio_buttons_are_not_inert():
     html = (ROOT / "jarvis_web" / "studio.html").read_text(encoding="utf-8")
     assert "closest('[data-studio-action]')" in html
