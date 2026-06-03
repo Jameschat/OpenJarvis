@@ -195,6 +195,31 @@ def test_tauri_frontend_message_steering_is_wired():
         assert marker in page or marker in thread or marker in composer or marker in css
 
 
+def test_tauri_frontend_context_rail_shows_codex_style_panels():
+    rail = (ROOT / "frontend" / "src" / "components" / "Studio" / "StudioContextRail.tsx").read_text(encoding="utf-8")
+    css = (ROOT / "frontend" / "src" / "index.css").read_text(encoding="utf-8")
+    types = (ROOT / "frontend" / "src" / "components" / "Studio" / "types.ts").read_text(encoding="utf-8")
+
+    for marker in [
+        "file_activity",
+        "File Activity",
+        "Browser",
+        "Sources",
+        "Code Review Graph",
+        "Web search",
+        "copyText",
+        "studio-output-row",
+        "studio-file-row",
+    ]:
+        assert marker in rail or marker in types
+    for marker in [
+        ".studio-mini-action",
+        ".studio-file-row .diff-add",
+        ".studio-file-row .diff-del",
+    ]:
+        assert marker in css
+
+
 def test_studio_buttons_are_not_inert():
     html = (ROOT / "jarvis_web" / "studio.html").read_text(encoding="utf-8")
     assert "closest('[data-studio-action]')" in html

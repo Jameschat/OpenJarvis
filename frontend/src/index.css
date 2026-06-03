@@ -1259,6 +1259,28 @@
     font-size: 11px;
   }
 
+  .studio-mini-action {
+    width: 26px;
+    height: 24px;
+    display: grid;
+    place-items: center;
+    border-radius: 8px;
+    color: var(--color-text-secondary);
+  }
+
+  .studio-output-row,
+  .studio-file-row {
+    align-items: flex-start;
+  }
+
+  .studio-file-row .diff-add {
+    color: var(--color-success);
+  }
+
+  .studio-file-row .diff-del {
+    color: var(--color-error);
+  }
+
   .studio-agent-row.agent-codex {
     border-left: 2px solid var(--color-accent-purple);
     padding-left: 8px;

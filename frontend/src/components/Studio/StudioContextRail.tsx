@@ -1,4 +1,4 @@
-import { Activity, Bot, Cpu, FileText, PlugZap } from 'lucide-react';
+import { Activity, Copy, Cpu, ExternalLink, FileText, GitBranch, Globe, PlugZap } from 'lucide-react';
 import type { ReactNode } from 'react';
 import type { StudioAgent, StudioRun, StudioState } from './types';
 
@@ -27,10 +27,22 @@ function AgentRow({ agent }: { agent: StudioAgent }) {
   );
 }
 
+function copyText(value: string) {
+  if (!value) return;
+  navigator.clipboard?.writeText(value).catch(() => {});
+}
+
+function textValue(value: unknown, fallback = ''): string {
+  if (value == null) return fallback;
+  return String(value);
+}
+
 export function StudioContextRail({ state, activeRun, onOpenPreview, onUpdateWorker }: StudioContextRailProps) {
   const runtimeLane = state.qwen_runtime?.lanes?.find((lane) => lane.active) || state.qwen_runtime?.lanes?.[0];
   const tasks = activeRun?.task_details || activeRun?.tasks || [];
   const outputs = activeRun?.outputs || [];
+  const fileActivity = activeRun?.file_activity || [];
+  const previewAvailable = state.preview?.available === true;
 
   return (
     <aside className="studio-context-rail">
@@ -66,12 +78,58 @@ export function StudioContextRail({ state, activeRun, onOpenPreview, onUpdateWor
           <div className="studio-muted">No outputs yet</div>
         ) : (
           outputs.map((output, index) => (
-            <div className="studio-progress-row" key={index}>
+            <div className="studio-progress-row studio-output-row" key={index}>
               <FileText size={14} />
-              <span>{String(output.path || output.title || output.type || 'Output')}</span>
+              <span>{textValue(output.path || output.title || output.type, 'Output')}</span>
+              <button
+                type="button"
+                className="studio-mini-action"
+                onClick={() => copyText(textValue(output.path || output.title || output.type))}
+                title="Copy output reference"
+              >
+                <Copy size={12} />
+              </button>
             </div>
           ))
         )}
+      </StatusCard>
+
+      <StatusCard title="File Activity">
+        {fileActivity.length === 0 ? (
+          <div className="studio-muted">No file edits</div>
+        ) : (
+          fileActivity.slice(0, 8).map((file, index) => (
+            <div className="studio-progress-row studio-file-row" key={index}>
+              <GitBranch size={14} />
+              <span>{textValue(file.path || file.file || file.title, 'File')}</span>
+              <strong className="diff-add">+{textValue(file.additions ?? file.added ?? 0, '0')}</strong>
+              <strong className="diff-del">-{textValue(file.deletions ?? file.removed ?? 0, '0')}</strong>
+            </div>
+          ))
+        )}
+      </StatusCard>
+
+      <StatusCard title="Browser">
+        <div className="studio-metric-row">
+          <Globe size={14} />
+          <span>{previewAvailable ? 'Project preview available' : 'No preview target'}</span>
+          <button type="button" className="studio-mini-action" onClick={onOpenPreview}>
+            <ExternalLink size={12} />
+          </button>
+        </div>
+      </StatusCard>
+
+      <StatusCard title="Sources">
+        <div className="studio-metric-row">
+          <GitBranch size={14} />
+          <span>Code Review Graph</span>
+          <strong>{state.plugins?.some((plugin) => plugin.id === 'codegraph' && plugin.status === 'online') ? 'online' : 'ready'}</strong>
+        </div>
+        <div className="studio-metric-row">
+          <Globe size={14} />
+          <span>Web search</span>
+          <strong>{state.runtime_health ? 'ready' : 'unknown'}</strong>
+        </div>
       </StatusCard>
 
       <StatusCard title="Agents">

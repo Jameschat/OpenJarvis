@@ -82,6 +82,7 @@ export interface StudioState {
   qwen_profile?: StudioQwenProfile;
   qwen_runtime?: { lanes?: StudioRuntimeLane[]; active?: string };
   runtime_health?: Record<string, unknown>;
+  preview?: Record<string, unknown>;
   system?: Record<string, unknown>;
   provider?: string;
   approved?: boolean;
