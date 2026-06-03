@@ -14,7 +14,9 @@ def test_studio_state_endpoint_is_registered():
     source = (ROOT / "src" / "openjarvis" / "cli" / "brain_server.py").read_text(encoding="utf-8")
     assert '"/studio/state"' in source
     assert '"/studio/runtime-health"' in source
-    assert "_studio_state()" in source
+    assert "def _studio_state(project_id" in source
+    assert "qs.get(\"project_id\")" in source
+    assert "qs.get(\"chat_id\")" in source
     assert "check_runtime_health" in source
 
 
@@ -73,7 +75,13 @@ def test_tauri_frontend_has_studio_api_client():
         "setStudioQwenProfile",
         "startStudioPreview",
         "updateStudioWorker",
+        "createStudioChat",
+        "archiveStudioChat",
+        "deleteStudioChat",
+        "searchStudio",
         "/studio/state",
+        "/studio/chats",
+        "/studio/search",
         "/studio/runs",
         "/studio/qwen-profile",
         "/studio/worker-update",
@@ -100,17 +108,49 @@ def test_tauri_frontend_studio_exposes_core_actions():
     page = (ROOT / "frontend" / "src" / "pages" / "StudioPage.tsx").read_text(encoding="utf-8")
     composer = (ROOT / "frontend" / "src" / "components" / "Studio" / "StudioComposer.tsx").read_text(encoding="utf-8")
     rail = (ROOT / "frontend" / "src" / "components" / "Studio" / "StudioContextRail.tsx").read_text(encoding="utf-8")
+    sidebar = (ROOT / "frontend" / "src" / "components" / "Studio" / "StudioSidebar.tsx").read_text(encoding="utf-8")
 
     for marker in [
         "setStudioQwenProfile",
         "startStudioPreview",
         "updateStudioWorker",
         "cancelStudioRun",
+        "createStudioChat",
+        "archiveStudioChat",
+        "deleteStudioChat",
+        "searchStudio",
         "onProfileChange",
         "onOpenPreview",
         "onUpdateWorker",
+        "onCreateChat",
+        "onArchiveChat",
+        "onDeleteChat",
     ]:
-        assert marker in page or marker in composer or marker in rail
+        assert marker in page or marker in composer or marker in rail or marker in sidebar
+
+
+def test_tauri_frontend_sidebar_controls_are_wired():
+    sidebar = (ROOT / "frontend" / "src" / "components" / "Studio" / "StudioSidebar.tsx").read_text(encoding="utf-8")
+    css = (ROOT / "frontend" / "src" / "index.css").read_text(encoding="utf-8")
+
+    for marker in [
+        "onCreateChat",
+        "onArchiveChat(chat.id)",
+        "onDeleteChat(chat.id)",
+        "onSearchQueryChange",
+        "studio-chat-menu",
+        "studio-sidebar-drawer",
+        "pluginsOpen",
+        "automationsOpen",
+    ]:
+        assert marker in sidebar
+    for marker in [
+        ".studio-search-box",
+        ".studio-chat-row",
+        ".studio-chat-menu",
+        ".studio-sidebar-drawer",
+    ]:
+        assert marker in css
 
 
 def test_studio_buttons_are_not_inert():

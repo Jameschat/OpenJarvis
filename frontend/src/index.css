@@ -973,6 +973,58 @@
     text-align: left;
   }
 
+  .studio-search-box {
+    min-height: 34px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border: 1px solid var(--color-border);
+    border-radius: 10px;
+    padding: 7px 10px;
+    background: var(--color-bg-tertiary);
+    color: var(--color-text-secondary);
+  }
+
+  .studio-search-box input {
+    min-width: 0;
+    flex: 1;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: var(--color-text);
+    font-size: 12px;
+  }
+
+  .studio-sidebar-results,
+  .studio-sidebar-drawer {
+    display: grid;
+    gap: 5px;
+    padding: 6px;
+    border: 1px solid var(--color-border);
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--color-bg) 72%, transparent);
+  }
+
+  .studio-search-result,
+  .studio-drawer-row {
+    min-width: 0;
+    display: grid;
+    gap: 2px;
+    padding: 7px 8px;
+    border-radius: 8px;
+    color: var(--color-text-secondary);
+    font-size: 11px;
+    overflow-wrap: anywhere;
+  }
+
+  .studio-search-result strong,
+  .studio-drawer-row strong {
+    color: var(--color-accent);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
   .studio-sidebar-primary,
   .studio-row-button.active {
     background: var(--color-accent-subtle);
@@ -981,6 +1033,49 @@
 
   .studio-row-button {
     justify-content: space-between;
+  }
+
+  .studio-chat-row {
+    position: relative;
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 32px;
+    gap: 4px;
+  }
+
+  .studio-chat-row .studio-row-button span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .studio-chat-menu-button {
+    width: 32px;
+    min-height: 34px;
+    display: grid;
+    place-items: center;
+  }
+
+  .studio-chat-menu {
+    position: absolute;
+    z-index: 5;
+    right: 0;
+    top: 38px;
+    min-width: 118px;
+    display: grid;
+    gap: 4px;
+    padding: 6px;
+    border: 1px solid var(--color-border);
+    border-radius: 10px;
+    background: var(--color-bg-secondary);
+    box-shadow: var(--shadow-lg);
+  }
+
+  .studio-chat-menu button {
+    min-height: 30px;
+    padding: 6px 8px;
+    text-align: left;
   }
 
   .studio-sidebar-section {

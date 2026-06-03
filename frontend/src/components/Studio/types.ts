@@ -72,6 +72,8 @@ export interface StudioRuntimeLane {
 
 export interface StudioState {
   projects?: StudioProject[];
+  project_id?: string;
+  chat_id?: string;
   chats?: StudioChat[];
   runs?: StudioRun[];
   agents?: StudioAgent[];

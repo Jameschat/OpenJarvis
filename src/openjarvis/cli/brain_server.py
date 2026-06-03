@@ -1382,13 +1382,24 @@ def _studio_qwen_profile() -> Dict[str, Any]:
     return {"active": profile, "profiles": profiles}
 
 
-def _studio_state() -> Dict[str, Any]:
+def _studio_state(project_id: str | None = None, chat_id: str | None = None) -> Dict[str, Any]:
     from openjarvis.tools.studio_store import StudioStore
     from openjarvis.tools import studio_runner
 
     store = StudioStore()
     studio_runner.sync_completed_run_outputs(store)
-    state = store.initial_state()
+    projects = store.list_projects()
+    active_project_id = project_id if any(p.get("id") == project_id for p in projects) else (projects[0]["id"] if projects else "openjarvis")
+    chats = store.list_chats(active_project_id)
+    active_chat_id = chat_id if any(c.get("id") == chat_id for c in chats) else None
+    resolved_chat_id = active_chat_id or (chats[0]["id"] if chats else "")
+    state = {
+        "projects": projects,
+        "project_id": active_project_id,
+        "chat_id": resolved_chat_id,
+        "chats": chats,
+        "runs": store.list_runs(active_project_id, resolved_chat_id or None),
+    }
     state["chats"] = studio_runner.enrich_chats_with_context(state.get("chats", []), store=store)
     state["runs"] = studio_runner.enrich_runs_for_studio(state.get("runs", []))
     state["ok"] = True
@@ -1743,10 +1754,28 @@ class _Handler(SimpleHTTPRequestHandler):
             self._handle_vault_journal()
         elif self.path == "/orch":
             self._json_response(200, orch_bridge.get_snapshot())
-        elif self.path == "/jarvis-os/state":
-            self._json_response(200, _studio_state())
-        elif self.path == "/studio/state":
-            self._json_response(200, _studio_state())
+        elif self.path.startswith("/jarvis-os/state"):
+            from urllib.parse import parse_qs, urlparse
+
+            qs = parse_qs(urlparse(self.path).query)
+            self._json_response(
+                200,
+                _studio_state(
+                    (qs.get("project_id") or [None])[0],
+                    (qs.get("chat_id") or [None])[0],
+                ),
+            )
+        elif self.path.startswith("/studio/state"):
+            from urllib.parse import parse_qs, urlparse
+
+            qs = parse_qs(urlparse(self.path).query)
+            self._json_response(
+                200,
+                _studio_state(
+                    (qs.get("project_id") or [None])[0],
+                    (qs.get("chat_id") or [None])[0],
+                ),
+            )
         elif self.path == "/studio/runtime-health":
             try:
                 from openjarvis.tools.runtime_health import check_runtime_health

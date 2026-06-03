@@ -6,8 +6,12 @@ import { StudioSidebar } from '../components/Studio/StudioSidebar';
 import { StudioThread } from '../components/Studio/StudioThread';
 import type { StudioChat, StudioState } from '../components/Studio/types';
 import {
+  archiveStudioChat,
   cancelStudioRun,
+  createStudioChat,
+  deleteStudioChat,
   fetchStudioState,
+  searchStudio,
   setStudioQwenProfile,
   startStudioPreview,
   startStudioRun,
@@ -27,15 +31,17 @@ export function StudioPage() {
   const [selectedProjectId, setSelectedProjectId] = useState('');
   const [selectedChatId, setSelectedChatId] = useState('');
   const [composerValue, setComposerValue] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<Array<Record<string, unknown>>>([]);
   const [loading, setLoading] = useState(true);
 
-  const refresh = useCallback(async () => {
-    const nextState = await fetchStudioState();
+  const refresh = useCallback(async (projectId?: string, chatId?: string) => {
+    const nextState = await fetchStudioState(projectId || selectedProjectId, chatId || selectedChatId);
     setState(nextState);
-    setSelectedProjectId((current) => current || nextState.projects?.[0]?.id || '');
-    setSelectedChatId((current) => current || nextState.chats?.[0]?.id || '');
+    setSelectedProjectId(nextState.project_id || projectId || nextState.projects?.[0]?.id || '');
+    setSelectedChatId(nextState.chat_id || chatId || nextState.chats?.[0]?.id || '');
     setLoading(false);
-  }, []);
+  }, [selectedChatId, selectedProjectId]);
 
   useEffect(() => {
     refresh().catch((error) => {
@@ -53,28 +59,76 @@ export function StudioPage() {
 
   const selectedChat = useMemo(() => getSelectedChat(state.chats || [], selectedChatId), [state.chats, selectedChatId]);
   const activeRun = getActiveRun(state);
-  const loadedProjectId = state.projects?.[0]?.id || '';
+  const handleSelectProject = async (projectId: string) => {
+    setSelectedProjectId(projectId);
+    setSelectedChatId('');
+    try {
+      await refresh(projectId, '');
+    } catch (error: any) {
+      toast.error('Could not load project', { description: error?.message || String(error) });
+    }
+  };
 
-  const handleSelectProject = (projectId: string) => {
-    if (!loadedProjectId || projectId === loadedProjectId) {
-      setSelectedProjectId(projectId);
-      setSelectedChatId(state.chats?.[0]?.id || '');
+  const handleSelectChat = async (chatId: string) => {
+    setSelectedChatId(chatId);
+    try {
+      await refresh(selectedProjectId, chatId);
+    } catch (error: any) {
+      toast.error('Could not load chat', { description: error?.message || String(error) });
+    }
+  };
+
+  const handleCreateChat = async () => {
+    const projectId = selectedProjectId || state.project_id || state.projects?.[0]?.id || 'openjarvis';
+    try {
+      const result = await createStudioChat(projectId);
+      await refresh(projectId, result.chat.id);
+    } catch (error: any) {
+      toast.error('Could not create chat', { description: error?.message || String(error) });
+    }
+  };
+
+  const handleArchiveChat = async (chatId: string) => {
+    try {
+      await archiveStudioChat(chatId);
+      await refresh(selectedProjectId, selectedChatId === chatId ? '' : selectedChatId);
+    } catch (error: any) {
+      toast.error('Could not archive chat', { description: error?.message || String(error) });
+    }
+  };
+
+  const handleDeleteChat = async (chatId: string) => {
+    try {
+      await deleteStudioChat(chatId);
+      await refresh(selectedProjectId, selectedChatId === chatId ? '' : selectedChatId);
+    } catch (error: any) {
+      toast.error('Could not delete chat', { description: error?.message || String(error) });
+    }
+  };
+
+  const handleSearchQueryChange = async (query: string) => {
+    setSearchQuery(query);
+    if (!query.trim()) {
+      setSearchResults([]);
       return;
     }
-    toast.info('Project switching needs scoped Studio state first', {
-      description: 'Staying on the loaded project so tasks cannot mix project and chat context.',
-    });
+    try {
+      const result = await searchStudio(query.trim());
+      setSearchResults(result.results || []);
+    } catch {
+      setSearchResults([]);
+    }
   };
 
   const handleSend = async () => {
     const prompt = composerValue.trim();
     if (!prompt || activeRun) return;
-    const projectId = selectedProjectId || state.projects?.[0]?.id || 'openjarvis';
+    const projectId = selectedProjectId || state.project_id || state.projects?.[0]?.id || 'openjarvis';
     const chatId = selectedChat?.id || selectedChatId || undefined;
     setComposerValue('');
     try {
       await startStudioRun({ projectId, chatId, prompt, approved: true });
-      await refresh();
+      await refresh(projectId, chatId);
     } catch (error: any) {
       toast.error('Studio run failed', { description: error?.message || String(error) });
     }
@@ -101,7 +155,7 @@ export function StudioPage() {
   };
 
   const openPreview = async () => {
-    const projectId = loadedProjectId || selectedProjectId || state.projects?.[0]?.id || 'openjarvis';
+    const projectId = state.project_id || selectedProjectId || state.projects?.[0]?.id || 'openjarvis';
     try {
       const result = await startStudioPreview(projectId);
       const url = typeof result.url === 'string' ? result.url : '';
@@ -127,10 +181,18 @@ export function StudioPage() {
       <StudioSidebar
         projects={state.projects || []}
         chats={state.chats || []}
+        plugins={state.plugins || []}
+        automations={state.automations || []}
         selectedProjectId={selectedProjectId}
         selectedChatId={selectedChatId}
+        searchQuery={searchQuery}
+        searchResults={searchResults}
+        onSearchQueryChange={handleSearchQueryChange}
+        onCreateChat={handleCreateChat}
+        onArchiveChat={handleArchiveChat}
+        onDeleteChat={handleDeleteChat}
         onSelectProject={handleSelectProject}
-        onSelectChat={setSelectedChatId}
+        onSelectChat={handleSelectChat}
       />
       <main className="studio-main">
         <header className="studio-header">

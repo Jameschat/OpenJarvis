@@ -1,5 +1,5 @@
 import { getBase } from './api';
-import type { StudioState } from '../components/Studio/types';
+import type { StudioChat, StudioState } from '../components/Studio/types';
 
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${getBase()}${path}`, {
@@ -14,8 +14,42 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-export async function fetchStudioState(_projectId?: string, _chatId?: string): Promise<StudioState> {
-  return requestJson<StudioState>('/studio/state');
+function queryString(params: Record<string, string | undefined>): string {
+  const query = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value) query.set(key, value);
+  });
+  const raw = query.toString();
+  return raw ? `?${raw}` : '';
+}
+
+export async function fetchStudioState(projectId?: string, chatId?: string): Promise<StudioState> {
+  return requestJson<StudioState>(`/studio/state${queryString({ project_id: projectId, chat_id: chatId })}`);
+}
+
+export async function createStudioChat(projectId: string, title = 'New chat'): Promise<{ chat: StudioChat }> {
+  return requestJson<{ chat: StudioChat }>('/studio/chats', {
+    method: 'POST',
+    body: JSON.stringify({ project_id: projectId, title }),
+  });
+}
+
+export async function archiveStudioChat(chatId: string): Promise<{ chat: StudioChat; action: string }> {
+  return requestJson<{ chat: StudioChat; action: string }>(`/studio/chats/${encodeURIComponent(chatId)}/archive`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
+}
+
+export async function deleteStudioChat(chatId: string): Promise<{ chat: StudioChat; action: string }> {
+  return requestJson<{ chat: StudioChat; action: string }>(`/studio/chats/${encodeURIComponent(chatId)}/delete`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
+}
+
+export async function searchStudio(query: string): Promise<{ results: Array<Record<string, unknown>> }> {
+  return requestJson<{ results: Array<Record<string, unknown>> }>(`/studio/search${queryString({ q: query })}`);
 }
 
 export async function startStudioRun(input: {
