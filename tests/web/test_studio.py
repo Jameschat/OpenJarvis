@@ -123,6 +123,8 @@ def test_tauri_desktop_app_targets_jarvis_studio_runtime():
 
     assert "const JARVIS_PORT: u16 = 7710" in tauri
     assert "http://127.0.0.1:7710" in api
+    assert "/studio/ping" in api
+    assert 'format!("{}/studio/ping", base)' in tauri
     assert "redirectTauriToStudio" in main
     assert "window.history.replaceState(null, '', '/studio')" in main
     assert "useState(true)" in app
@@ -139,9 +141,11 @@ def test_tauri_frontend_has_studio_shell_styles():
         ".studio-left-rail",
         ".studio-main-workspace",
         ".studio-context-rail",
+        "clamp(300px, 22vw, 360px)",
         ".studio-composer",
         ".studio-card",
         ".studio-chip",
+        "text-overflow: ellipsis",
     ]:
         assert marker in css
 

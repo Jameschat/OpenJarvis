@@ -714,7 +714,7 @@
     height: 100%;
     min-height: 0;
     display: grid;
-    grid-template-columns: minmax(220px, 260px) minmax(0, 1fr) minmax(300px, 380px);
+    grid-template-columns: minmax(220px, 260px) minmax(0, 1fr) clamp(300px, 22vw, 360px);
     background: radial-gradient(circle at 50% 0%, rgba(34, 211, 238, 0.08), transparent 34%), var(--color-bg);
     color: var(--color-text);
     overflow: hidden;
@@ -750,6 +750,7 @@
 
   .studio-context-rail {
     min-height: 0;
+    min-width: 0;
     border-left: 1px solid var(--color-border);
     padding: 12px;
     display: flex;
@@ -758,25 +759,42 @@
     overflow-y: auto;
     scrollbar-gutter: stable;
     background: color-mix(in srgb, var(--color-sidebar) 92%, transparent);
+    position: relative;
+    z-index: 1;
   }
 
   .studio-header {
     min-width: 0;
-    display: flex;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, auto);
     align-items: center;
-    justify-content: space-between;
     gap: 16px;
     padding: 14px 18px;
     border-bottom: 1px solid var(--color-border);
+    position: relative;
+    z-index: 2;
+  }
+
+  .studio-header > div:first-child {
+    min-width: 0;
   }
 
   .studio-header-actions {
     min-width: 0;
+    max-width: 100%;
     display: flex;
     align-items: center;
     justify-content: flex-end;
     gap: 8px;
     flex-wrap: wrap;
+    overflow: visible;
+  }
+
+  .studio-header-actions > span:not(.studio-native-badge):not(.studio-backend-badge) {
+    max-width: 150px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .studio-header h1 {
@@ -815,6 +833,7 @@
   }
 
   .studio-refresh-action {
+    flex: 0 0 auto;
     width: auto;
     padding: 0 9px;
     color: var(--color-text-secondary);

@@ -802,15 +802,25 @@ async fn stop_backend(backend: tauri::State<'_, SharedBackend>) -> Result<(), St
 
 #[tauri::command]
 async fn check_health(api_url: String) -> Result<serde_json::Value, String> {
-    let url = format!(
-        "{}/health",
-        if api_url.is_empty() {
-            api_base()
-        } else {
-            api_url
+    let base = if api_url.is_empty() {
+        api_base()
+    } else {
+        api_url
+    };
+    let client = reqwest::Client::new();
+    let studio_url = format!("{}/studio/ping", base);
+    if let Ok(resp) = client.get(&studio_url).send().await {
+        if resp.status().is_success() {
+            return resp
+                .json()
+                .await
+                .map_err(|e| format!("Invalid response: {}", e));
         }
-    );
-    let resp = reqwest::get(&url)
+    }
+    let health_url = format!("{}/health", base);
+    let resp = client
+        .get(&health_url)
+        .send()
         .await
         .map_err(|e| format!("Connection failed: {}", e))?;
     resp.json()

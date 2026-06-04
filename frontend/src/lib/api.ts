@@ -193,7 +193,10 @@ export async function checkHealth(): Promise<boolean> {
     }
   }
   try {
-    const res = await fetch(`${getBase()}/health`);
+    const base = getBase();
+    const studioPing = await fetch(`${base}/studio/ping`);
+    if (studioPing.ok) return true;
+    const res = await fetch(`${base}/health`);
     return res.ok;
   } catch {
     return false;
