@@ -262,7 +262,14 @@ def _loopback_auth_ok(get_header, client_ip: str, port: int) -> bool:
     if (client_ip or "") not in _LOOPBACK_IPS:
         return False
     origin = (get_header("Origin") or "").strip().rstrip("/")
-    if origin and origin not in {f"http://127.0.0.1:{port}", f"http://localhost:{port}"}:
+    trusted_origins = {
+        f"http://127.0.0.1:{port}",
+        f"http://localhost:{port}",
+        "tauri://localhost",
+        "http://tauri.localhost",
+        "https://tauri.localhost",
+    }
+    if origin and origin not in trusted_origins:
         return False
     return True
 

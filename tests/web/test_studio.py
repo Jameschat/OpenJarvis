@@ -286,7 +286,11 @@ def test_tauri_frontend_has_native_runtime_parity_panels():
 
     for marker in [
         "loadError",
+        "handleRetryConnection",
         "Retry connection",
+        "Retrying...",
+        "Jarvis backend reconnected",
+        "Jarvis backend still unavailable",
         "Native desktop",
         "studio-backend-banner",
         "Runtime Readiness",

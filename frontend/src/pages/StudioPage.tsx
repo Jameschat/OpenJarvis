@@ -249,6 +249,17 @@ export function StudioPage() {
     }
   };
 
+  const handleRetryConnection = async () => {
+    setLoading(true);
+    try {
+      await refresh();
+      toast.success('Jarvis backend reconnected');
+    } catch (error: any) {
+      setLoading(false);
+      toast.error('Jarvis backend still unavailable', { description: error?.message || String(error) });
+    }
+  };
+
   return (
     <div className="studio-shell">
       <StudioSidebar
@@ -291,7 +302,9 @@ export function StudioPage() {
               <strong>Jarvis backend is not responding</strong>
               <span>{getBase()} returned: {loadError}</span>
             </div>
-            <button type="button" onClick={() => refresh().catch(() => {})}>Retry connection</button>
+            <button type="button" onClick={handleRetryConnection}>
+              {loading ? 'Retrying...' : 'Retry connection'}
+            </button>
           </section>
         )}
         <StudioThread

@@ -20,6 +20,16 @@ def test_local_with_local_origin_is_trusted(monkeypatch):
     assert _loopback_auth_ok(gh({"Origin": "http://localhost:7710/"}), "127.0.0.1", PORT) is True
 
 
+def test_tauri_desktop_origins_are_trusted_on_loopback(monkeypatch):
+    monkeypatch.delenv("OPENJARVIS_TRUST_LOOPBACK", raising=False)
+    for origin in (
+        "tauri://localhost",
+        "http://tauri.localhost",
+        "https://tauri.localhost",
+    ):
+        assert _loopback_auth_ok(gh({"Origin": origin}), "127.0.0.1", PORT) is True
+
+
 def test_tunnel_traffic_is_not_trusted(monkeypatch):
     # Cloudflare tunnel forwards from loopback but stamps these headers.
     monkeypatch.delenv("OPENJARVIS_TRUST_LOOPBACK", raising=False)
