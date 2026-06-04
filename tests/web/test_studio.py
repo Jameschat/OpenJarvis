@@ -20,6 +20,29 @@ def test_studio_state_endpoint_is_registered():
     assert "check_runtime_health" in source
 
 
+def test_studio_fastapi_routes_are_registered_before_spa_fallback():
+    app_source = (ROOT / "src" / "openjarvis" / "server" / "app.py").read_text(encoding="utf-8")
+    routes_source = (ROOT / "src" / "openjarvis" / "server" / "studio_routes.py").read_text(encoding="utf-8")
+
+    assert "from openjarvis.server.studio_routes import studio_router" in app_source
+    assert "app.include_router(studio_router)" in app_source
+    assert app_source.index("app.include_router(studio_router)") < app_source.index('@app.get("/{full_path:path}")')
+
+    for marker in [
+        '@studio_router.get("/state")',
+        '@studio_router.get("/runtime-health")',
+        '@studio_router.get("/chats")',
+        '@studio_router.post("/chats")',
+        '@studio_router.get("/runs")',
+        '@studio_router.post("/runs")',
+        '@studio_router.post("/runs/{run_id}/cancel")',
+        '@studio_router.get("/qwen-profile")',
+        '@studio_router.post("/qwen-profile")',
+        '@studio_router.post("/worker-update")',
+    ]:
+        assert marker in routes_source
+
+
 def test_studio_html_exists_and_wires_real_endpoints():
     html = (ROOT / "jarvis_web" / "studio.html").read_text(encoding="utf-8")
     for marker in [

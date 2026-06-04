@@ -16,6 +16,7 @@ from openjarvis.server.connectors_router import create_connectors_router
 from openjarvis.server.dashboard import dashboard_router
 from openjarvis.server.digest_routes import create_digest_router
 from openjarvis.server.routes import router
+from openjarvis.server.studio_routes import studio_router
 from openjarvis.server.upload_router import router as upload_router
 
 logger = logging.getLogger(__name__)
@@ -244,6 +245,7 @@ def create_app(
     app.include_router(create_connectors_router())
     app.include_router(create_digest_router())
     app.include_router(upload_router)
+    app.include_router(studio_router)
     include_all_routes(app)
 
     # Restore SendBlue channel bindings from database on startup
