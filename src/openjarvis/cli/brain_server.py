@@ -1625,6 +1625,8 @@ class _Handler(SimpleHTTPRequestHandler):
         # the Custom GPT keeps working, and the PWA shell can boot.
         if path_only == "/auth/check":
             return self._handle_auth_check()
+        if path_only == "/studio/ping":
+            return self._json_response(200, {"ok": True, "service": "jarvis_studio"})
         if path_only == "/vault/openapi.json":
             # Audit 2026-04-26 L1: serving this open lets any scanner
             # hitting the public tunnel fingerprint the instance as a
@@ -1779,6 +1781,8 @@ class _Handler(SimpleHTTPRequestHandler):
                     (qs.get("chat_id") or [None])[0],
                 ),
             )
+        elif self.path == "/studio/ping":
+            self._json_response(200, {"ok": True, "service": "jarvis_studio"})
         elif self.path == "/studio/runtime-health":
             try:
                 from openjarvis.tools.runtime_health import check_runtime_health

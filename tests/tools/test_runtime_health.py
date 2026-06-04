@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[2]
 def test_runtime_health_reports_core_services_with_actions(tmp_path):
     def probe(url: str, timeout_s: float = 1.5):
         del timeout_s
-        if "7710/auth/check" in url:
+        if "7710/studio/ping" in url:
             return True, 200, "ok"
         if "4000/health/liveliness" in url:
             return False, None, "connection refused"
@@ -52,11 +52,12 @@ def test_runtime_health_summary_names_down_services(tmp_path):
     assert "LiteLLM Proxy" in summary
 
 
-def test_runtime_health_treats_auth_check_401_as_backend_online(tmp_path):
+def test_runtime_health_uses_studio_ping_for_backend_probe(tmp_path):
+    seen: list[str] = []
+
     def probe(url: str, timeout_s: float = 1.5):
         del timeout_s
-        if "7710/auth/check" in url:
-            return False, 401, "auth required"
+        seen.append(url)
         return True, 200, "ok"
 
     status = check_runtime_health(
@@ -67,6 +68,8 @@ def test_runtime_health_treats_auth_check_401_as_backend_online(tmp_path):
     services = {service["id"]: service for service in status["services"]}
     assert services["jarvis_backend"]["ok"] is True
     assert "jarvis_backend" not in status["required_down"]
+    assert "http://127.0.0.1:7710/studio/ping" in seen
+    assert not any("/auth/check" in url for url in seen)
 
 
 def test_runtime_health_cli_outputs_json(tmp_path, capsys):

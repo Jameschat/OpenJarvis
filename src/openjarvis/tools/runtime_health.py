@@ -19,9 +19,8 @@ _SERVICES = [
     {
         "id": "jarvis_backend",
         "label": "Jarvis Backend",
-        "url": "http://127.0.0.1:7710/auth/check",
+        "url": "http://127.0.0.1:7710/studio/ping",
         "required": True,
-        "ok_status_codes": [200, 401],
         "action": "Start or restart E:\\Claude\\OpenJarvis\\jarvis.bat.",
     },
     {

@@ -12,6 +12,7 @@ def test_studio_static_route_is_registered():
 
 def test_studio_state_endpoint_is_registered():
     source = (ROOT / "src" / "openjarvis" / "cli" / "brain_server.py").read_text(encoding="utf-8")
+    assert '"/studio/ping"' in source
     assert '"/studio/state"' in source
     assert '"/studio/runtime-health"' in source
     assert "def _studio_state(project_id" in source
@@ -29,6 +30,7 @@ def test_studio_fastapi_routes_are_registered_before_spa_fallback():
     assert app_source.index("app.include_router(studio_router)") < app_source.index('@app.get("/{full_path:path}")')
 
     for marker in [
+        '@studio_router.get("/ping")',
         '@studio_router.get("/state")',
         '@studio_router.get("/runtime-health")',
         '@studio_router.get("/chats")',

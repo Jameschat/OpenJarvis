@@ -18,6 +18,11 @@ def _internal_error(route: str, exc: Exception) -> HTTPException:
     return HTTPException(status_code=500, detail={"error": "internal error", "ref": type(exc).__name__})
 
 
+@studio_router.get("/ping")
+async def studio_ping() -> dict[str, Any]:
+    return {"ok": True, "service": "jarvis_studio"}
+
+
 @studio_router.get("/state")
 async def studio_state(
     project_id: str | None = Query(default=None),
