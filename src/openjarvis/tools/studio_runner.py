@@ -654,6 +654,7 @@ def _queue_agent_task(
 ) -> str:
     from openjarvis.tools import agent_runner
 
+    agent_runner.start_worker()
     return agent_runner.add_task(
         title=title,
         agent_id=agent_id,

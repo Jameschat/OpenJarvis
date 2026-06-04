@@ -2116,7 +2116,13 @@ def _litellm_proxy_healthy(base_url: str) -> bool:
         return False
 
 
-def _call_qwen_via_ollama(prompt: str, *, max_tokens: int = 2500, timeout: int = 600) -> str:
+def _call_qwen_via_ollama(
+    prompt: str,
+    *,
+    max_tokens: int = 2500,
+    timeout: int = 600,
+    enable_thinking: bool = True,
+) -> str:
     host = os.environ.get("OPENJARVIS_OLLAMA_HOST", "http://localhost:11434").rstrip("/")
     payload = {
         "model": "qwen3.6:27b",
@@ -2125,6 +2131,7 @@ def _call_qwen_via_ollama(prompt: str, *, max_tokens: int = 2500, timeout: int =
             {"role": "user", "content": "Produce RESULT.md now."},
         ],
         "stream": False,
+        "think": enable_thinking,
         "options": {"num_predict": max_tokens},
     }
     data = json.dumps(payload).encode("utf-8")
@@ -2141,7 +2148,7 @@ def _call_qwen_via_ollama(prompt: str, *, max_tokens: int = 2500, timeout: int =
     thinking = (message.get("thinking") or "").strip()
     if content:
         return content
-    if thinking:
+    if thinking and enable_thinking:
         return thinking
     raise RuntimeError("ollama qwen returned empty content")
 
@@ -2331,6 +2338,7 @@ def _run_qwen_task(task: Task, agent_spec: Dict[str, Any]) -> None:
                     prompt_text,
                     max_tokens=qwen_max_tokens,
                     timeout=qwen_timeout,
+                    enable_thinking=qwen_thinking,
                 )
             assert client is not None
             messages = [
@@ -2364,6 +2372,19 @@ def _run_qwen_task(task: Task, agent_spec: Dict[str, Any]) -> None:
             if content:
                 return content
             reasoning = (getattr(message, "reasoning_content", "") or "").strip()
+            if (
+                not qwen_thinking
+                and model in {"qwen3.6-27b-local", "qwen3.6-27b-quality", "qwen3.6-35b-a3b-remote"}
+            ):
+                try:
+                    return _call_qwen_via_ollama(
+                        prompt_text,
+                        max_tokens=qwen_max_tokens,
+                        timeout=qwen_timeout,
+                        enable_thinking=False,
+                    )
+                except Exception:
+                    logger.exception("qwen direct ollama retry failed after empty visible response")
             if reasoning and not is_studio_task:
                 return reasoning
             return ""

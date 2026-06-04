@@ -836,7 +836,7 @@ def test_qwen_provider_uses_reasoning_content_only_as_fallback(monkeypatch, tmp_
     assert "Fallback reasoning result." in result.read_text(encoding="utf-8")
 
 
-def test_studio_qwen_provider_rejects_reasoning_only_output(monkeypatch, tmp_path):
+def test_studio_qwen_provider_recovers_from_reasoning_only_output(monkeypatch, tmp_path):
     from openjarvis.tools import agent_runner
     from openjarvis.tools.agent_runner import Task
 
@@ -873,6 +873,11 @@ def test_studio_qwen_provider_rejects_reasoning_only_output(monkeypatch, tmp_pat
     monkeypatch.setattr(agent_runner, "_reg", DummyRegistry())
     monkeypatch.setattr(agent_runner, "_build_brain_context", lambda: "")
     monkeypatch.setattr(agent_runner, "_write_agent_task_note", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        agent_runner,
+        "_call_qwen_via_ollama",
+        lambda prompt, **kwargs: "Visible retry result.",
+    )
 
     task = Task(
         id="task-studio-qwen-reasoning",
@@ -886,8 +891,105 @@ def test_studio_qwen_provider_rejects_reasoning_only_output(monkeypatch, tmp_pat
         {"id": "qwen-researcher", "role": "Research.", "model": "qwen3.6-27b-local"},
     )
 
-    assert marked["exit_code"] == -1
-    assert "empty content" in marked["error"]
+    assert marked["exit_code"] == 0
+    assert marked["error"] is None
+    result = tmp_path / "projects" / "studio-openjarvis" / "task-studio-qwen-reasoning.RESULT.md"
+    assert "Visible retry result." in result.read_text(encoding="utf-8")
+
+
+def test_studio_qwen_provider_recovers_from_empty_visible_output(monkeypatch, tmp_path):
+    from openjarvis.tools import agent_runner
+    from openjarvis.tools.agent_runner import Task
+
+    class DummyMessage:
+        content = ""
+
+    class DummyChoice:
+        message = DummyMessage()
+
+    class DummyCompletions:
+        def create(self, **kwargs):
+            return types.SimpleNamespace(choices=[DummyChoice()])
+
+    class DummyClient:
+        def __init__(self, **kwargs):
+            self.chat = types.SimpleNamespace(completions=DummyCompletions())
+
+    marked = {}
+
+    class DummyRegistry:
+        def mark_running(self, task_id, workspace):
+            pass
+
+        def mark_finished(self, task_id, exit_code, error=None):
+            marked["exit_code"] = exit_code
+            marked["error"] = error
+
+    monkeypatch.setitem(sys.modules, "openai", types.SimpleNamespace(OpenAI=DummyClient))
+    monkeypatch.setattr(agent_runner, "PROJECTS_DIR", tmp_path / "projects")
+    monkeypatch.setattr(agent_runner, "_reg", DummyRegistry())
+    monkeypatch.setattr(agent_runner, "_build_brain_context", lambda: "")
+    monkeypatch.setattr(agent_runner, "_write_agent_task_note", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        agent_runner,
+        "_call_qwen_via_ollama",
+        lambda prompt, **kwargs: "Visible direct retry result.",
+    )
+
+    task = Task(
+        id="task-studio-qwen-empty",
+        title="Studio empty response",
+        agent_id="qwen-researcher",
+        project_id="studio-openjarvis",
+        prompt="Plan the project.",
+    )
+    agent_runner._run_qwen_task(
+        task,
+        {"id": "qwen-researcher", "role": "Research.", "model": "qwen3.6-27b-local"},
+    )
+
+    assert marked["exit_code"] == 0
+    result = tmp_path / "projects" / "studio-openjarvis" / "task-studio-qwen-empty.RESULT.md"
+    assert "Visible direct retry result." in result.read_text(encoding="utf-8")
+
+
+def test_direct_ollama_qwen_can_disable_thinking(monkeypatch):
+    from openjarvis.tools import agent_runner
+
+    captured = {}
+
+    class DummyResponse:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self):
+            return json.dumps(
+                {"message": {"content": "jarvis-qwen-ok", "thinking": "hidden"}}
+            ).encode("utf-8")
+
+    def fake_urlopen(req, timeout=None):
+        captured["payload"] = json.loads(req.data.decode("utf-8"))
+        captured["timeout"] = timeout
+        return DummyResponse()
+
+    monkeypatch.setattr(agent_runner.urllib.request, "urlopen", fake_urlopen)
+
+    result = agent_runner._call_qwen_via_ollama(
+        "System prompt.",
+        max_tokens=64,
+        timeout=12,
+        enable_thinking=False,
+    )
+
+    assert result == "jarvis-qwen-ok"
+    assert captured["payload"]["think"] is False
+    assert captured["payload"]["options"]["num_predict"] == 64
+    assert captured["timeout"] == 12
 
 
 def test_qwen_builder_writes_safe_workspace_files(monkeypatch, tmp_path):

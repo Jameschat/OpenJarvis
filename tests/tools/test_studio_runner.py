@@ -5,6 +5,31 @@ from openjarvis.tools import agent_runner, studio_runner
 from openjarvis.tools.studio_store import StudioStore
 
 
+def test_queue_agent_task_starts_worker_before_adding_task(monkeypatch):
+    calls = []
+
+    monkeypatch.setattr(agent_runner, "start_worker", lambda: calls.append("start_worker"))
+
+    def fake_add_task(**kwargs):
+        calls.append(("add_task", kwargs))
+        return "task-123"
+
+    monkeypatch.setattr(agent_runner, "add_task", fake_add_task)
+
+    task_id = studio_runner._queue_agent_task(
+        title="Studio: Build thing",
+        agent_id="qwen-planner",
+        prompt="Plan it",
+        project_id="studio-openjarvis",
+        repo_root="E:\\Claude\\OpenJarvis",
+    )
+
+    assert task_id == "task-123"
+    assert calls[0] == "start_worker"
+    assert calls[1][0] == "add_task"
+    assert calls[1][1]["agent_id"] == "qwen-planner"
+
+
 def test_start_run_records_context_workflow_and_task(monkeypatch, tmp_path):
     created_tasks = []
     monkeypatch.setattr(studio_runner.studio_store, "STUDIO_ROOT", tmp_path)
