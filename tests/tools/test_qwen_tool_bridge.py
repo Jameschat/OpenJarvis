@@ -11,6 +11,15 @@ def test_qwen_tool_manifest_exposes_installed_jarvis_skill_guidance():
     assert "installed Jarvis skill" in manifest
 
 
+def test_qwen_tool_manifest_exposes_ecc_catalog():
+    from openjarvis.tools import qwen_tool_bridge
+
+    manifest = qwen_tool_bridge.tool_manifest()
+
+    assert "ecc_catalog" in manifest
+    assert "read-only ECC" in manifest
+
+
 def test_qwen_tool_manifest_exposes_safe_repo_inspection():
     from openjarvis.tools import qwen_tool_bridge
 
@@ -111,6 +120,40 @@ def test_qwen_skill_guidance_loads_nested_installed_skill(monkeypatch, tmp_path)
     assert results[0]["name"] == "ue5-auto-assistant"
     assert results[0]["skill_path"] == "unrealxu-unrealengine5/ue5-auto-assistant"
     assert "Route Unreal Engine requests" in results[0]["excerpt"]
+
+
+def test_qwen_ecc_catalog_lists_skills_and_blocks_commands(monkeypatch, tmp_path):
+    from openjarvis.tools import qwen_tool_bridge
+
+    skills_root = tmp_path / "skills"
+    skill_dir = skills_root / "ecc" / "agentic-engineering"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "# Agentic Engineering\n\nUse plan, act, observe, verify loops.",
+        encoding="utf-8",
+    )
+
+    ecc_root = tmp_path / "ecc-cache"
+    commands_dir = ecc_root / "commands"
+    commands_dir.mkdir(parents=True)
+    (commands_dir / "feature-dev.md").write_text(
+        "---\ndescription: Guided feature development\n---\n\n# Feature Dev\n\nRun implementation phases.",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("OPENJARVIS_SKILLS_DIR", str(skills_root))
+    monkeypatch.setenv("OPENJARVIS_ECC_CACHE_DIR", str(ecc_root))
+
+    results = qwen_tool_bridge.execute_tool_requests(
+        [{"id": "r1", "tool": "ecc_catalog", "args": {"limit": 5}}]
+    )
+
+    assert results[0]["ok"] is True
+    assert results[0]["skills"][0]["name"] == "agentic-engineering"
+    assert results[0]["skills"][0]["source"] == "ecc"
+    assert results[0]["commands"][0]["name"] == "feature-dev"
+    assert results[0]["commands"][0]["execution"] == "blocked"
+    assert "request_escalation" in results[0]["policy"]
 
 
 def test_qwen_skill_guidance_rejects_path_traversal(monkeypatch, tmp_path):

@@ -110,6 +110,7 @@ def test_start_run_injects_ecc_lite_guidance_for_build_tasks(monkeypatch, tmp_pa
     assert result["run"]["status"] == "running"
     task_prompt = created_tasks[0]["prompt"]
     assert "ECC-LITE AGENT OPERATING LAYER" in task_prompt
+    assert "ecc_catalog" in task_prompt
     assert "skill_guidance" in task_prompt
     assert "agentic-engineering" in task_prompt
     assert "plan-orchestrate" in task_prompt

@@ -229,6 +229,15 @@ def tool_manifest() -> str:
             "description": "Load an installed Jarvis skill's operating guidance for the current task.",
         },
         {
+            "tool": "ecc_catalog",
+            "tier": "procedure",
+            "args": {"limit": "1..50"},
+            "description": (
+                "List read-only ECC-lite skills and cached ECC commands. Commands are catalogued "
+                "for planning only and remain blocked unless request_escalation is approved."
+            ),
+        },
+        {
             "tool": "request_escalation",
             "tier": "approval",
             "args": {"capability": "string", "reason": "string", "risk": "low|medium|high"},
@@ -387,6 +396,8 @@ def _execute_one(request: dict[str, Any]) -> dict[str, Any]:
             return _superpower_workflow(request_id, args)
         if tool == "skill_guidance":
             return _skill_guidance(request_id, args)
+        if tool == "ecc_catalog":
+            return _ecc_catalog(request_id, args)
         if tool == "request_escalation":
             return {
                 "id": request_id,
@@ -928,6 +939,13 @@ def _skills_root() -> Path:
     return Path.home() / ".openjarvis" / "skills"
 
 
+def _ecc_cache_root() -> Path:
+    override = os.environ.get("OPENJARVIS_ECC_CACHE_DIR")
+    if override:
+        return Path(override)
+    return Path.home() / ".openjarvis" / "skill-cache" / "ecc"
+
+
 def _installed_skill_names(root: Path) -> list[str]:
     if not root.exists():
         return []
@@ -1010,5 +1028,89 @@ def _skill_guidance(request_id: str, args: dict[str, Any]) -> dict[str, Any]:
             {"skill_path": skill_dir.relative_to(root.resolve()).as_posix()}
             if skill_dir.parent.resolve() != root.resolve()
             else {}
+        ),
+    }
+
+
+def _frontmatter_description(text: str) -> str:
+    if not text.startswith("---"):
+        return ""
+    end = text.find("\n---", 3)
+    if end == -1:
+        return ""
+    frontmatter = text[3:end]
+    for line in frontmatter.splitlines():
+        if line.strip().startswith("description:"):
+            return line.split(":", 1)[1].strip().strip('"').strip("'")
+    return ""
+
+
+def _skill_description(skill_dir: Path) -> str:
+    metadata_path = skill_dir / "skill.toml"
+    if not metadata_path.exists():
+        metadata_path = skill_dir / f"{skill_dir.name}.toml"
+    if metadata_path.exists():
+        try:
+            data = tomllib.loads(metadata_path.read_text(encoding="utf-8", errors="replace"))
+            skill_meta = data.get("skill") if isinstance(data.get("skill"), dict) else {}
+            description = str(skill_meta.get("description") or "").strip()
+            if description:
+                return description
+        except Exception:
+            pass
+    skill_md = skill_dir / "SKILL.md"
+    if skill_md.exists():
+        return _frontmatter_description(skill_md.read_text(encoding="utf-8", errors="replace"))
+    return ""
+
+
+def _ecc_catalog(request_id: str, args: dict[str, Any]) -> dict[str, Any]:
+    limit = max(1, min(int(args.get("limit") or 20), 50))
+    skills_root = _skills_root()
+    ecc_skills_root = skills_root / "ecc"
+    skills: list[dict[str, Any]] = []
+    if ecc_skills_root.exists():
+        for skill_dir in sorted(ecc_skills_root.iterdir(), key=lambda path: path.name):
+            if not skill_dir.is_dir():
+                continue
+            if not ((skill_dir / "SKILL.md").exists() or (skill_dir / "skill.toml").exists()):
+                continue
+            skills.append(
+                {
+                    "name": skill_dir.name,
+                    "source": "ecc",
+                    "description": _skill_description(skill_dir),
+                    "tool": "skill_guidance",
+                }
+            )
+            if len(skills) >= limit:
+                break
+
+    commands: list[dict[str, Any]] = []
+    commands_root = _ecc_cache_root() / "commands"
+    if commands_root.exists():
+        for command_file in sorted(commands_root.glob("*.md"), key=lambda path: path.name):
+            text = command_file.read_text(encoding="utf-8", errors="replace")
+            commands.append(
+                {
+                    "name": command_file.stem,
+                    "source": "ecc",
+                    "description": _frontmatter_description(text),
+                    "execution": "blocked",
+                    "reason": "ECC commands are available for planning only in Qwen safe-bridge mode.",
+                }
+            )
+            if len(commands) >= limit:
+                break
+
+    return {
+        "id": request_id,
+        "tool": "ecc_catalog",
+        "ok": True,
+        "skills": skills,
+        "commands": commands,
+        "policy": (
+            "Use skill_guidance for installed ECC-lite skills. Do not execute ECC commands, hooks, "
+            "scripts, installs, or shell steps directly; use request_escalation with risk and reason."
         ),
     }
