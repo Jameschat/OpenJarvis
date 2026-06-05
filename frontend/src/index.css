@@ -1421,6 +1421,17 @@
     overflow-wrap: anywhere;
   }
 
+  .studio-ecc-command-pill {
+    justify-self: end;
+    padding: 2px 7px;
+    border: 1px solid rgba(98, 230, 255, 0.32);
+    border-radius: 999px;
+    background: rgba(98, 230, 255, 0.08);
+    color: #b7f5ff !important;
+    font-size: 10px;
+    letter-spacing: 0.02em;
+  }
+
   .studio-run-summary-note {
     margin: 10px 0 0;
     padding: 8px;
@@ -1429,6 +1440,11 @@
     color: var(--color-text-secondary);
     font-size: 12px;
     line-height: 1.45;
+  }
+
+  .studio-ecc-command-note {
+    border: 1px solid rgba(98, 230, 255, 0.16);
+    background: rgba(98, 230, 255, 0.06);
   }
 
   .studio-run-copy {

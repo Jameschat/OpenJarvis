@@ -276,17 +276,22 @@ def test_tauri_frontend_context_rail_shows_codex_style_panels():
 def test_tauri_frontend_context_rail_shows_live_run_summary():
     rail = (ROOT / "frontend" / "src" / "components" / "Studio" / "StudioContextRail.tsx").read_text(encoding="utf-8")
     css = (ROOT / "frontend" / "src" / "index.css").read_text(encoding="utf-8")
+    types = (ROOT / "frontend" / "src" / "components" / "Studio" / "types.ts").read_text(encoding="utf-8")
 
     for marker in [
         "Run Summary",
         "activeRun.status",
         "activeRun.workflow",
+        "activeRun?.ecc_command",
+        "ECC profile",
+        "studio-ecc-command-pill",
+        "ECC guidance only",
         "activeRun.progress_summary",
         "studio-run-summary-grid",
         "studio-run-summary-note",
         "Copy run id",
     ]:
-        assert marker in rail or marker in css
+        assert marker in rail or marker in css or marker in types
 
 
 def test_tauri_frontend_has_native_runtime_parity_panels():
@@ -400,9 +405,13 @@ def test_studio_progress_panel_shows_ecc_lite_skills():
     html = (ROOT / "jarvis_web" / "studio.html").read_text(encoding="utf-8")
 
     assert "renderEccLiteSkills" in html
+    assert "renderEccCommandProfile" in html
     assert "ecc-lite-skill-list" in html
+    assert "ecc-command-profile" in html
+    assert "ECC profile:" in html
     assert "ECC skills" in html
     assert "run.ecc_lite_skills" in html
+    assert "run.ecc_command" in html
 
 
 def test_studio_has_boot_screen_that_fades_after_state_load():

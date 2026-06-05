@@ -43,6 +43,7 @@ export interface StudioRun {
   task_details?: Array<Record<string, unknown>>;
   progress_summary?: string;
   ecc_lite_skills?: string[];
+  ecc_command?: string;
   outputs?: Array<Record<string, unknown>>;
   file_activity?: Array<Record<string, unknown>>;
 }

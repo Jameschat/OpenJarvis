@@ -811,6 +811,23 @@
       max-width: 100%;
       overflow-wrap: anywhere;
     }
+    .ecc-command-profile {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      width: fit-content;
+      margin-top: 7px;
+      border: 1px solid rgba(98,230,255,0.32);
+      border-radius: 999px;
+      padding: 4px 8px;
+      background: rgba(98,230,255,0.08);
+      color: #b7f5ff;
+      font-size: 9px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      max-width: 100%;
+      overflow-wrap: anywhere;
+    }
     .output-row,
     .source-row,
     .browser-row {
@@ -1695,6 +1712,16 @@
       parent.appendChild(wrap);
     }
 
+    function renderEccCommandProfile(parent, run) {
+      const command = run && run.ecc_command;
+      if (!command) return;
+      const chip = document.createElement("div");
+      chip.className = "ecc-command-profile";
+      chip.setAttribute("aria-label", "ECC command profile");
+      chip.textContent = `ECC profile: ${command}`;
+      parent.appendChild(chip);
+    }
+
     function renderProgressPanel(runs) {
       const root = el("studio-progress-list");
       if (!root) return;
@@ -1725,7 +1752,10 @@
         sub.className = "progress-subtext";
         sub.textContent = detail || "";
         text.appendChild(sub);
-        if (type === "queued") renderEccLiteSkills(text, run);
+        if (type === "queued") {
+          renderEccCommandProfile(text, run);
+          renderEccLiteSkills(text, run);
+        }
         item.append(dot, text);
         root.appendChild(item);
       });

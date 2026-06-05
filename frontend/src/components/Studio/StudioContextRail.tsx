@@ -76,6 +76,7 @@ export function StudioContextRail({
   const outputs = activeRun?.outputs || [];
   const fileActivity = activeRun?.file_activity || [];
   const previewAvailable = state.preview?.available === true;
+  const eccCommand = activeRun?.ecc_command;
 
   return (
     <aside className="studio-context-rail">
@@ -97,11 +98,18 @@ export function StudioContextRail({
               <strong>{activeRun.status || 'running'}</strong>
               <span>Workflow</span>
               <strong>{activeRun.workflow || 'direct'}</strong>
+              <span>ECC profile</span>
+              <strong className={eccCommand ? 'studio-ecc-command-pill' : ''}>{eccCommand || 'none'}</strong>
               <span>Steps</span>
               <strong>{tasks.length}</strong>
               <span>Outputs</span>
               <strong>{outputs.length}</strong>
             </div>
+            {eccCommand ? (
+              <p className="studio-run-summary-note studio-ecc-command-note">
+                ECC guidance only. Commands stay blocked unless explicitly approved.
+              </p>
+            ) : null}
             {activeRun.progress_summary ? (
               <p className="studio-run-summary-note">{activeRun.progress_summary}</p>
             ) : null}
