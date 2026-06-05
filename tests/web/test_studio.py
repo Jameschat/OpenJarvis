@@ -122,6 +122,13 @@ def test_tauri_desktop_app_targets_jarvis_studio_runtime():
     config = (ROOT / "frontend" / "src-tauri" / "tauri.conf.json").read_text(encoding="utf-8")
 
     assert "const JARVIS_PORT: u16 = 7710" in tauri
+    assert "const LITELLM_PORT: u16 = 4000" in tauri
+    assert "const QWEN_FAST_LANE_PORT: u16 = 8084" in tauri
+    assert '"--extra", "inference-litellm"' in tauri
+    assert "start_qwen_fast_lane" in tauri
+    assert "start_litellm_proxy" in tauri
+    assert "start-qwen-mtp-froggeric-wsl.ps1" in tauri
+    assert "configs/litellm.yaml" in tauri
     assert "http://127.0.0.1:7710" in api
     assert "/studio/ping" in api
     assert 'format!("{}/studio/ping", base)' in tauri

@@ -8,6 +8,8 @@ use tokio::sync::Mutex;
 
 const OLLAMA_PORT: u16 = 11434;
 const JARVIS_PORT: u16 = 7710;
+const LITELLM_PORT: u16 = 4000;
+const QWEN_FAST_LANE_PORT: u16 = 8084;
 
 /// Small, fast model pulled at startup so the app opens quickly.
 const STARTUP_MODEL: &str = "qwen3.5:4b";
@@ -295,6 +297,7 @@ impl ChildHandle {
 struct BackendManager {
     ollama: Option<ChildHandle>,
     jarvis: Option<ChildHandle>,
+    litellm: Option<ChildHandle>,
 }
 
 impl BackendManager {
@@ -303,6 +306,10 @@ impl BackendManager {
             h.kill().await;
         }
         self.jarvis = None;
+        if let Some(ref mut h) = self.litellm {
+            h.kill().await;
+        }
+        self.litellm = None;
         if let Some(ref mut h) = self.ollama {
             h.kill().await;
         }
@@ -360,6 +367,116 @@ async fn wait_for_url(url: &str, timeout: Duration) -> bool {
         tokio::time::sleep(Duration::from_millis(500)).await;
     }
     false
+}
+
+#[cfg(target_os = "windows")]
+fn hide_command_window(cmd: &mut tokio::process::Command) {
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+    cmd.creation_flags(CREATE_NO_WINDOW);
+}
+
+#[cfg(not(target_os = "windows"))]
+fn hide_command_window(_cmd: &mut tokio::process::Command) {}
+
+async fn qwen_fast_lane_ready() -> bool {
+    let url = format!("http://127.0.0.1:{}/health", QWEN_FAST_LANE_PORT);
+    wait_for_url(&url, Duration::from_secs(1)).await
+}
+
+async fn litellm_ready() -> bool {
+    let url = format!("http://127.0.0.1:{}/v1/models", LITELLM_PORT);
+    wait_for_url(&url, Duration::from_secs(1)).await
+}
+
+async fn start_qwen_fast_lane(root: &std::path::Path, status: SharedStatus) -> bool {
+    if qwen_fast_lane_ready().await {
+        return true;
+    }
+
+    let script = root.join("scripts").join("start-qwen-mtp-froggeric-wsl.ps1");
+    if !script.exists() {
+        let mut s = status.lock().await;
+        s.detail = format!("Qwen fast lane script missing: {}", script.display());
+        return false;
+    }
+
+    {
+        let mut s = status.lock().await;
+        s.phase = "qwen-fast-lane".into();
+        s.detail = "Starting Qwen 3.6 27B fast lane...".into();
+    }
+
+    let mut cmd = tokio::process::Command::new("powershell.exe");
+    cmd.args([
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        &script.display().to_string(),
+    ])
+    .stdout(std::process::Stdio::null())
+    .stderr(std::process::Stdio::null())
+    .current_dir(root);
+    hide_command_window(&mut cmd);
+
+    if cmd.spawn().is_err() {
+        let mut s = status.lock().await;
+        s.detail = "Could not launch Qwen fast lane startup script.".into();
+        return false;
+    }
+
+    let url = format!("http://127.0.0.1:{}/health", QWEN_FAST_LANE_PORT);
+    wait_for_url(&url, Duration::from_secs(300)).await
+}
+
+async fn start_litellm_proxy(
+    root: &std::path::Path,
+    uv_bin: &str,
+    backend: SharedBackend,
+    status: SharedStatus,
+) -> bool {
+    if litellm_ready().await {
+        return true;
+    }
+
+    {
+        let mut s = status.lock().await;
+        s.phase = "litellm".into();
+        s.detail = "Starting LiteLLM proxy...".into();
+    }
+
+    let mut cmd = tokio::process::Command::new(uv_bin);
+    cmd.args([
+        "run",
+        "litellm",
+        "--config",
+        "configs/litellm.yaml",
+        "--port",
+        &LITELLM_PORT.to_string(),
+    ])
+    .stdout(std::process::Stdio::null())
+    .stderr(std::process::Stdio::null())
+    .current_dir(root);
+    hide_command_window(&mut cmd);
+    cmd.env("PYTHONUTF8", "1");
+    cmd.env("PYTHONIOENCODING", "utf-8");
+
+    for (key, value) in read_cloud_keys() {
+        cmd.env(&key, &value);
+    }
+
+    match cmd.spawn() {
+        Ok(child) => {
+            backend.lock().await.litellm = Some(ChildHandle { child });
+        }
+        Err(_) => {
+            let mut s = status.lock().await;
+            s.detail = "Could not launch LiteLLM proxy.".into();
+            return false;
+        }
+    }
+
+    let url = format!("http://127.0.0.1:{}/v1/models", LITELLM_PORT);
+    wait_for_url(&url, Duration::from_secs(90)).await
 }
 
 async fn ollama_has_model(model: &str) -> bool {
@@ -652,6 +769,7 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
         .args([
             "sync",
             "--extra", "server",
+            "--extra", "inference-litellm",
             "--extra", "inference-cloud",
             "--extra", "inference-google",
         ])
@@ -660,6 +778,21 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
         .current_dir(root)
         .status()
         .await;
+
+    // Start the local Qwen lane and LiteLLM proxy before marking the desktop
+    // runtime ready. The backend can still fall back to Ollama, but Studio's
+    // primary local model route depends on these services.
+    let qwen_ok = start_qwen_fast_lane(root, status.clone()).await;
+    if !qwen_ok {
+        let mut s = status.lock().await;
+        s.detail = "Qwen fast lane did not become ready; Ollama fallback remains available.".into();
+    }
+
+    let litellm_ok = start_litellm_proxy(root, &uv_bin, backend.clone(), status.clone()).await;
+    if !litellm_ok {
+        let mut s = status.lock().await;
+        s.detail = "LiteLLM proxy did not become ready; direct Ollama fallback remains available.".into();
+    }
 
     {
         let mut s = status.lock().await;
