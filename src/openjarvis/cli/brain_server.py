@@ -1431,7 +1431,7 @@ def _studio_state(project_id: str | None = None, chat_id: str | None = None) -> 
     try:
         from openjarvis.tools.runtime_health import check_runtime_health
 
-        state["runtime_health"] = check_runtime_health()
+        state["runtime_health"] = check_runtime_health(timeout_s=0.35)
     except Exception:
         logger.debug("runtime health snapshot unavailable", exc_info=True)
         state["runtime_health"] = {

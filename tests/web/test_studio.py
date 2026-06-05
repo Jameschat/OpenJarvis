@@ -301,6 +301,7 @@ def test_tauri_frontend_has_native_runtime_parity_panels():
         "System Health",
         "isJarvisBackendOnline",
         "jarvis_backend",
+        "if (backendService) return backendService.ok !== false",
         "Remote Worker",
         "Qwen Lanes",
         "promotion_verdict",
@@ -310,6 +311,12 @@ def test_tauri_frontend_has_native_runtime_parity_panels():
         "Remote unavailable",
     ]:
         assert marker in page or marker in composer or marker in rail or marker in css
+
+
+def test_studio_state_uses_fast_runtime_health_snapshot():
+    source = (ROOT / "src" / "openjarvis" / "cli" / "brain_server.py").read_text(encoding="utf-8")
+
+    assert "check_runtime_health(timeout_s=0.35)" in source
 
 
 def test_studio_runtime_status_checks_remote_worker_host():

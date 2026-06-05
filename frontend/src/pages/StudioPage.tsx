@@ -28,9 +28,9 @@ function getSelectedChat(chats: StudioChat[], selectedChatId: string): StudioCha
 }
 
 function isJarvisBackendOnline(state: StudioState, loadError: string): boolean {
-  if (loadError) return false;
   const backendService = state.runtime_health?.services?.find((service) => service.id === 'jarvis_backend');
   if (backendService) return backendService.ok !== false;
+  if (loadError) return false;
   return state.runtime_health?.ok !== false;
 }
 
