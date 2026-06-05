@@ -238,6 +238,15 @@ def tool_manifest() -> str:
             ),
         },
         {
+            "tool": "ecc_command_guidance",
+            "tier": "procedure",
+            "args": {"name": "cached ECC command name, e.g. feature-dev"},
+            "description": (
+                "Load read-only guidance for a cached ECC command. This is planning context only; "
+                "execution remains blocked unless request_escalation is approved."
+            ),
+        },
+        {
             "tool": "request_escalation",
             "tier": "approval",
             "args": {"capability": "string", "reason": "string", "risk": "low|medium|high"},
@@ -398,6 +407,8 @@ def _execute_one(request: dict[str, Any]) -> dict[str, Any]:
             return _skill_guidance(request_id, args)
         if tool == "ecc_catalog":
             return _ecc_catalog(request_id, args)
+        if tool == "ecc_command_guidance":
+            return _ecc_command_guidance(request_id, args)
         if tool == "request_escalation":
             return {
                 "id": request_id,
@@ -1111,6 +1122,43 @@ def _ecc_catalog(request_id: str, args: dict[str, Any]) -> dict[str, Any]:
         "commands": commands,
         "policy": (
             "Use skill_guidance for installed ECC-lite skills. Do not execute ECC commands, hooks, "
+            "scripts, installs, or shell steps directly; use request_escalation with risk and reason."
+        ),
+    }
+
+
+def _ecc_command_guidance(request_id: str, args: dict[str, Any]) -> dict[str, Any]:
+    name = str(args.get("name") or "").strip()
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+", name):
+        return {
+            "id": request_id,
+            "tool": "ecc_command_guidance",
+            "ok": False,
+            "error": "invalid ECC command name",
+        }
+
+    command_path = _ecc_cache_root() / "commands" / f"{name}.md"
+    if not command_path.exists() or not command_path.is_file():
+        return {
+            "id": request_id,
+            "tool": "ecc_command_guidance",
+            "ok": False,
+            "name": name,
+            "error": "ECC command guidance not installed",
+        }
+
+    text = command_path.read_text(encoding="utf-8", errors="replace")
+    return {
+        "id": request_id,
+        "tool": "ecc_command_guidance",
+        "ok": True,
+        "name": name,
+        "description": _frontmatter_description(text),
+        "execution": "blocked",
+        "command_path": str(command_path),
+        "excerpt": text[:6000],
+        "policy": (
+            "Use this command guidance for planning only. Do not execute ECC commands, hooks, "
             "scripts, installs, or shell steps directly; use request_escalation with risk and reason."
         ),
     }

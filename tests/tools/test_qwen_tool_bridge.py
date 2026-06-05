@@ -20,6 +20,15 @@ def test_qwen_tool_manifest_exposes_ecc_catalog():
     assert "read-only ECC" in manifest
 
 
+def test_qwen_tool_manifest_exposes_ecc_command_guidance():
+    from openjarvis.tools import qwen_tool_bridge
+
+    manifest = qwen_tool_bridge.tool_manifest()
+
+    assert "ecc_command_guidance" in manifest
+    assert "cached ECC command" in manifest
+
+
 def test_qwen_tool_manifest_exposes_safe_repo_inspection():
     from openjarvis.tools import qwen_tool_bridge
 
@@ -154,6 +163,52 @@ def test_qwen_ecc_catalog_lists_skills_and_blocks_commands(monkeypatch, tmp_path
     assert results[0]["commands"][0]["name"] == "feature-dev"
     assert results[0]["commands"][0]["execution"] == "blocked"
     assert "request_escalation" in results[0]["policy"]
+
+
+def test_qwen_ecc_command_guidance_loads_cached_command_and_blocks_execution(monkeypatch, tmp_path):
+    from openjarvis.tools import qwen_tool_bridge
+
+    cache_root = tmp_path / "skill-cache" / "ecc"
+    commands_root = cache_root / "commands"
+    commands_root.mkdir(parents=True)
+    (commands_root / "feature-dev.md").write_text(
+        "\n".join(
+            [
+                "---",
+                "description: Build a feature through plan, implementation, verification, and summary.",
+                "---",
+                "# Feature Dev",
+                "",
+                "Use this command to drive a feature from request to verified result.",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("OPENJARVIS_ECC_CACHE_DIR", str(cache_root))
+
+    results = qwen_tool_bridge.execute_tool_requests(
+        [{"id": "r1", "tool": "ecc_command_guidance", "args": {"name": "feature-dev"}}]
+    )
+
+    assert results[0]["ok"] is True
+    assert results[0]["name"] == "feature-dev"
+    assert results[0]["description"] == "Build a feature through plan, implementation, verification, and summary."
+    assert results[0]["execution"] == "blocked"
+    assert "Feature Dev" in results[0]["excerpt"]
+    assert "request_escalation" in results[0]["policy"]
+
+
+def test_qwen_ecc_command_guidance_rejects_path_traversal(monkeypatch, tmp_path):
+    from openjarvis.tools import qwen_tool_bridge
+
+    monkeypatch.setenv("OPENJARVIS_ECC_CACHE_DIR", str(tmp_path / "skill-cache" / "ecc"))
+
+    results = qwen_tool_bridge.execute_tool_requests(
+        [{"id": "r1", "tool": "ecc_command_guidance", "args": {"name": "../secrets"}}]
+    )
+
+    assert results[0]["ok"] is False
+    assert "invalid ECC command name" in results[0]["error"]
 
 
 def test_qwen_skill_guidance_rejects_path_traversal(monkeypatch, tmp_path):

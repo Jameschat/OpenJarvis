@@ -122,6 +122,7 @@ def _build_ecc_lite_guidance(prompt: str, workflow: str) -> str:
         "Use these installed Jarvis/ECC skills as operating guidance for this task.",
         "If you need to discover available ECC-lite skills or blocked ECC commands, request the safe tool `ecc_catalog`.",
         "If you need the full skill text, request the safe tool `skill_guidance` with the skill name.",
+        "If you need a cached ECC command workflow such as feature-dev or build-fix, request `ecc_command_guidance` by command name.",
         "Do not run ECC commands, hooks, shell scripts, installs, or direct edits unless the tool bridge explicitly allows it.",
         "",
         "Required skill guidance:",
