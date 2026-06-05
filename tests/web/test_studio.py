@@ -299,6 +299,8 @@ def test_tauri_frontend_has_native_runtime_parity_panels():
         "studio-backend-banner",
         "Runtime Readiness",
         "System Health",
+        "isJarvisBackendOnline",
+        "jarvis_backend",
         "Remote Worker",
         "Qwen Lanes",
         "promotion_verdict",

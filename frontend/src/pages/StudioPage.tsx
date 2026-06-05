@@ -27,6 +27,13 @@ function getSelectedChat(chats: StudioChat[], selectedChatId: string): StudioCha
   return chats.find((chat) => chat.id === selectedChatId) || chats[0];
 }
 
+function isJarvisBackendOnline(state: StudioState, loadError: string): boolean {
+  if (loadError) return false;
+  const backendService = state.runtime_health?.services?.find((service) => service.id === 'jarvis_backend');
+  if (backendService) return backendService.ok !== false;
+  return state.runtime_health?.ok !== false;
+}
+
 export function StudioPage() {
   const [state, setState] = useState<StudioState>({});
   const [selectedProjectId, setSelectedProjectId] = useState('');
@@ -83,7 +90,7 @@ export function StudioPage() {
       return (id.includes('remote') || role === 'remote-worker') && lane.online !== false;
     })
   );
-  const backendOnline = !loadError && state.runtime_health?.ok !== false;
+  const backendOnline = isJarvisBackendOnline(state, loadError);
   const settingsItems = useMemo(() => [
     { label: 'Project', value: state.project_id || selectedProjectId || 'openjarvis' },
     { label: 'Chat', value: selectedChat?.title || selectedChatId || 'New chat' },
