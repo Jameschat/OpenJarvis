@@ -192,6 +192,63 @@ def test_qwen_provider_writes_result_markdown(monkeypatch, tmp_path):
     assert dummy_reg.finished == [("task-qwen", 0, None)]
 
 
+def test_qwen_provider_injects_no_silent_failure_run_contract(monkeypatch, tmp_path):
+    from openjarvis.tools import agent_runner
+    from openjarvis.tools.agent_runner import Task
+
+    captured = {}
+
+    class DummyMessage:
+        content = (
+            "Assumptions: local Qwen should keep the user informed.\n\n"
+            "Verification: checked the injected run contract.\n\n"
+            "Next actions: continue with a clear final answer, blocked state, or tool request."
+        )
+
+    class DummyChoice:
+        message = DummyMessage()
+
+    class DummyCompletions:
+        def create(self, **kwargs):
+            captured["system_prompt"] = kwargs["messages"][0]["content"]
+            return types.SimpleNamespace(choices=[DummyChoice()])
+
+    class DummyClient:
+        def __init__(self, **kwargs):
+            self.chat = types.SimpleNamespace(completions=DummyCompletions())
+
+    class DummyRegistry:
+        def mark_running(self, task_id, workspace):
+            pass
+
+        def mark_finished(self, task_id, exit_code, error=None):
+            assert exit_code == 0
+            assert error is None
+
+    monkeypatch.setitem(sys.modules, "openai", types.SimpleNamespace(OpenAI=DummyClient))
+    monkeypatch.setattr(agent_runner, "RUNS_DIR", tmp_path)
+    monkeypatch.setattr(agent_runner, "_reg", DummyRegistry())
+    monkeypatch.setattr(agent_runner, "_build_brain_context", lambda: "")
+    monkeypatch.setattr(agent_runner, "_write_agent_task_note", lambda *args, **kwargs: None)
+
+    agent_runner._run_qwen_task(
+        Task(
+            id="task-qwen-contract",
+            title="Qwen run contract",
+            agent_id="qwen-planner",
+            prompt="Plan a project workflow.",
+        ),
+        {"id": "qwen-planner", "role": "Plan.", "model": "qwen3.6-27b-local"},
+    )
+
+    system_prompt = captured["system_prompt"]
+    assert "ODYSSEUS-PATTERN RUN CONTRACT" in system_prompt
+    assert "DONE" in system_prompt
+    assert "BLOCKED" in system_prompt
+    assert "CONTINUE" in system_prompt
+    assert "Do not go silent after a failed tool" in system_prompt
+
+
 def test_qwen_provider_executes_safe_tool_bridge_round(monkeypatch, tmp_path):
     from openjarvis.tools import agent_runner, qwen_tool_bridge
     from openjarvis.tools.agent_runner import Task

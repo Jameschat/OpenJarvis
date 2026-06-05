@@ -2189,6 +2189,22 @@ def _qwen_should_think(task_prompt: str) -> bool:
     return qwen_quality_loop.is_complex(task_prompt or "")
 
 
+_QWEN_RUN_CONTRACT = (
+    "ODYSSEUS-PATTERN RUN CONTRACT:\n"
+    "- End every run in exactly one of these states: DONE, BLOCKED, or CONTINUE.\n"
+    "- DONE means the requested answer or deliverable is complete enough to show the operator, "
+    "with assumptions, verification/evidence, and the next action if any.\n"
+    "- BLOCKED means a required capability, permission, file, model, runtime, or external access is missing. "
+    "State the blocker plainly and name the smallest operator/Codex/Claude action needed to unblock it.\n"
+    "- CONTINUE means more work is needed and a safe tool request is required now. Emit one "
+    "`qwen_tool_requests` block with the next read/research/procedure request instead of vague narration.\n"
+    "- Do not go silent after a failed tool, timeout, empty result, missing file, or blocked action. "
+    "Retry with a corrected safe request, explain the blocker, or request escalation.\n"
+    "- Never claim a file edit, browser preview, install, shell command, email action, calendar action, "
+    "or model launch happened unless a Jarvis tool result explicitly proves it."
+)
+
+
 def _extract_qwen_proposed_files(all_tool_results: list[Dict[str, Any]]) -> list[Dict[str, Any]] | None:
     """Pull the file set from the most recent successful repo_patch_proposal in
     a Qwen tool-bridge run, for the v2 sandbox verification loop. Returns a list
@@ -2286,6 +2302,7 @@ def _run_qwen_task(task: Task, agent_spec: Dict[str, Any]) -> None:
             "When a code change is needed, request repo_patch_proposal with "
             "full proposed file content; Jarvis will not apply it until "
             "Codex/operator approval.",
+            _QWEN_RUN_CONTRACT,
             remote_profile_block,
             qwen_tool_bridge.tool_manifest(),
             workspace_block,
