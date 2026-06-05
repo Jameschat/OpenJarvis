@@ -4,7 +4,10 @@ import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
-export default defineConfig({
+export default defineConfig(({ mode }) => {
+  const isTauriBuild = mode === 'tauri';
+
+  return {
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
@@ -13,7 +16,7 @@ export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
-    VitePWA({
+    !isTauriBuild && VitePWA({
       registerType: 'autoUpdate',
       manifest: {
         name: 'OpenJarvis',
@@ -32,7 +35,7 @@ export default defineConfig({
         navigateFallbackDenylist: [/^\/v1\//, /^\/health/, /^\/dashboard/],
       },
     }),
-  ],
+  ].filter(Boolean),
   build: {
     outDir: '../src/openjarvis/server/static',
     emptyOutDir: true,
@@ -55,4 +58,5 @@ export default defineConfig({
       '/health': process.env.VITE_API_URL || 'http://localhost:8000',
     },
   },
+  };
 });
