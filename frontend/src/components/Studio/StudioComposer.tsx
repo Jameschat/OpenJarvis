@@ -1,5 +1,5 @@
 import { Paperclip, Send, Square } from 'lucide-react';
-import type { KeyboardEvent } from 'react';
+import type { ChangeEvent, KeyboardEvent } from 'react';
 
 interface StudioComposerProps {
   value: string;
@@ -44,6 +44,13 @@ export function StudioComposer({
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
       onSend();
+    }
+  };
+
+  const handleProfileSelect = (event: ChangeEvent<HTMLSelectElement>) => {
+    const next = event.target.value;
+    if (next === 'fast' || next === 'quality' || next === 'remote') {
+      onProfileChange(next);
     }
   };
 
@@ -97,30 +104,21 @@ export function StudioComposer({
           Context {contextItems.length ? `(${contextItems.length})` : ''}
         </button>
         <span className="studio-pill">Default permissions</span>
-        <span className="studio-pill">Qwen {qwenProfile || 'fast'}</span>
-        <button
-          type="button"
-          className={`studio-profile-button ${qwenProfile === 'fast' ? 'active' : ''}`}
-          onClick={() => onProfileChange('fast')}
-        >
-          Fast
-        </button>
-        <button
-          type="button"
-          className={`studio-profile-button ${qwenProfile === 'quality' ? 'active' : ''}`}
-          onClick={() => onProfileChange('quality')}
-        >
-          Quality
-        </button>
-        <button
-          type="button"
-          className={`studio-profile-button ${qwenProfile === 'remote' ? 'active' : ''}`}
-          onClick={() => onProfileChange('remote')}
-          disabled={!remoteProfileOnline}
-          title={remoteProfileOnline ? 'Use remote Qwen worker' : 'Remote unavailable'}
-        >
-          {remoteProfileOnline ? 'Remote' : 'Remote unavailable'}
-        </button>
+        <label className="studio-model-select" title="Select model profile">
+          <span className={`studio-model-status ${remoteProfileOnline ? 'online' : 'degraded'}`} />
+          <select
+            aria-label="Select model profile"
+            value={qwenProfile || 'fast'}
+            onChange={handleProfileSelect}
+          >
+            <option value="fast">Qwen 27B Fast</option>
+            <option value="quality">Qwen 27B Quality</option>
+            <option value="remote" disabled={!remoteProfileOnline}>
+              {remoteProfileOnline ? 'Remote 35B-A3B' : 'Remote 35B-A3B offline'}
+            </option>
+            <option value="escalation" disabled>Claude/Codex escalation</option>
+          </select>
+        </label>
         <button
           className="studio-send-button"
           onClick={activeRunId ? onCancel : onSend}

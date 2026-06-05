@@ -1006,6 +1006,7 @@
     display: flex;
     align-items: center;
     gap: 8px;
+    flex-wrap: wrap;
   }
 
   .studio-steer-banner {
@@ -1070,6 +1071,45 @@
     border-color: color-mix(in srgb, var(--color-accent) 55%, var(--color-border));
     color: var(--color-accent);
     background: var(--color-accent-subtle);
+  }
+
+  .studio-model-select {
+    min-height: 30px;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 4px 8px;
+    border: 1px solid color-mix(in srgb, var(--color-accent) 35%, var(--color-border));
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--color-bg-tertiary) 86%, transparent);
+  }
+
+  .studio-model-select select {
+    max-width: 176px;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: var(--color-text);
+    font-size: 12px;
+    line-height: 1;
+  }
+
+  .studio-model-select option {
+    background: var(--color-bg-secondary);
+    color: var(--color-text);
+  }
+
+  .studio-model-status {
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background: var(--color-success);
+    box-shadow: 0 0 10px color-mix(in srgb, var(--color-success) 70%, transparent);
+  }
+
+  .studio-model-status.degraded {
+    background: var(--color-warning);
+    box-shadow: 0 0 10px color-mix(in srgb, var(--color-warning) 70%, transparent);
   }
 
   .studio-profile-button {
@@ -1155,6 +1195,49 @@
     border: 1px solid var(--color-border);
     border-radius: 10px;
     background: color-mix(in srgb, var(--color-bg) 72%, transparent);
+  }
+
+  .studio-sidebar-nav {
+    display: grid;
+    gap: 5px;
+  }
+
+  .studio-sidebar-nav-button {
+    min-width: 0;
+    width: 100%;
+    min-height: 34px;
+    display: grid;
+    grid-template-columns: 18px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 9px;
+    border: 1px solid var(--color-border);
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--color-bg-tertiary) 88%, transparent);
+    color: var(--color-text);
+    font-size: 12px;
+    text-align: left;
+  }
+
+  .studio-sidebar-nav-button svg {
+    color: var(--color-accent);
+  }
+
+  .studio-sidebar-nav-button span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .studio-sidebar-nav-button strong {
+    max-width: 82px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--color-text-tertiary);
+    font-size: 10px;
+    font-weight: 600;
   }
 
   .studio-search-result,

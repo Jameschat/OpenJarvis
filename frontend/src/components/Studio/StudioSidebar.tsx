@@ -1,4 +1,16 @@
-import { ChevronDown, ChevronRight, MoreHorizontal, Plus, Search } from 'lucide-react';
+import {
+  Brain,
+  CalendarClock,
+  ChevronDown,
+  ChevronRight,
+  FlaskConical,
+  MoreHorizontal,
+  Network,
+  Plus,
+  Search,
+  Settings,
+  Wrench,
+} from 'lucide-react';
 import { useState } from 'react';
 import type { StudioChat, StudioProject } from './types';
 
@@ -41,6 +53,14 @@ export function StudioSidebar({
   const [pluginsOpen, setPluginsOpen] = useState(false);
   const [automationsOpen, setAutomationsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const controlItems = [
+    { label: 'Brain', icon: Brain, action: () => setSettingsOpen(true), detail: 'Vault + memory' },
+    { label: 'Tools', icon: Wrench, action: () => setPluginsOpen((open) => !open), detail: `${plugins.length} online` },
+    { label: 'Models', icon: Network, action: () => setSettingsOpen(true), detail: 'Qwen routes' },
+    { label: 'Deep Research', icon: FlaskConical, action: () => onSearchQueryChange('deep research'), detail: 'Research loop' },
+    { label: 'Tasks', icon: CalendarClock, action: () => setAutomationsOpen(true), detail: `${automations.length} scheduled` },
+    { label: 'Settings', icon: Settings, action: () => setSettingsOpen((open) => !open), detail: 'Runtime' },
+  ];
 
   return (
     <aside className="studio-sidebar">
@@ -81,6 +101,22 @@ export function StudioSidebar({
           )}
         </div>
       )}
+
+      <section className="studio-sidebar-section">
+        <div className="studio-sidebar-heading">Jarvis Control</div>
+        <div className="studio-sidebar-nav">
+          {controlItems.map((item) => {
+            const Icon = item.icon;
+            return (
+              <button className="studio-sidebar-nav-button" key={item.label} type="button" onClick={item.action}>
+                <Icon size={15} />
+                <span>{item.label}</span>
+                <strong>{item.detail}</strong>
+              </button>
+            );
+          })}
+        </div>
+      </section>
 
       <section className="studio-sidebar-section">
         <div className="studio-sidebar-heading">Projects</div>

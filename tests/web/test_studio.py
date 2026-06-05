@@ -325,6 +325,34 @@ def test_tauri_frontend_has_native_runtime_parity_panels():
         assert marker in page or marker in composer or marker in rail or marker in css
 
 
+def test_tauri_studio_has_control_sidebar_and_model_dropdown():
+    sidebar = (ROOT / "frontend" / "src" / "components" / "Studio" / "StudioSidebar.tsx").read_text(encoding="utf-8")
+    composer = (ROOT / "frontend" / "src" / "components" / "Studio" / "StudioComposer.tsx").read_text(encoding="utf-8")
+    css = (ROOT / "frontend" / "src" / "index.css").read_text(encoding="utf-8")
+
+    for marker in [
+        "Jarvis Control",
+        "Brain",
+        "Tools",
+        "Models",
+        "Deep Research",
+        "Tasks",
+        "studio-sidebar-nav",
+        "studio-sidebar-nav-button",
+    ]:
+        assert marker in sidebar or marker in css
+
+    for marker in [
+        "Select model profile",
+        "studio-model-select",
+        "Qwen 27B Fast",
+        "Qwen 27B Quality",
+        "Remote 35B-A3B",
+        "Claude/Codex escalation",
+    ]:
+        assert marker in composer or marker in css
+
+
 def test_studio_state_uses_fast_runtime_health_snapshot():
     source = (ROOT / "src" / "openjarvis" / "cli" / "brain_server.py").read_text(encoding="utf-8")
 
