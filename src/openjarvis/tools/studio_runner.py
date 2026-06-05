@@ -69,6 +69,20 @@ _ECC_LITE_SKILL_GUIDANCE = {
 }
 
 
+def _select_ecc_command(prompt: str, workflow: str) -> str:
+    text = " ".join((prompt or "").strip().lower().split())
+    if workflow == "debug" or any(term in text for term in ("fix", "bug", "error", "failed", "failure", "broken")):
+        return "build-fix"
+    if workflow == "feature_dev" or any(
+        term in text
+        for term in ("build", "create", "implement", "add", "make", "website", "app", "portal", "component")
+    ):
+        return "feature-dev"
+    if workflow == "verify" or any(term in text for term in ("review", "audit", "verify", "check")):
+        return "code-review"
+    return ""
+
+
 def _select_ecc_lite_skills(prompt: str, workflow: str) -> list[str]:
     text = " ".join((prompt or "").strip().lower().split())
     selected: list[str] = []
@@ -78,7 +92,7 @@ def _select_ecc_lite_skills(prompt: str, workflow: str) -> list[str]:
             if name not in selected:
                 selected.append(name)
 
-    if workflow in {"execute", "debug", "spec"} or any(
+    if workflow in {"execute", "debug", "spec", "feature_dev"} or any(
         term in text
         for term in (
             "build",
@@ -115,7 +129,8 @@ def _select_ecc_lite_skills(prompt: str, workflow: str) -> list[str]:
 
 def _build_ecc_lite_guidance(prompt: str, workflow: str) -> str:
     skill_names = _select_ecc_lite_skills(prompt, workflow)
-    if not skill_names:
+    ecc_command = _select_ecc_command(prompt, workflow)
+    if not skill_names and not ecc_command:
         return ""
     lines = [
         "== ECC-LITE AGENT OPERATING LAYER ==",
@@ -124,9 +139,19 @@ def _build_ecc_lite_guidance(prompt: str, workflow: str) -> str:
         "If you need the full skill text, request the safe tool `skill_guidance` with the skill name.",
         "If you need a cached ECC command workflow such as feature-dev or build-fix, request `ecc_command_guidance` by command name.",
         "Do not run ECC commands, hooks, shell scripts, installs, or direct edits unless the tool bridge explicitly allows it.",
-        "",
-        "Required skill guidance:",
     ]
+    if ecc_command:
+        lines.extend(
+            [
+                "",
+                f"Required ECC command profile: `{ecc_command}`.",
+                (
+                    "Before planning the work, request this read-only command guidance with "
+                    f"`ecc_command_guidance` using name `{ecc_command}`."
+                ),
+            ]
+        )
+    lines.extend(["", "Required skill guidance:"])
     for name in skill_names:
         lines.append(f"- {name}: {_ECC_LITE_SKILL_GUIDANCE[name]}")
     lines.extend(
@@ -1339,11 +1364,24 @@ def _run_ecc_lite_skills(run: dict[str, Any]) -> list[str]:
     for event in run.get("events") or []:
         if not isinstance(event, dict) or event.get("type") != "run.task_queued":
             continue
-        details = event.get("details") if isinstance(event.get("details"), dict) else {}
+        details = event.get("data") if isinstance(event.get("data"), dict) else event.get("details")
+        details = details if isinstance(details, dict) else {}
         skills = details.get("ecc_lite_skills") if isinstance(details, dict) else []
         if isinstance(skills, list):
             return [str(skill) for skill in skills if skill]
     return []
+
+
+def _run_ecc_command(run: dict[str, Any]) -> str:
+    for event in run.get("events") or []:
+        if not isinstance(event, dict) or event.get("type") != "run.task_queued":
+            continue
+        details = event.get("data") if isinstance(event.get("data"), dict) else event.get("details")
+        details = details if isinstance(details, dict) else {}
+        command = details.get("ecc_command") if isinstance(details, dict) else ""
+        if command:
+            return str(command)
+    return ""
 
 
 def enrich_runs_for_studio(runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -1381,6 +1419,7 @@ def enrich_runs_for_studio(runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "",
         )
         copy["ecc_lite_skills"] = _run_ecc_lite_skills(copy)
+        copy["ecc_command"] = _run_ecc_command(copy)
         copy["outputs"] = outputs[:12]
         activity = _capture_run_file_activity(copy)
         if not activity and isinstance(copy.get("file_activity_final"), list):
@@ -1783,6 +1822,7 @@ def start_studio_run(
 
     agent_id = _studio_agent_for_request(prompt, decision["workflow"])
     ecc_lite_skills = _select_ecc_lite_skills(prompt, decision["workflow"])
+    ecc_command = _select_ecc_command(prompt, decision["workflow"])
     ecc_guidance = _build_ecc_lite_guidance(prompt, decision["workflow"])
     task_prompt = (
         f"{context_pack.get('markdown', '')}\n\n"
@@ -1809,6 +1849,7 @@ def start_studio_run(
             "task_id": task_id,
             "agent_id": agent_id,
             "ecc_lite_skills": ecc_lite_skills,
+            "ecc_command": ecc_command,
         },
     )
     return {

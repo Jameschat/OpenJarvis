@@ -29,6 +29,16 @@ def test_selector_routes_large_build_to_spec():
     assert decision["requires_operator_approval"] is True
 
 
+def test_selector_routes_normal_build_to_feature_dev():
+    decision = studio_workflows.select_workflow(
+        "Create a dedicated dining page for this website"
+    )
+
+    assert decision["workflow"] == "feature_dev"
+    assert decision["requires_operator_approval"] is False
+    assert "implementation slice" in decision["next_steps"][1].lower()
+
+
 def test_selector_marks_external_mutation_for_approval():
     decision = studio_workflows.select_workflow(
         "Install this package and connect my exchange account"

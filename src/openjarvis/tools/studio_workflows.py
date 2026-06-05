@@ -20,7 +20,14 @@ EXTERNAL_ACTION_RE = re.compile(
 
 def _has_any(text: str, terms: set[str]) -> bool:
     lower = text.lower()
-    return any(term in lower for term in terms)
+    for term in terms:
+        if " " in term:
+            if term in lower:
+                return True
+            continue
+        if re.search(rf"\b{re.escape(term)}\b", lower):
+            return True
+    return False
 
 
 def select_workflow(prompt: str) -> dict[str, Any]:
@@ -48,6 +55,15 @@ def select_workflow(prompt: str) -> dict[str, Any]:
             "Write/confirm spec.",
             "Create implementation plan.",
             "Execute in reviewed slices.",
+        ]
+    elif _has_any(text, BUILD_TERMS):
+        workflow = "feature_dev"
+        reason = "Build/create request uses a feature-development loop: clarify target, implement a slice, verify, and report outputs."
+        next_steps = [
+            "Confirm the concrete deliverable and acceptance criteria.",
+            "Build the smallest useful implementation slice.",
+            "Run focused verification and capture outputs.",
+            "Summarize changed files, evidence, and next step.",
         ]
     elif _has_any(text, RESEARCH_TERMS) or _has_any(text, PLANNING_TERMS):
         workflow = "qwen_workflow"

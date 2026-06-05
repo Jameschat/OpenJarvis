@@ -113,11 +113,14 @@ def test_start_run_injects_ecc_lite_guidance_for_build_tasks(monkeypatch, tmp_pa
     assert "ecc_catalog" in task_prompt
     assert "skill_guidance" in task_prompt
     assert "ecc_command_guidance" in task_prompt
+    assert "Required ECC command profile: `feature-dev`" in task_prompt
     assert "agentic-engineering" in task_prompt
     assert "plan-orchestrate" in task_prompt
     assert "verification-loop" in task_prompt
     assert "browser-qa" in task_prompt
     assert "tdd-workflow" in task_prompt
+    queued_event = next(event for event in result["run"]["events"] if event["type"] == "run.task_queued")
+    assert queued_event["data"]["ecc_command"] == "feature-dev"
 
 
 def test_start_run_routes_test_requests_to_qwen_tester(monkeypatch, tmp_path):
@@ -1151,7 +1154,7 @@ def test_common_studio_request_matrix_routes_without_hanging(monkeypatch, tmp_pa
         ("can you show me the preview of the website", "completed", "project_preview"),
         ("Fix the DCA backtest HTTP 500 and add a regression test", "running", "debug"),
         ("Research the best tools for local Qwen agent memory", "running", "qwen_workflow"),
-        ("Create a dedicated dining page for this website", "running", "execute"),
+        ("Create a dedicated dining page for this website", "running", "feature_dev"),
         ("Build a complete Codex replica with projects, plugins, automations, memory, and task loops", "blocked", "spec"),
     ]
 
