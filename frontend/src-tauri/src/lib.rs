@@ -484,8 +484,7 @@ async fn start_litellm_proxy(
         }
     }
 
-    let url = format!("http://127.0.0.1:{}/v1/models", LITELLM_PORT);
-    wait_for_url(&url, Duration::from_secs(90)).await
+    true
 }
 
 async fn ollama_has_model(model: &str) -> bool {
