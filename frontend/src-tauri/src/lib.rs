@@ -378,6 +378,12 @@ fn hide_command_window(cmd: &mut tokio::process::Command) {
 #[cfg(not(target_os = "windows"))]
 fn hide_command_window(_cmd: &mut tokio::process::Command) {}
 
+fn configure_uv_command(cmd: &mut tokio::process::Command) {
+    let cache_dir = std::env::temp_dir().join("uv-cache-openjarvis");
+    cmd.env("UV_CACHE_DIR", cache_dir);
+    cmd.env("UV_LINK_MODE", "copy");
+}
+
 async fn qwen_fast_lane_ready() -> bool {
     let url = format!("http://127.0.0.1:{}/health", QWEN_FAST_LANE_PORT);
     wait_for_url(&url, Duration::from_secs(1)).await
@@ -393,7 +399,9 @@ async fn start_qwen_fast_lane(root: &std::path::Path, status: SharedStatus) -> b
         return true;
     }
 
-    let script = root.join("scripts").join("start-qwen-mtp-froggeric-wsl.ps1");
+    let script = root
+        .join("scripts")
+        .join("start-qwen-mtp-froggeric-wsl.ps1");
     if !script.exists() {
         let mut s = status.lock().await;
         s.detail = format!("Qwen fast lane script missing: {}", script.display());
@@ -445,6 +453,7 @@ async fn start_litellm_proxy(
     }
 
     let mut cmd = tokio::process::Command::new(uv_bin);
+    configure_uv_command(&mut cmd);
     cmd.args([
         "run",
         "litellm",
@@ -765,13 +774,19 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
         let mut s = status.lock().await;
         s.detail = "Installing dependencies...".into();
     }
-    let _ = tokio::process::Command::new(&uv_bin)
+    let mut sync_cmd = tokio::process::Command::new(&uv_bin);
+    configure_uv_command(&mut sync_cmd);
+    let _ = sync_cmd
         .args([
             "sync",
-            "--extra", "server",
-            "--extra", "inference-litellm",
-            "--extra", "inference-cloud",
-            "--extra", "inference-google",
+            "--extra",
+            "server",
+            "--extra",
+            "inference-litellm",
+            "--extra",
+            "inference-cloud",
+            "--extra",
+            "inference-google",
         ])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -791,7 +806,8 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
     let litellm_ok = start_litellm_proxy(root, &uv_bin, backend.clone(), status.clone()).await;
     if !litellm_ok {
         let mut s = status.lock().await;
-        s.detail = "LiteLLM proxy did not become ready; direct Ollama fallback remains available.".into();
+        s.detail =
+            "LiteLLM proxy did not become ready; direct Ollama fallback remains available.".into();
     }
 
     {
@@ -804,6 +820,7 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
     }
 
     let mut cmd = tokio::process::Command::new(&uv_bin);
+    configure_uv_command(&mut cmd);
     cmd.args([
         "run",
         "jarvis",
@@ -1124,7 +1141,9 @@ async fn run_jarvis_command(args: Vec<String>) -> Result<String, String> {
     let mut cmd_args = vec!["run".to_string(), "jarvis".to_string()];
     cmd_args.extend(args);
     let uv_bin = resolve_bin("uv");
-    let output = tokio::process::Command::new(&uv_bin)
+    let mut cmd = tokio::process::Command::new(&uv_bin);
+    configure_uv_command(&mut cmd);
+    let output = cmd
         .args(&cmd_args)
         .output()
         .await
@@ -1444,7 +1463,7 @@ mod native_overlay {
         // Also inject CSS to nuke any remaining background
         let js = nsstring(
             "document.documentElement.style.background='transparent';\
-             document.body.style.background='transparent';"
+             document.body.style.background='transparent';",
         );
         let nil: *mut Object = std::ptr::null_mut();
         let _: () = msg_send![wv, evaluateJavaScript: js completionHandler: nil];
@@ -1475,7 +1494,9 @@ mod native_overlay {
             let sup = Class::get("NSObject").unwrap();
             let mut decl = ClassDecl::new("JarvisOverlayNavDelegate", sup).unwrap();
             extern "C" fn did_finish(_: &Object, _: Sel, wv: *mut Object, _nav: *mut Object) {
-                unsafe { force_transparent(wv); }
+                unsafe {
+                    force_transparent(wv);
+                }
             }
             decl.add_method(
                 sel!(webView:didFinishNavigation:),
