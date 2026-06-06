@@ -16,6 +16,8 @@ import { useAppStore } from './lib/store';
 import { fetchModels, fetchServerInfo, fetchSavings, submitSavings, isTauri } from './lib/api';
 import { OptInModal } from './components/OptInModal';
 
+const PREFERRED_LOCAL_MODEL = 'qwen3.6-27b-local';
+
 export default function App() {
   const [setupDone, setSetupDone] = useState(true);
   const handleSetupReady = useCallback(() => setSetupDone(true), []);
@@ -60,7 +62,15 @@ export default function App() {
     fetchModels()
       .then((m) => {
         setModels(m);
-        if (!selectedModel && m.length > 0) setSelectedModel(m[0].id);
+        const modelIds = m.map((model) => model.id);
+        const preferred =
+          modelIds.includes(PREFERRED_LOCAL_MODEL) ? PREFERRED_LOCAL_MODEL : modelIds[0];
+        const selectedIsStale =
+          selectedModel &&
+          (!modelIds.includes(selectedModel) || selectedModel.startsWith('qwen3.5:'));
+        if ((!selectedModel || selectedIsStale) && preferred) {
+          setSelectedModel(preferred);
+        }
       })
       .catch(() => setModels([]))
       .finally(() => setModelsLoading(false));

@@ -324,6 +324,43 @@ async def stream_local(
                     pass
 
 
+async def stream_litellm_local(
+    model: str,
+    messages: Sequence[Message],
+    temperature: float = 0.7,
+    max_tokens: int = 1024,
+) -> AsyncIterator[str]:
+    """Stream tokens through the local LiteLLM proxy."""
+    payload = {
+        "model": model,
+        "messages": _to_openai_msgs(messages),
+        "stream": True,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+    }
+    async with httpx.AsyncClient(timeout=600) as client:
+        async with client.stream(
+            "POST",
+            "http://127.0.0.1:4000/v1/chat/completions",
+            json=payload,
+            headers={"Content-Type": "application/json"},
+        ) as resp:
+            resp.raise_for_status()
+            async for line in resp.aiter_lines():
+                if not line.startswith("data: "):
+                    continue
+                data = line[6:].strip()
+                if data == "[DONE]":
+                    break
+                try:
+                    chunk = json.loads(data)
+                    delta = chunk["choices"][0]["delta"].get("content") or ""
+                    if delta:
+                        yield delta
+                except Exception:
+                    pass
+
+
 async def list_local_models() -> list[str]:
     """Return Ollama model names directly from the Ollama API."""
     host = _ollama_host()
@@ -333,6 +370,19 @@ async def list_local_models() -> list[str]:
             resp.raise_for_status()
             data = resp.json()
             return [m["name"] for m in data.get("models", [])]
+    except Exception:
+        return []
+
+
+async def list_litellm_local_models() -> list[str]:
+    """Return local Qwen aliases exposed by the LiteLLM proxy."""
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get("http://127.0.0.1:4000/v1/models")
+            resp.raise_for_status()
+            data = resp.json()
+            ids = [m["id"] for m in data.get("data", [])]
+            return [mid for mid in ids if mid.startswith("qwen3.6-")]
     except Exception:
         return []
 

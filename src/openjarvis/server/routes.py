@@ -147,6 +147,9 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
             return await _handle_agent_stream(agent, bus, model, request_body)
         return await _handle_stream(engine, model, request_body, complexity_info)
 
+    if model.startswith("qwen3.6-") and not request_body.tools:
+        return await _handle_litellm_direct(model, request_body, complexity_info)
+
     # Non-streaming: use agent if available, otherwise direct engine call
     if agent is not None:
         return _handle_agent(agent, model, request_body, complexity_info)
@@ -158,6 +161,58 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
         request_body,
         bus=bus,
         complexity_info=complexity_info,
+    )
+
+
+async def _handle_litellm_direct(
+    model: str,
+    req: ChatCompletionRequest,
+    complexity_info=None,
+) -> ChatCompletionResponse:
+    """Direct non-streaming local Qwen call through LiteLLM."""
+    import httpx
+
+    payload = {
+        "model": model,
+        "messages": [
+            {
+                "role": message.role,
+                "content": message.content or "",
+            }
+            for message in req.messages
+        ],
+        "temperature": req.temperature,
+        "max_tokens": req.max_tokens,
+        "stream": False,
+    }
+    async with httpx.AsyncClient(timeout=600) as client:
+        resp = await client.post(
+            "http://127.0.0.1:4000/v1/chat/completions",
+            json=payload,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+
+    choice = (data.get("choices") or [{}])[0]
+    message = choice.get("message") or {}
+    usage = data.get("usage") or {}
+    return ChatCompletionResponse(
+        model=model,
+        choices=[
+            Choice(
+                message=ChoiceMessage(
+                    role="assistant",
+                    content=message.get("content") or "",
+                ),
+                finish_reason=choice.get("finish_reason") or "stop",
+            )
+        ],
+        usage=UsageInfo(
+            prompt_tokens=usage.get("prompt_tokens", 0),
+            completion_tokens=usage.get("completion_tokens", 0),
+            total_tokens=usage.get("total_tokens", 0),
+        ),
+        complexity=complexity_info,
     )
 
 
@@ -308,6 +363,7 @@ async def _handle_stream(
     from openjarvis.server.cloud_router import (
         is_cloud_model,
         stream_cloud,
+        stream_litellm_local,
         stream_local,
     )
 
@@ -340,6 +396,10 @@ async def _handle_stream(
             # is_cloud attribute.
             if use_cloud:
                 token_iter = stream_cloud(
+                    model, messages, req.temperature, req.max_tokens
+                )
+            elif model.startswith("qwen3.6-"):
+                token_iter = stream_litellm_local(
                     model, messages, req.temperature, req.max_tokens
                 )
             else:
@@ -426,7 +486,9 @@ async def _handle_stream(
         # We use the routing decision (use_cloud) directly rather than
         # unwrapping the engine chain, which can be in a broken state.
         finish_dict.setdefault("telemetry", {})
-        finish_dict["telemetry"]["engine"] = "cloud" if use_cloud else "ollama"
+        finish_dict["telemetry"]["engine"] = (
+            "cloud" if use_cloud else "litellm" if model.startswith("qwen3.6-") else "ollama"
+        )
 
         if complexity_info is not None:
             finish_dict["complexity"] = complexity_info.model_dump()
@@ -448,14 +510,22 @@ async def list_models(request: Request) -> ModelListResponse:
     Cloud models are not included here — they live in the Cloud Models tab
     of the UI and are selected there, not from this endpoint.
     """
-    from openjarvis.server.cloud_router import is_cloud_model, list_local_models
+    from openjarvis.server.cloud_router import (
+        is_cloud_model,
+        list_litellm_local_models,
+        list_local_models,
+    )
 
     # Prefer engine.list_models() so mock engines work in tests.
     # Filter out any cloud model IDs that may appear via MultiEngine.
     # Fall back to direct Ollama query only when the engine returns nothing.
     engine = request.app.state.engine
     all_ids = engine.list_models()
-    model_ids = [m for m in all_ids if not is_cloud_model(m)]
+    litellm_ids = await list_litellm_local_models()
+    model_ids = [
+        *litellm_ids,
+        *[m for m in all_ids if not is_cloud_model(m) and m not in litellm_ids],
+    ]
     if not model_ids:
         model_ids = await list_local_models()
 

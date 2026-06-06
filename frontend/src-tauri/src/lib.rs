@@ -456,6 +456,7 @@ async fn start_litellm_proxy(
     configure_uv_command(&mut cmd);
     cmd.args([
         "run",
+        "--no-sync",
         "litellm",
         "--config",
         "configs/litellm.yaml",
@@ -822,6 +823,7 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
     configure_uv_command(&mut cmd);
     cmd.args([
         "run",
+        "--no-sync",
         "jarvis",
         "serve",
         "--port",
@@ -1137,7 +1139,11 @@ async fn fetch_models(api_url: String) -> Result<serde_json::Value, String> {
 
 #[tauri::command]
 async fn run_jarvis_command(args: Vec<String>) -> Result<String, String> {
-    let mut cmd_args = vec!["run".to_string(), "jarvis".to_string()];
+    let mut cmd_args = vec![
+        "run".to_string(),
+        "--no-sync".to_string(),
+        "jarvis".to_string(),
+    ];
     cmd_args.extend(args);
     let uv_bin = resolve_bin("uv");
     let mut cmd = tokio::process::Command::new(&uv_bin);
