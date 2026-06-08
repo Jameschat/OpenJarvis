@@ -247,8 +247,31 @@ def _looks_like_project_continuation(prompt: str) -> bool:
     return any(term in text for term in ("project", "website", "site", "app", "build"))
 
 
+def _looks_like_specific_project_work(prompt: str) -> bool:
+    text = " ".join((prompt or "").strip().lower().split())
+    if not text:
+        return False
+    specific_targets = (
+        "dining page",
+        "events page",
+        "room page",
+        "rooms page",
+        "homepage",
+        "landing page",
+        "contact form",
+        "booking form",
+        "newsletter form",
+        "section",
+        "component",
+    )
+    work_terms = ("build", "create", "add", "implement", "make", "continue", "modernis", "moderniz")
+    return any(target in text for target in specific_targets) and any(term in text for term in work_terms)
+
+
 def _project_continuation_reply(prompt: str, context_pack: dict[str, Any]) -> str | None:
     if not _looks_like_project_continuation(prompt):
+        return None
+    if _looks_like_specific_project_work(prompt):
         return None
     markdown = str(context_pack.get("markdown") or "").strip()
     if not markdown or "### STATE.md" not in markdown:
@@ -901,10 +924,6 @@ def _vault_project_candidates() -> list[dict[str, Any]]:
 
 def _infer_project_from_prompt(prompt: str, current_project: dict[str, Any] | None) -> dict[str, Any] | None:
     current_id = str((current_project or {}).get("id") or "")
-    # Respect an already-specific Studio project; only auto-route when the UI is
-    # on the generic OpenJarvis workspace.
-    if current_id and current_id != "openjarvis":
-        return None
     prompt_words = _words(prompt)
     if not prompt_words:
         return None
@@ -915,9 +934,12 @@ def _infer_project_from_prompt(prompt: str, current_project: dict[str, Any] | No
         keywords = set(candidate.get("keywords") or set())
         score = len(prompt_words & keywords)
         slug_words = _words(str(candidate.get("id") or ""))
+        explicit_slug_match = bool(prompt_words & slug_words)
         if slug_words and slug_words.issubset(prompt_words | keywords) and prompt_words & slug_words:
             score += 4
-        if score >= 3 and (best is None or score > best[0]):
+        if score >= 3 and (current_id == "openjarvis" or explicit_slug_match or score >= 6) and (
+            best is None or score > best[0]
+        ):
             best = (score, candidate)
     return best[1] if best else None
 

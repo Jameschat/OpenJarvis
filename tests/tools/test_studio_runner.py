@@ -898,6 +898,7 @@ def test_start_studio_run_routes_named_vault_project(monkeypatch, tmp_path):
             "risks": [],
         },
     )
+    monkeypatch.setattr(studio_runner.studio_research, "should_prefetch_research", lambda prompt: False)
     queued = {}
 
     def fake_queue(**kwargs):
@@ -917,6 +918,72 @@ def test_start_studio_run_routes_named_vault_project(monkeypatch, tmp_path):
     )
 
     assert result["run"]["project_id"] == "westhill-hotel"
+    assert queued["project_id"] == "studio-westhill-hotel"
+    assert Path(queued["repo_root"]).resolve() == site.resolve()
+
+
+def test_start_studio_run_routes_named_vault_project_from_stale_selection(monkeypatch, tmp_path):
+    from openjarvis.tools import obsidian_brain
+
+    brain = tmp_path / "brain"
+    site = tmp_path / "westhill-hotel"
+    site.mkdir()
+    jarvis_site = tmp_path / "jarvis"
+    jarvis_site.mkdir()
+    westhill_project_md = brain / "Projects" / "westhill-hotel" / "PROJECT.md"
+    westhill_project_md.parent.mkdir(parents=True)
+    westhill_project_md.write_text(
+        f"---\nslug: westhill-hotel\npath: {site}\n---\n"
+        "# PROJECT.md - Westhill Country Hotel Website\n",
+        encoding="utf-8",
+    )
+    jarvis_project_md = brain / "Projects" / "jarvis" / "PROJECT.md"
+    jarvis_project_md.parent.mkdir(parents=True)
+    jarvis_project_md.write_text(
+        f"---\nslug: jarvis\npath: {jarvis_site}\n---\n"
+        "# PROJECT.md - Jarvis Reference Project\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(obsidian_brain, "BRAIN_ROOT", brain)
+    monkeypatch.setattr(studio_runner.studio_store, "STUDIO_ROOT", tmp_path / "studio")
+    monkeypatch.setattr(
+        studio_runner.studio_context,
+        "build_project_context_pack",
+        lambda prompt, project=None: {"ok": True, "markdown": "Westhill context", "warnings": []},
+    )
+    monkeypatch.setattr(
+        studio_runner.studio_workflows,
+        "select_workflow",
+        lambda prompt: {
+            "workflow": "feature_dev",
+            "reason": "Website feature work.",
+            "requires_operator_approval": False,
+            "verification": {"required": True},
+            "risks": [],
+        },
+    )
+    monkeypatch.setattr(studio_runner.studio_research, "should_prefetch_research", lambda prompt: False)
+    queued = {}
+
+    def fake_queue(**kwargs):
+        queued.update(kwargs)
+        return "task-westhill-dining"
+
+    monkeypatch.setattr(studio_runner, "_queue_agent_task", fake_queue)
+
+    store = studio_runner.studio_store.StudioStore(tmp_path / "studio")
+    store.ensure_project("jarvis", title="Jarvis Reference", repo_root=str(jarvis_site), vault_project="jarvis")
+    chat = store.create_chat("jarvis", title="New chat")
+
+    result = studio_runner.start_studio_run(
+        "jarvis",
+        chat["id"],
+        "using ux ui pro max skill lets continue the westhill website dining page",
+    )
+
+    assert result["run"]["project_id"] == "westhill-hotel"
+    assert result["run"]["status"] == "running"
+    assert queued["agent_id"] == "qwen-builder"
     assert queued["project_id"] == "studio-westhill-hotel"
     assert Path(queued["repo_root"]).resolve() == site.resolve()
 
