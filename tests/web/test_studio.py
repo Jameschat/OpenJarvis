@@ -104,6 +104,7 @@ def test_tauri_frontend_has_studio_api_client():
         "archiveStudioChat",
         "deleteStudioChat",
         "searchStudio",
+        "selectedSkills",
         "/studio/state",
         "/studio/chats",
         "/studio/search",
@@ -351,6 +352,29 @@ def test_tauri_studio_has_control_sidebar_and_model_dropdown():
         "Claude/Codex escalation",
     ]:
         assert marker in composer or marker in css
+
+
+def test_tauri_studio_has_visible_skill_selector():
+    page = (ROOT / "frontend" / "src" / "pages" / "StudioPage.tsx").read_text(encoding="utf-8")
+    composer = (ROOT / "frontend" / "src" / "components" / "Studio" / "StudioComposer.tsx").read_text(encoding="utf-8")
+    rail = (ROOT / "frontend" / "src" / "components" / "Studio" / "StudioContextRail.tsx").read_text(encoding="utf-8")
+    css = (ROOT / "frontend" / "src" / "index.css").read_text(encoding="utf-8")
+    api = (ROOT / "frontend" / "src" / "lib" / "studio-api.ts").read_text(encoding="utf-8")
+    routes = (ROOT / "src" / "openjarvis" / "server" / "studio_routes.py").read_text(encoding="utf-8")
+    brain_server = (ROOT / "src" / "openjarvis" / "cli" / "brain_server.py").read_text(encoding="utf-8")
+
+    for marker in [
+        "selectedSkills",
+        "availableStudioSkills",
+        "onToggleSkill",
+        "selected_skills: input.selectedSkills",
+        "UI UX Pro Max",
+        "studio-skill-select",
+        "Active skills",
+        "activeRun?.selected_skills",
+        "selected_skills",
+    ]:
+        assert marker in page or marker in composer or marker in rail or marker in css or marker in api or marker in routes or marker in brain_server
 
 
 def test_studio_state_uses_fast_runtime_health_snapshot():

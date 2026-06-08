@@ -58,6 +58,7 @@ export async function startStudioRun(input: {
   prompt: string;
   approved?: boolean;
   branchFromMessageId?: string;
+  selectedSkills?: string[];
 }): Promise<Record<string, unknown>> {
   return requestJson<Record<string, unknown>>('/studio/runs', {
     method: 'POST',
@@ -67,6 +68,7 @@ export async function startStudioRun(input: {
       prompt: input.prompt,
       approved: Boolean(input.approved),
       branch_from_message_id: input.branchFromMessageId || '',
+      selected_skills: input.selectedSkills || [],
     }),
   });
 }

@@ -34,6 +34,29 @@ function isJarvisBackendOnline(state: StudioState, loadError: string): boolean {
   return state.runtime_health?.ok !== false;
 }
 
+const availableStudioSkills = [
+  {
+    id: 'ui-ux-pro-max',
+    label: 'UI UX Pro Max',
+    description: 'Premium responsive UI, visual hierarchy, accessibility, and browser visual QA.',
+  },
+  {
+    id: 'superpowers',
+    label: 'Superpowers',
+    description: 'Plan, verify, and keep the work scoped like Codex/Superpowers.',
+  },
+  {
+    id: 'browser-qa',
+    label: 'Browser QA',
+    description: 'Preview the page and catch layout, alignment, and interaction issues.',
+  },
+  {
+    id: 'unreal-engine',
+    label: 'Unreal Engine',
+    description: 'UE project planning, validation, and build-aware workflow guidance.',
+  },
+];
+
 export function StudioPage() {
   const [state, setState] = useState<StudioState>({});
   const [selectedProjectId, setSelectedProjectId] = useState('');
@@ -42,6 +65,7 @@ export function StudioPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<Array<Record<string, unknown>>>([]);
   const [contextOpen, setContextOpen] = useState(false);
+  const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
   const [contextDraft, setContextDraft] = useState('');
   const [contextItems, setContextItems] = useState<string[]>([]);
   const [steeringMessageId, setSteeringMessageId] = useState('');
@@ -170,6 +194,14 @@ export function StudioPage() {
     setContextItems((items) => items.filter((_, itemIndex) => itemIndex !== index));
   };
 
+  const handleToggleSkill = (skillId: string) => {
+    setSelectedSkills((skills) => (
+      skills.includes(skillId)
+        ? skills.filter((id) => id !== skillId)
+        : [...skills, skillId]
+    ));
+  };
+
   const handleSteerMessage = (message: StudioMessage) => {
     if (!message?.id) return;
     setSteeringMessageId(String(message.id));
@@ -198,6 +230,7 @@ export function StudioPage() {
         prompt: promptWithContext,
         approved: true,
         branchFromMessageId: steeringMessageId || undefined,
+        selectedSkills,
       });
       const resultRun = result.run as { chat_id?: string } | undefined;
       const nextChatId = resultRun?.chat_id || chatId;
@@ -325,6 +358,8 @@ export function StudioPage() {
           activeRunId={activeRun?.id}
           qwenProfile={state.qwen_profile?.active || 'fast'}
           remoteProfileOnline={remoteProfileOnline}
+          availableStudioSkills={availableStudioSkills}
+          selectedSkills={selectedSkills}
           contextOpen={contextOpen}
           contextDraft={contextDraft}
           contextItems={contextItems}
@@ -333,6 +368,7 @@ export function StudioPage() {
           onSend={handleSend}
           onCancel={handleCancel}
           onProfileChange={changeProfile}
+          onToggleSkill={handleToggleSkill}
           onToggleContext={() => setContextOpen((open) => !open)}
           onContextDraftChange={setContextDraft}
           onAddContext={handleAddContext}

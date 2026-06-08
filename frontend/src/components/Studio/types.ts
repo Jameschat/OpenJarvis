@@ -42,6 +42,7 @@ export interface StudioRun {
   tasks?: string[];
   task_details?: Array<Record<string, unknown>>;
   progress_summary?: string;
+  selected_skills?: string[];
   ecc_lite_skills?: string[];
   ecc_command?: string;
   outputs?: Array<Record<string, unknown>>;

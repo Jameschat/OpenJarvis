@@ -57,6 +57,16 @@ function runtimeSpeed(lane: Record<string, unknown>): string {
   return '';
 }
 
+function skillLabel(skillId: string): string {
+  const labels: Record<string, string> = {
+    'ui-ux-pro-max': 'UI UX Pro Max',
+    superpowers: 'Superpowers',
+    'browser-qa': 'Browser QA',
+    'unreal-engine': 'Unreal Engine',
+  };
+  return labels[skillId] || skillId;
+}
+
 export function StudioContextRail({
   state,
   activeRun,
@@ -77,6 +87,7 @@ export function StudioContextRail({
   const fileActivity = activeRun?.file_activity || [];
   const previewAvailable = state.preview?.available === true;
   const eccCommand = activeRun?.ecc_command;
+  const selectedSkills = activeRun?.selected_skills || [];
 
   return (
     <aside className="studio-context-rail">
@@ -98,6 +109,8 @@ export function StudioContextRail({
               <strong>{activeRun.status || 'running'}</strong>
               <span>Workflow</span>
               <strong>{activeRun.workflow || 'direct'}</strong>
+              <span>Active skills</span>
+              <strong>{selectedSkills.length ? selectedSkills.map(skillLabel).join(', ') : 'auto'}</strong>
               <span>ECC profile</span>
               <strong className={eccCommand ? 'studio-ecc-command-pill' : ''}>{eccCommand || 'none'}</strong>
               <span>Steps</span>
@@ -109,6 +122,13 @@ export function StudioContextRail({
               <p className="studio-run-summary-note studio-ecc-command-note">
                 ECC guidance only. Commands stay blocked unless explicitly approved.
               </p>
+            ) : null}
+            {selectedSkills.length ? (
+              <div className="studio-selected-skill-list">
+                {selectedSkills.map((skill) => (
+                  <span key={skill}>{skillLabel(skill)}</span>
+                ))}
+              </div>
             ) : null}
             {activeRun.progress_summary ? (
               <p className="studio-run-summary-note">{activeRun.progress_summary}</p>

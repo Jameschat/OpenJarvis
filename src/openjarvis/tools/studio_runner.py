@@ -68,6 +68,86 @@ _ECC_LITE_SKILL_GUIDANCE = {
     "benchmark-optimization-loop": "For performance work, record baseline, one change, retest, and compare evidence.",
 }
 
+_STUDIO_SKILL_GUIDANCE = {
+    "ui-ux-pro-max": {
+        "label": "UI UX Pro Max",
+        "aliases": ("ui ux pro max", "ux ui pro max", "ui/ux pro max", "ux/ui pro max"),
+        "guidance": (
+            "Use premium product/web design judgement: strong visual hierarchy, polished responsive layouts, "
+            "domain-matched styling, accessible controls, careful spacing/typography, and responsive visual QA. "
+            "For website work, produce inspectable page sections, avoid generic white form styling, and request "
+            "browser preview evidence before claiming the UI is finished."
+        ),
+    },
+    "superpowers": {
+        "label": "Superpowers",
+        "aliases": ("superpowers",),
+        "guidance": (
+            "Use the Superpowers operating loop: clarify objective, plan the smallest safe change, use tests or "
+            "verification before completion, and report evidence instead of assumptions."
+        ),
+    },
+    "browser-qa": {
+        "label": "Browser QA",
+        "aliases": ("browser qa", "visual qa"),
+        "guidance": "For visual work, request a local preview and browser visual check, then fix layout issues before final output.",
+    },
+    "unreal-engine": {
+        "label": "Unreal Engine",
+        "aliases": ("unreal engine", "ue5"),
+        "guidance": "For Unreal work, use UE-specific project context, module boundaries, validation, and editor/test evidence.",
+    },
+}
+
+
+def studio_skill_catalog() -> list[dict[str, str]]:
+    return [
+        {"id": key, "label": str(value["label"]), "description": str(value["guidance"])}
+        for key, value in _STUDIO_SKILL_GUIDANCE.items()
+    ]
+
+
+def _normalize_selected_skills(selected_skills: list[str] | tuple[str, ...] | None, prompt: str = "") -> list[str]:
+    normalized: list[str] = []
+    text = " ".join((prompt or "").strip().lower().split())
+
+    def add(skill_id: str) -> None:
+        if skill_id in _STUDIO_SKILL_GUIDANCE and skill_id not in normalized:
+            normalized.append(skill_id)
+
+    for raw in selected_skills or []:
+        value = " ".join(str(raw or "").strip().lower().split())
+        if not value:
+            continue
+        if value in _STUDIO_SKILL_GUIDANCE:
+            add(value)
+            continue
+        for skill_id, info in _STUDIO_SKILL_GUIDANCE.items():
+            aliases = [str(info["label"]).lower(), *(str(alias).lower() for alias in info.get("aliases", ()))]
+            if value in aliases:
+                add(skill_id)
+                break
+
+    for skill_id, info in _STUDIO_SKILL_GUIDANCE.items():
+        if any(str(alias).lower() in text for alias in info.get("aliases", ())):
+            add(skill_id)
+    return normalized[:6]
+
+
+def _build_selected_skill_guidance(selected_skills: list[str]) -> str:
+    if not selected_skills:
+        return ""
+    lines = [
+        "== STUDIO SELECTED SKILLS ==",
+        "The operator explicitly selected these Jarvis skills for this run. Treat them as required operating guidance.",
+    ]
+    for skill_id in selected_skills:
+        info = _STUDIO_SKILL_GUIDANCE.get(skill_id)
+        if not info:
+            continue
+        lines.append(f"- {info['label']} (`{skill_id}`): {info['guidance']}")
+    return "\n".join(lines)
+
 
 def _select_ecc_command(prompt: str, workflow: str) -> str:
     text = " ".join((prompt or "").strip().lower().split())
@@ -1406,6 +1486,21 @@ def _run_ecc_command(run: dict[str, Any]) -> str:
     return ""
 
 
+def _run_selected_skills(run: dict[str, Any]) -> list[str]:
+    stored = run.get("selected_skills")
+    if isinstance(stored, list):
+        return [str(skill) for skill in stored if skill]
+    for event in run.get("events") or []:
+        if not isinstance(event, dict) or event.get("type") != "run.task_queued":
+            continue
+        details = event.get("data") if isinstance(event.get("data"), dict) else event.get("details")
+        details = details if isinstance(details, dict) else {}
+        skills = details.get("selected_skills") if isinstance(details, dict) else []
+        if isinstance(skills, list):
+            return [str(skill) for skill in skills if skill]
+    return []
+
+
 def enrich_runs_for_studio(runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Attach lightweight task/output details for the Studio progress panel."""
     task_index = _load_agent_task_index()
@@ -1442,6 +1537,7 @@ def enrich_runs_for_studio(runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
         )
         copy["ecc_lite_skills"] = _run_ecc_lite_skills(copy)
         copy["ecc_command"] = _run_ecc_command(copy)
+        copy["selected_skills"] = _run_selected_skills(copy)
         copy["outputs"] = outputs[:12]
         activity = _capture_run_file_activity(copy)
         if not activity and isinstance(copy.get("file_activity_final"), list):
@@ -1617,6 +1713,7 @@ def start_studio_run(
     prompt: str,
     *,
     approved: bool = False,
+    selected_skills: list[str] | tuple[str, ...] | None = None,
 ) -> dict[str, Any]:
     store = studio_store.StudioStore()
     projects = {p["id"]: p for p in store.list_projects()}
@@ -1633,8 +1730,12 @@ def start_studio_run(
             repo_root=str(inferred_project.get("repo_root") or studio_store.DEFAULT_REPO_ROOT),
             vault_project=project_id,
         )
+    selected_skill_ids = _normalize_selected_skills(selected_skills, prompt)
     decision = studio_workflows.select_workflow(prompt)
     run = store.create_run(project_id, chat_id, prompt, workflow=decision["workflow"])
+    if selected_skill_ids:
+        run["selected_skills"] = selected_skill_ids
+        store._write_json(store._run_path(run["id"]), run)
     run = _store_run_file_activity_baseline(store, run, _project_repo_root(project))
     store.append_run_event(run["id"], "run.created", "Studio run created")
     quick_reply = _lightweight_chat_reply(prompt)
@@ -1846,9 +1947,11 @@ def start_studio_run(
     ecc_lite_skills = _select_ecc_lite_skills(prompt, decision["workflow"])
     ecc_command = _select_ecc_command(prompt, decision["workflow"])
     ecc_guidance = _build_ecc_lite_guidance(prompt, decision["workflow"])
+    selected_skill_guidance = _build_selected_skill_guidance(selected_skill_ids)
     task_prompt = (
         f"{context_pack.get('markdown', '')}\n\n"
         f"{research_pack.get('markdown', '')}\n\n"
+        f"{selected_skill_guidance}\n\n"
         f"{ecc_guidance}\n\n"
         f"Operator request:\n{prompt}\n\n"
         "Return concrete progress, blockers, and verification needed."
@@ -1870,6 +1973,7 @@ def start_studio_run(
         {
             "task_id": task_id,
             "agent_id": agent_id,
+            "selected_skills": selected_skill_ids,
             "ecc_lite_skills": ecc_lite_skills,
             "ecc_command": ecc_command,
         },

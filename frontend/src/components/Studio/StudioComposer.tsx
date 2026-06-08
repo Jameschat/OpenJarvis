@@ -1,11 +1,19 @@
 import { Paperclip, Send, Square } from 'lucide-react';
 import type { ChangeEvent, KeyboardEvent } from 'react';
 
+interface StudioSkillOption {
+  id: string;
+  label: string;
+  description: string;
+}
+
 interface StudioComposerProps {
   value: string;
   activeRunId?: string;
   qwenProfile: string;
   remoteProfileOnline?: boolean;
+  availableStudioSkills: StudioSkillOption[];
+  selectedSkills: string[];
   contextOpen: boolean;
   contextDraft: string;
   contextItems: string[];
@@ -14,6 +22,7 @@ interface StudioComposerProps {
   onSend: () => void;
   onCancel: () => void;
   onProfileChange: (profile: 'fast' | 'quality' | 'remote') => void;
+  onToggleSkill: (skillId: string) => void;
   onToggleContext: () => void;
   onContextDraftChange: (value: string) => void;
   onAddContext: () => void;
@@ -26,6 +35,8 @@ export function StudioComposer({
   activeRunId,
   qwenProfile,
   remoteProfileOnline = true,
+  availableStudioSkills,
+  selectedSkills,
   contextOpen,
   contextDraft,
   contextItems,
@@ -34,6 +45,7 @@ export function StudioComposer({
   onSend,
   onCancel,
   onProfileChange,
+  onToggleSkill,
   onToggleContext,
   onContextDraftChange,
   onAddContext,
@@ -53,6 +65,10 @@ export function StudioComposer({
       onProfileChange(next);
     }
   };
+
+  const selectedSkillLabels = availableStudioSkills
+    .filter((skill) => selectedSkills.includes(skill.id))
+    .map((skill) => skill.label);
 
   return (
     <footer className="studio-composer">
@@ -104,6 +120,25 @@ export function StudioComposer({
           Context {contextItems.length ? `(${contextItems.length})` : ''}
         </button>
         <span className="studio-pill">Default permissions</span>
+        <details className="studio-skill-select">
+          <summary>
+            Skills
+            {selectedSkillLabels.length ? <strong>{selectedSkillLabels.join(', ')}</strong> : <span>Auto</span>}
+          </summary>
+          <div className="studio-skill-menu">
+            {availableStudioSkills.map((skill) => (
+              <button
+                key={skill.id}
+                type="button"
+                className={selectedSkills.includes(skill.id) ? 'active' : ''}
+                onClick={() => onToggleSkill(skill.id)}
+              >
+                <strong>{skill.label}</strong>
+                <span>{skill.description}</span>
+              </button>
+            ))}
+          </div>
+        </details>
         <label className="studio-model-select" title="Select model profile">
           <span className={`studio-model-status ${remoteProfileOnline ? 'online' : 'degraded'}`} />
           <select

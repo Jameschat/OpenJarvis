@@ -56,6 +56,7 @@ def test_start_run_records_context_workflow_and_task(monkeypatch, tmp_path):
         "_queue_agent_task",
         lambda **kwargs: created_tasks.append(kwargs) or "task-1",
     )
+    monkeypatch.setattr(studio_runner.studio_research, "should_prefetch_research", lambda prompt: False)
 
     result = studio_runner.start_studio_run(
         project_id="openjarvis",
@@ -100,6 +101,7 @@ def test_start_run_injects_ecc_lite_guidance_for_build_tasks(monkeypatch, tmp_pa
         "_queue_agent_task",
         lambda **kwargs: created_tasks.append(kwargs) or "task-1",
     )
+    monkeypatch.setattr(studio_runner.studio_research, "should_prefetch_research", lambda prompt: False)
 
     result = studio_runner.start_studio_run(
         project_id="openjarvis",
@@ -121,6 +123,49 @@ def test_start_run_injects_ecc_lite_guidance_for_build_tasks(monkeypatch, tmp_pa
     assert "tdd-workflow" in task_prompt
     queued_event = next(event for event in result["run"]["events"] if event["type"] == "run.task_queued")
     assert queued_event["data"]["ecc_command"] == "feature-dev"
+
+
+def test_start_run_injects_selected_studio_skill_guidance(monkeypatch, tmp_path):
+    created_tasks = []
+    monkeypatch.setattr(studio_runner.studio_store, "STUDIO_ROOT", tmp_path)
+    monkeypatch.setattr(
+        studio_runner.studio_context,
+        "build_project_context_pack",
+        lambda prompt, project=None: {"markdown": "ctx", "warnings": []},
+    )
+    monkeypatch.setattr(
+        studio_runner.studio_workflows,
+        "select_workflow",
+        lambda prompt: {
+            "workflow": "feature_dev",
+            "reason": "website build",
+            "verification": {"required": True},
+            "model": "qwen3.6-27b-local",
+            "requires_operator_approval": False,
+            "risks": [],
+            "next_steps": [],
+        },
+    )
+    monkeypatch.setattr(
+        studio_runner,
+        "_queue_agent_task",
+        lambda **kwargs: created_tasks.append(kwargs) or "task-1",
+    )
+
+    result = studio_runner.start_studio_run(
+        project_id="openjarvis",
+        chat_id="chat-1",
+        prompt="Build the Westhill dining page",
+        selected_skills=["ui-ux-pro-max"],
+    )
+
+    task_prompt = created_tasks[0]["prompt"]
+    assert "STUDIO SELECTED SKILLS" in task_prompt
+    assert "UI UX Pro Max" in task_prompt
+    assert "responsive visual QA" in task_prompt
+    assert result["run"]["selected_skills"] == ["ui-ux-pro-max"]
+    queued_event = next(event for event in result["run"]["events"] if event["type"] == "run.task_queued")
+    assert queued_event["data"]["selected_skills"] == ["ui-ux-pro-max"]
 
 
 def test_start_run_routes_test_requests_to_qwen_tester(monkeypatch, tmp_path):
@@ -548,6 +593,29 @@ def test_enrich_runs_for_studio_surfaces_ecc_lite_skills():
         "verification-loop",
         "browser-qa",
     ]
+
+
+def test_enrich_runs_for_studio_surfaces_selected_skills():
+    enriched = studio_runner.enrich_runs_for_studio(
+        [
+            {
+                "id": "run-skill",
+                "status": "running",
+                "events": [
+                    {
+                        "type": "run.task_queued",
+                        "data": {
+                            "task_id": "task-skill",
+                            "agent_id": "qwen-builder",
+                            "selected_skills": ["ui-ux-pro-max"],
+                        },
+                    }
+                ],
+            }
+        ]
+    )
+
+    assert enriched[0]["selected_skills"] == ["ui-ux-pro-max"]
 
 
 def test_subtract_file_activity_hides_baseline_and_secrets():
@@ -983,9 +1051,11 @@ def test_start_studio_run_routes_named_vault_project_from_stale_selection(monkey
 
     assert result["run"]["project_id"] == "westhill-hotel"
     assert result["run"]["status"] == "running"
+    assert result["run"]["selected_skills"] == ["ui-ux-pro-max"]
     assert queued["agent_id"] == "qwen-builder"
     assert queued["project_id"] == "studio-westhill-hotel"
     assert Path(queued["repo_root"]).resolve() == site.resolve()
+    assert "UI UX Pro Max" in queued["prompt"]
 
 
 def test_start_studio_run_answers_project_continuation_without_queueing(monkeypatch, tmp_path):

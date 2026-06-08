@@ -2066,7 +2066,14 @@ class _Handler(SimpleHTTPRequestHandler):
                 chat_id = chat["id"]
             else:
                 store.add_message(chat_id, "operator", prompt)
-            result = start_studio_run(project_id, chat_id, prompt, approved=bool(data.get("approved")))
+            selected_skills = data.get("selected_skills") if isinstance(data.get("selected_skills"), list) else []
+            result = start_studio_run(
+                project_id,
+                chat_id,
+                prompt,
+                approved=bool(data.get("approved")),
+                selected_skills=selected_skills,
+            )
             run = result.get("run") or {}
             status = run.get("status", "queued")
             reply = result.get("reply")
