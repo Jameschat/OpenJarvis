@@ -416,6 +416,23 @@ async fn kill_listening_processes_on_ports(ports: &[u16]) {
         .stderr(std::process::Stdio::null());
     hide_command_window(&mut cmd);
     let _ = cmd.status().await;
+
+    let wsl_cleanup = "$matches = Get-CimInstance Win32_Process | \
+        Where-Object { $_.Name -eq 'wsl.exe' -and $_.CommandLine -match 'llama-server' -and $_.CommandLine -match '--port 8084' }; \
+        foreach ($match in $matches) { Stop-Process -Id $match.ProcessId -Force -ErrorAction SilentlyContinue }";
+    let mut wsl_cmd = tokio::process::Command::new("powershell.exe");
+    wsl_cmd
+        .args([
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            wsl_cleanup,
+        ])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    hide_command_window(&mut wsl_cmd);
+    let _ = wsl_cmd.status().await;
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -867,13 +884,21 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
         .status()
         .await;
 
-    // Start the local Qwen lane and LiteLLM proxy before marking the desktop
-    // runtime ready. The backend can still fall back to Ollama, but Studio's
-    // primary local model route depends on these services.
-    let qwen_ok = start_qwen_fast_lane(root, backend.clone(), status.clone()).await;
-    if !qwen_ok {
-        let mut s = status.lock().await;
-        s.detail = "Qwen fast lane did not become ready; Ollama fallback remains available.".into();
+    // Warm the local Qwen lane in the background. Jarvis must come online even
+    // if WSL port forwarding or model load is slow, otherwise Studio appears
+    // offline while the model is still warming.
+    {
+        let qwen_root = root.to_path_buf();
+        let qwen_backend = backend.clone();
+        let qwen_status = status.clone();
+        tauri::async_runtime::spawn(async move {
+            let qwen_ok = start_qwen_fast_lane(&qwen_root, qwen_backend, qwen_status.clone()).await;
+            if !qwen_ok {
+                let mut s = qwen_status.lock().await;
+                s.detail =
+                    "Qwen fast lane did not become ready; Ollama fallback remains available.".into();
+            }
+        });
     }
 
     let litellm_ok = start_litellm_proxy(root, &uv_bin, backend.clone(), status.clone()).await;

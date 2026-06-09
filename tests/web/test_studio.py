@@ -152,6 +152,7 @@ def test_tauri_desktop_backend_lifecycle_clears_stale_ports():
         "stop_all_runtime_processes().await",
         "tauri::async_runtime::block_on",
         "stop_all_blocking",
+        "Jarvis must come online even",
     ]:
         assert marker in tauri
 
