@@ -1,0 +1,28 @@
+# Prototype only. Do not use this as the default Jarvis LiteLLM config until
+# Gemma 4 passes speed, context, JSON/tool-call, and Studio workflow gates.
+model_list:
+  - model_name: gemma4-26b-unsloth-local
+    litellm_params:
+      model: openai/gemma4-26b-unsloth-local
+      api_base: http://localhost:8087/v1
+      api_key: sk-noop
+  - model_name: qwen3.6-27b-local
+    litellm_params:
+      model: openai/qwen3.6-27b-local
+      api_base: http://localhost:8084/v1
+      api_key: sk-noop
+  - model_name: qwen3.6-35b-a3b-remote
+    litellm_params:
+      model: openai/qwen3.6-35b-a3b-rotorquant
+      api_base: http://192.168.1.191:4000/v1
+      api_key: sk-noop
+
+litellm_settings:
+  drop_params: true
+  success_callback: []
+  failure_callback: []
+  fallbacks:
+    - gemma4-26b-unsloth-local: ["qwen3.6-27b-local", "qwen3.6-35b-a3b-remote"]
+
+general_settings:
+  master_key: sk-local
