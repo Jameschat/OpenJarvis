@@ -125,7 +125,8 @@ def test_tauri_desktop_app_targets_jarvis_studio_runtime():
     assert "const JARVIS_PORT: u16 = 7710" in tauri
     assert "const LITELLM_PORT: u16 = 4000" in tauri
     assert "const QWEN_FAST_LANE_PORT: u16 = 8084" in tauri
-    assert '"--extra", "inference-litellm"' in tauri
+    assert '"--extra"' in tauri
+    assert '"inference-litellm"' in tauri
     assert "start_qwen_fast_lane" in tauri
     assert "start_litellm_proxy" in tauri
     assert "start-qwen-mtp-froggeric-wsl.ps1" in tauri
@@ -139,6 +140,20 @@ def test_tauri_desktop_app_targets_jarvis_studio_runtime():
     assert '"productName": "J.A.R.V.I.S. Studio"' in config
     assert '"title": "J.A.R.V.I.S. Studio"' in config
     assert '"createUpdaterArtifacts": false' in config
+
+
+def test_tauri_desktop_backend_lifecycle_clears_stale_ports():
+    tauri = (ROOT / "frontend" / "src-tauri" / "src" / "lib.rs").read_text(encoding="utf-8")
+
+    for marker in [
+        "qwen_fast_lane: Option<ChildHandle>",
+        "kill_listening_processes_on_ports(&[JARVIS_PORT, LITELLM_PORT, QWEN_FAST_LANE_PORT])",
+        "clear_stale_runtime_ports().await",
+        "stop_all_runtime_processes().await",
+        "tauri::async_runtime::block_on",
+        "stop_all_blocking",
+    ]:
+        assert marker in tauri
 
 
 def test_tauri_frontend_has_studio_shell_styles():

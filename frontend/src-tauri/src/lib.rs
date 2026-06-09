@@ -290,6 +290,7 @@ struct ChildHandle {
 impl ChildHandle {
     async fn kill(&mut self) {
         let _ = self.child.kill().await;
+        let _ = self.child.wait().await;
     }
 }
 
@@ -298,10 +299,11 @@ struct BackendManager {
     ollama: Option<ChildHandle>,
     jarvis: Option<ChildHandle>,
     litellm: Option<ChildHandle>,
+    qwen_fast_lane: Option<ChildHandle>,
 }
 
 impl BackendManager {
-    async fn stop_all(&mut self) {
+    async fn stop_all_runtime_processes(&mut self) {
         if let Some(ref mut h) = self.jarvis {
             h.kill().await;
         }
@@ -310,14 +312,25 @@ impl BackendManager {
             h.kill().await;
         }
         self.litellm = None;
+        if let Some(ref mut h) = self.qwen_fast_lane {
+            h.kill().await;
+        }
+        self.qwen_fast_lane = None;
         if let Some(ref mut h) = self.ollama {
             h.kill().await;
         }
         self.ollama = None;
+        clear_stale_runtime_ports().await;
     }
 }
 
 type SharedBackend = Arc<Mutex<BackendManager>>;
+
+fn stop_all_blocking(backend: SharedBackend) {
+    tauri::async_runtime::block_on(async move {
+        backend.lock().await.stop_all_runtime_processes().await;
+    });
+}
 
 // ---------------------------------------------------------------------------
 // Setup status (reported to frontend)
@@ -378,6 +391,50 @@ fn hide_command_window(cmd: &mut tokio::process::Command) {
 #[cfg(not(target_os = "windows"))]
 fn hide_command_window(_cmd: &mut tokio::process::Command) {}
 
+#[cfg(target_os = "windows")]
+async fn kill_listening_processes_on_ports(ports: &[u16]) {
+    if ports.is_empty() {
+        return;
+    }
+    let port_list = ports
+        .iter()
+        .map(|port| port.to_string())
+        .collect::<Vec<_>>()
+        .join(",");
+    let command = format!(
+        "$ports=@({}); \
+         Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | \
+         Where-Object {{ $ports -contains $_.LocalPort }} | \
+         Select-Object -ExpandProperty OwningProcess -Unique | \
+         Where-Object {{ $_ -gt 0 -and $_ -ne $PID }} | \
+         ForEach-Object {{ Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }}",
+        port_list
+    );
+    let mut cmd = tokio::process::Command::new("powershell.exe");
+    cmd.args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &command])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    hide_command_window(&mut cmd);
+    let _ = cmd.status().await;
+}
+
+#[cfg(not(target_os = "windows"))]
+async fn kill_listening_processes_on_ports(ports: &[u16]) {
+    for port in ports {
+        let _ = tokio::process::Command::new("fuser")
+            .args(["-k", &format!("{}/tcp", port)])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .await;
+    }
+}
+
+async fn clear_stale_runtime_ports() {
+    kill_listening_processes_on_ports(&[JARVIS_PORT, LITELLM_PORT, QWEN_FAST_LANE_PORT]).await;
+    tokio::time::sleep(Duration::from_millis(900)).await;
+}
+
 fn configure_uv_command(cmd: &mut tokio::process::Command) {
     let cache_dir = std::env::temp_dir().join("uv-cache-openjarvis");
     cmd.env("UV_CACHE_DIR", cache_dir);
@@ -394,7 +451,11 @@ async fn litellm_ready() -> bool {
     wait_for_url(&url, Duration::from_secs(1)).await
 }
 
-async fn start_qwen_fast_lane(root: &std::path::Path, status: SharedStatus) -> bool {
+async fn start_qwen_fast_lane(
+    root: &std::path::Path,
+    backend: SharedBackend,
+    status: SharedStatus,
+) -> bool {
     if qwen_fast_lane_ready().await {
         return true;
     }
@@ -426,10 +487,15 @@ async fn start_qwen_fast_lane(root: &std::path::Path, status: SharedStatus) -> b
     .current_dir(root);
     hide_command_window(&mut cmd);
 
-    if cmd.spawn().is_err() {
-        let mut s = status.lock().await;
-        s.detail = "Could not launch Qwen fast lane startup script.".into();
-        return false;
+    match cmd.spawn() {
+        Ok(child) => {
+            backend.lock().await.qwen_fast_lane = Some(ChildHandle { child });
+        }
+        Err(_) => {
+            let mut s = status.lock().await;
+            s.detail = "Could not launch Qwen fast lane startup script.".into();
+            return false;
+        }
     }
 
     let url = format!("http://127.0.0.1:{}/health", QWEN_FAST_LANE_PORT);
@@ -536,6 +602,13 @@ async fn pull_model(model: &str) -> Result<(), String> {
 // ---------------------------------------------------------------------------
 
 async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
+    {
+        let mut s = status.lock().await;
+        s.phase = "cleanup".into();
+        s.detail = "Clearing stale runtime ports...".into();
+    }
+    clear_stale_runtime_ports().await;
+
     // Phase 1: Start Ollama
     {
         let mut s = status.lock().await;
@@ -797,7 +870,7 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
     // Start the local Qwen lane and LiteLLM proxy before marking the desktop
     // runtime ready. The backend can still fall back to Ollama, but Studio's
     // primary local model route depends on these services.
-    let qwen_ok = start_qwen_fast_lane(root, status.clone()).await;
+    let qwen_ok = start_qwen_fast_lane(root, backend.clone(), status.clone()).await;
     if !qwen_ok {
         let mut s = status.lock().await;
         s.detail = "Qwen fast lane did not become ready; Ollama fallback remains available.".into();
@@ -947,7 +1020,7 @@ async fn start_backend(
 
 #[tauri::command]
 async fn stop_backend(backend: tauri::State<'_, SharedBackend>) -> Result<(), String> {
-    backend.lock().await.stop_all().await;
+    backend.lock().await.stop_all_runtime_processes().await;
     Ok(())
 }
 
@@ -1881,10 +1954,7 @@ pub fn run() {
         .expect("error while building OpenJarvis Desktop")
         .run(move |_app, event| {
             if let tauri::RunEvent::ExitRequested { .. } = event {
-                let b = backend.clone();
-                tauri::async_runtime::spawn(async move {
-                    b.lock().await.stop_all().await;
-                });
+                stop_all_blocking(backend.clone());
             }
         });
 }
