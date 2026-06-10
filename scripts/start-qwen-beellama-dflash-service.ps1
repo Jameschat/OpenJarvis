@@ -5,7 +5,11 @@ param(
     [int]$Port = 8082,
     [int]$ContextTokens = 4096,
     [int]$DraftMax = 8,
-    [int]$WaitSeconds = 180
+    [int]$WaitSeconds = 180,
+    # DFlash speculation in beellama v0.2.0 corrupts generation once a session
+    # passes ~512 committed tokens ('////' output; CUDA misaligned-address crash
+    # at cross-ctx 512). Verified 2026-06-10. Keep OFF until a fixed release.
+    [switch]$EnableDFlash
 )
 
 $ErrorActionPreference = "Stop"
@@ -26,7 +30,7 @@ if (-not (Test-Path -LiteralPath $BeeLlamaServer)) {
 if (-not (Test-Path -LiteralPath $Model)) {
     throw "Qwen target GGUF missing: $Model"
 }
-if (-not (Test-Path -LiteralPath $DraftModel)) {
+if ($EnableDFlash -and -not (Test-Path -LiteralPath $DraftModel)) {
     throw "Qwen DFlash drafter GGUF missing: $DraftModel"
 }
 
@@ -38,15 +42,11 @@ $stderr = Join-Path $logDir "qwen-beellama-8082.err.log"
 
 $argsList = @(
     "-m", $Model,
-    "--spec-draft-model", $DraftModel,
-    "--spec-type", "dflash",
-    "--spec-dflash-cross-ctx", "512",
     "--host", "127.0.0.1",
     "--port", "$Port",
     "-np", "1",
     "--kv-unified",
     "-ngl", "all",
-    "--spec-draft-ngl", "all",
     "-b", "2048",
     "-ub", "512",
     "--ctx-size", "$ContextTokens",
@@ -55,15 +55,29 @@ $argsList = @(
     "--flash-attn", "on",
     "--cache-ram", "0",
     "--jinja",
+    "--reasoning", "off",
     "--no-mmap",
     "--mlock",
     "--no-host",
     "--temp", "0.6",
     "--top-k", "20",
     "--top-p", "1.0",
-    "--min-p", "0.0",
-    "--spec-draft-n-max", "$DraftMax"
+    "--min-p", "0.0"
 )
+
+if ($EnableDFlash) {
+    $argsList += @(
+        "--spec-draft-model", $DraftModel,
+        "--spec-type", "dflash",
+        # cross-ctx must cover the full context: at 512, sessions past 512
+        # committed tokens produced invalid draft tokens then a CUDA
+        # misaligned-address crash (observed 2026-06-10, beellama v0.2.0).
+        # Even at 16384, output past ~512 tokens was corrupted ('////').
+        "--spec-dflash-cross-ctx", "$ContextTokens",
+        "--spec-draft-ngl", "all",
+        "--spec-draft-n-max", "$DraftMax"
+    )
+}
 
 function ConvertTo-QuotedArgument {
     param([string]$Value)
@@ -73,14 +87,15 @@ function ConvertTo-QuotedArgument {
     return '"' + ($Value -replace '\\', '\\' -replace '"', '\"') + '"'
 }
 
+$serverArgs = ($argsList | ForEach-Object { ConvertTo-QuotedArgument $_ }) -join " "
+# Launch via cmd so stdout/stderr land in dist\ log files without pipe
+# management (a crashed server otherwise dies silently with no diagnostics).
 $psi = [System.Diagnostics.ProcessStartInfo]::new()
-$psi.FileName = $BeeLlamaServer
-$psi.Arguments = ($argsList | ForEach-Object { ConvertTo-QuotedArgument $_ }) -join " "
+$psi.FileName = "cmd.exe"
+$psi.Arguments = "/c `"`"$BeeLlamaServer`" $serverArgs > `"$stdout`" 2> `"$stderr`"`""
 $psi.WorkingDirectory = Split-Path -Parent $BeeLlamaServer
 $psi.UseShellExecute = $false
 $psi.CreateNoWindow = $true
-$psi.RedirectStandardOutput = $false
-$psi.RedirectStandardError = $false
 $process = [System.Diagnostics.Process]::Start($psi)
 
 Write-Host "Started BeeLlama DFlash PID $($process.Id) on port $Port"

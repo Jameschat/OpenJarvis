@@ -35,7 +35,14 @@ _SERVICES = [
         "label": "Qwen Fast Lane",
         "url": "http://127.0.0.1:8084/health",
         "required": True,
-        "action": "Run scripts\\start-qwen-mtp-froggeric-wsl.ps1.",
+        "action": "Run schtasks /Run /TN JarvisStudioStack (or scripts\\start-studio-stack.ps1).",
+    },
+    {
+        "id": "qwen_beellama_lane",
+        "label": "Qwen BeeLlama Lane (optional)",
+        "url": "http://127.0.0.1:8082/health",
+        "required": False,
+        "action": "Optional fallback lane: scripts\\start-qwen-beellama-dflash-service.ps1.",
     },
     {
         "id": "ollama",
@@ -111,6 +118,31 @@ def summarize_runtime_health(status: dict[str, Any]) -> str:
     if not down_required:
         return "Jarvis runtime ready: required services are online."
     return "Jarvis runtime blocked: " + ", ".join(str(label) for label in down_required)
+
+
+def mark_runtime_service_ready(
+    status: dict[str, Any],
+    service_id: str,
+    *,
+    detail: str = "service already answered this request",
+) -> None:
+    services = status.get("services") or []
+    for service in services:
+        if service.get("id") == service_id:
+            service["ok"] = True
+            service["status_code"] = 200
+            service["detail"] = detail
+            service["action"] = ""
+            break
+
+    required_down = [
+        service.get("id")
+        for service in services
+        if service.get("required") and not service.get("ok")
+    ]
+    status["required_down"] = required_down
+    status["ok"] = not required_down
+    status["summary"] = summarize_runtime_health(status)
 
 
 def _probe_url(url: str, timeout_s: float) -> tuple[bool, int | None, str]:

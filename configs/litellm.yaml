@@ -34,17 +34,22 @@ model_list:
       model: openai/gpt-4o-mini
       api_key: os.environ/OPENAI_API_KEY
 
-  # Fallback tier 2 — local WSL MTP/Froggeric fast lane. Never rate-limited.
-  # Benchmarked 2026-05-26 on RTX 4090, isolated on GPU:
-  # ~52-72 t/s for 256-token Studio planning prompts. Do not co-run with
-  # BeeLlama during benchmarks; they contend for the same GPU.
+  # Fallback tier 2 — WSL MTP/Froggeric fast lane (8084). PRIMARY local lane.
+  # 2026-06-10/11 investigation: BeeLlama v0.2.0 corrupts generation on
+  # prompts past ~512 tokens ('////' output; DFlash also CUDA-crashes), so
+  # it must NOT be primary. The WSL lane is correct and fast (~80-110 t/s
+  # decode, 16K ctx); its old fragility (VM idle-stop, parent-death kills)
+  # is fixed by the setsid launch in scripts\start-studio-stack.ps1.
+  # Do not co-load two 27B lanes on the 4090 — VRAM overcommit garbles output.
   - model_name: qwen3.6-27b-local
     litellm_params:
       model: openai/qwen3.6-27b-local
       api_base: http://localhost:8084/v1
       api_key: sk-noop
 
-  # Local fallback if the WSL MTP lane is not started or proves unstable.
+  # Windows-native BeeLlama lane (8082) — fallback only, plain decode (no
+  # DFlash, ~30 t/s). Only trustworthy for short prompts until the long-prompt
+  # corruption is fixed upstream; kept for emergencies and benchmarks.
   - model_name: qwen3.6-27b-beellama
     litellm_params:
       model: openai/qwen3.6-27b-local

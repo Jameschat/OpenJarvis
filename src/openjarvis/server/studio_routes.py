@@ -39,9 +39,18 @@ async def studio_state(
 @studio_router.get("/runtime-health")
 async def studio_runtime_health() -> dict[str, Any]:
     try:
-        from openjarvis.tools.runtime_health import check_runtime_health
+        from openjarvis.tools.runtime_health import (
+            check_runtime_health,
+            mark_runtime_service_ready,
+        )
 
-        return check_runtime_health()
+        health = check_runtime_health()
+        mark_runtime_service_ready(
+            health,
+            "jarvis_backend",
+            detail="runtime health request succeeded",
+        )
+        return health
     except Exception as exc:
         raise _internal_error("/studio/runtime-health", exc) from exc
 

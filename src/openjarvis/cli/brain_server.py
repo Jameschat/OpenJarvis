@@ -1429,9 +1429,17 @@ def _studio_state(project_id: str | None = None, chat_id: str | None = None) -> 
     state["system"] = _system_health_snapshot()
     state["qwen_runtime"] = _qwen_runtime_status()
     try:
-        from openjarvis.tools.runtime_health import check_runtime_health
+        from openjarvis.tools.runtime_health import (
+            check_runtime_health,
+            mark_runtime_service_ready,
+        )
 
         state["runtime_health"] = check_runtime_health(timeout_s=0.35)
+        mark_runtime_service_ready(
+            state["runtime_health"],
+            "jarvis_backend",
+            detail="studio state request succeeded",
+        )
     except Exception:
         logger.debug("runtime health snapshot unavailable", exc_info=True)
         state["runtime_health"] = {
@@ -1792,9 +1800,18 @@ class _Handler(SimpleHTTPRequestHandler):
             self._json_response(200, {"ok": True, "service": "jarvis_studio"})
         elif self.path == "/studio/runtime-health":
             try:
-                from openjarvis.tools.runtime_health import check_runtime_health
+                from openjarvis.tools.runtime_health import (
+                    check_runtime_health,
+                    mark_runtime_service_ready,
+                )
 
-                self._json_response(200, check_runtime_health())
+                health = check_runtime_health()
+                mark_runtime_service_ready(
+                    health,
+                    "jarvis_backend",
+                    detail="runtime health request succeeded",
+                )
+                self._json_response(200, health)
             except Exception:
                 logger.exception("/studio/runtime-health failed")
                 self._json_response(500, {"error": "internal error", "ref": _err_ref()})
