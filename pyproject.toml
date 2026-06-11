@@ -187,4 +187,7 @@ select = ["E", "F", "I", "W"]
 [dependency-groups]
 dev = [
     "maturin>=1.12.6",
+    "pytest>=8",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=5",
 ]
