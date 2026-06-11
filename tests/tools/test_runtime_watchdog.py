@@ -87,3 +87,9 @@ def test_watchdog_install_script_registers_minute_task():
     assert "/SC MINUTE" in script
     assert "/MO" in script
     assert "watch-jarvis-runtime.ps1" in script
+
+
+def test_watchdog_uses_runtime_timeout_that_tolerates_slow_backend():
+    source = Path(runtime_watchdog.__file__).read_text(encoding="utf-8")
+
+    assert "check_runtime_health(timeout_s=5.0)" in source

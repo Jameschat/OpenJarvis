@@ -58,7 +58,7 @@ def check_runtime_health(
     *,
     probe: Probe | None = None,
     qwen_status_path: Path | str | None = None,
-    timeout_s: float = 1.5,
+    timeout_s: float = 5.0,
 ) -> dict[str, Any]:
     probe_fn = probe or _probe_url
     services: list[dict[str, Any]] = []

@@ -39,7 +39,7 @@ def run_watchdog(
     report_path: Path | str | None = None,
     dry_run: bool = False,
 ) -> dict[str, Any]:
-    health = (check_health or (lambda: check_runtime_health(timeout_s=1.5)))()
+    health = (check_health or (lambda: check_runtime_health(timeout_s=5.0)))()
     required_down = list(health.get("required_down") or [])
     unhealthy = bool(required_down)
     action = "none"
