@@ -1,14 +1,17 @@
 param(
-    [string]$BeeLlamaServer = "C:\tmp\beellama-v0.2.0\extract\llama-server.exe",
+    # v0.3.2 preview benchmarked 2026-06-11: plain decode correct at all prompt
+    # sizes, kvarn5 KV matches q8_0 speed with ~600MB less VRAM.
+    [string]$BeeLlamaServer = "C:\tmp\beellama-v0.3.2\extract\llama-server.exe",
     [string]$Model = "E:\Claude\models\Qwen3.6-27B-Q4_K_M.gguf",
     [string]$DraftModel = "E:\Claude\models\Qwen3.6-27B-DFlash-Q4_K_M.gguf",
     [int]$Port = 8082,
-    [int]$ContextTokens = 4096,
+    [int]$ContextTokens = 16384,
+    [string]$CacheType = "kvarn5",
     [int]$DraftMax = 8,
-    [int]$WaitSeconds = 180,
-    # DFlash speculation in beellama v0.2.0 corrupts generation once a session
-    # passes ~512 committed tokens ('////' output; CUDA misaligned-address crash
-    # at cross-ctx 512). Verified 2026-06-10. Keep OFF until a fixed release.
+    [int]$WaitSeconds = 300,
+    # DFlash speculation corrupts/crashes on multi-batch prompts in BOTH
+    # v0.2.0 and v0.3.2 (verified 2026-06-10 and 2026-06-11), and was SLOWER
+    # than plain decode when it did work (15 vs 31 t/s). Keep OFF.
     [switch]$EnableDFlash
 )
 
@@ -50,8 +53,8 @@ $argsList = @(
     "-b", "2048",
     "-ub", "512",
     "--ctx-size", "$ContextTokens",
-    "--cache-type-k", "q4_0",
-    "--cache-type-v", "q4_0",
+    "--cache-type-k", $CacheType,
+    "--cache-type-v", $CacheType,
     "--flash-attn", "on",
     "--cache-ram", "0",
     "--jinja",

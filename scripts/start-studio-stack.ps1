@@ -14,10 +14,20 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+# At boot/logon this task can fire before the E: drive (and WSL service) are
+# ready. Wait for the repo root instead of dying with an unwritable transcript.
+$bootDeadline = (Get-Date).AddSeconds(180)
+while (-not (Test-Path $RepoRoot) -and (Get-Date) -lt $bootDeadline) { Start-Sleep -Seconds 5 }
+if (-not (Test-Path $RepoRoot)) { exit 2 }
+
 $logDir = Join-Path $RepoRoot "dist"
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 Start-Transcript -Path (Join-Path $logDir "start-studio-stack.transcript.log") -Append | Out-Null
 trap { Stop-Transcript | Out-Null; break }
+
+# Warm the WSL service before the lane launch relies on it.
+try { wsl.exe -d $WslDistro -- true 2>$null | Out-Null } catch { Start-Sleep -Seconds 10 }
 
 function Test-Http {
     param([string]$Url, [int]$TimeoutSec = 3)
