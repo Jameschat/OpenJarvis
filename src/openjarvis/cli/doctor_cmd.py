@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import sys
 from dataclasses import asdict, dataclass
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import click
@@ -14,6 +15,7 @@ from rich.console import Console
 from rich.table import Table
 
 from openjarvis.core.config import DEFAULT_CONFIG_PATH, load_config
+from openjarvis.tools.runtime_health import check_runtime_health
 
 
 @dataclass
@@ -287,6 +289,170 @@ def _check_nodejs() -> CheckResult:
         return CheckResult("Node.js", "warn", f"Error checking version: {exc}")
 
 
+def _run_python_module(
+    args: list[str], *, timeout: int = 20
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, "-m", *args],
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+
+
+def _check_pip_available() -> CheckResult:
+    """Check whether the active venv can run pip."""
+    try:
+        result = _run_python_module(["pip", "--version"], timeout=10)
+    except Exception as exc:
+        return CheckResult(
+            "Pip",
+            "fail",
+            f"pip unavailable: {exc}",
+            details="Repair with: python -m ensurepip or bundled python -m pip --python .venv\\Scripts\\python.exe install pip.",
+        )
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "pip returned non-zero").strip()
+        return CheckResult(
+            "Pip",
+            "fail",
+            "pip unavailable",
+            details=detail[:500],
+        )
+    return CheckResult("Pip", "ok", (result.stdout or "pip available").strip())
+
+
+def _check_pytest_available() -> CheckResult:
+    """Check whether pytest is installed in the active venv."""
+    try:
+        result = _run_python_module(["pytest", "--version"], timeout=10)
+    except Exception as exc:
+        return CheckResult(
+            "Pytest",
+            "fail",
+            f"pytest unavailable: {exc}",
+            details="Install the dev test runner into the active venv before claiming verification passed.",
+        )
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "pytest returned non-zero").strip()
+        return CheckResult("Pytest", "fail", "pytest unavailable", details=detail[:500])
+    return CheckResult("Pytest", "ok", (result.stdout or "pytest available").strip())
+
+
+def _check_venv_integrity() -> CheckResult:
+    """Run pip check so broken package metadata is visible in doctor."""
+    try:
+        result = _run_python_module(["pip", "check"], timeout=30)
+    except Exception as exc:
+        return CheckResult(
+            "Venv integrity",
+            "warn",
+            f"pip check could not run: {exc}",
+            details="This usually means the active .venv is incomplete or pip is missing.",
+        )
+    output = (result.stdout or result.stderr or "").strip()
+    if result.returncode != 0:
+        return CheckResult(
+            "Venv integrity",
+            "warn",
+            "pip check failed",
+            details=output[:800] or "pip check returned non-zero",
+        )
+    return CheckResult("Venv integrity", "ok", output or "No broken requirements found")
+
+
+def _check_runtime_stack() -> CheckResult:
+    """Summarize the local Studio runtime stack from the existing health probes."""
+    try:
+        status = check_runtime_health(timeout_s=0.75)
+    except Exception as exc:
+        return CheckResult(
+            "Jarvis runtime stack", "fail", f"Runtime health failed: {exc}"
+        )
+
+    summary = str(status.get("summary") or "Runtime health unavailable")
+    required_down = [str(item) for item in status.get("required_down") or []]
+    if required_down:
+        return CheckResult(
+            "Jarvis runtime stack",
+            "fail",
+            summary,
+            details=", ".join(required_down),
+        )
+    return CheckResult("Jarvis runtime stack", "ok", summary)
+
+
+def _check_nvidia_memory_clock() -> CheckResult:
+    """Warn if NVIDIA memory clock looks above the known-stable RTX 4090 stock range."""
+    nvidia_smi = shutil.which("nvidia-smi")
+    if not nvidia_smi:
+        return CheckResult("NVIDIA GPU", "warn", "nvidia-smi not found")
+    try:
+        result = subprocess.run(
+            [
+                nvidia_smi,
+                "--query-gpu=name,clocks.mem,memory.used,memory.total",
+                "--format=csv,noheader,nounits",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except Exception as exc:
+        return CheckResult("NVIDIA GPU", "warn", f"nvidia-smi failed: {exc}")
+    if result.returncode != 0:
+        return CheckResult(
+            "NVIDIA GPU",
+            "warn",
+            "nvidia-smi returned non-zero",
+            details=result.stderr[:500],
+        )
+    line = (result.stdout or "").strip().splitlines()[0] if result.stdout else ""
+    parts = [part.strip() for part in line.split(",")]
+    if len(parts) < 4:
+        return CheckResult(
+            "NVIDIA GPU",
+            "warn",
+            "Could not parse nvidia-smi output",
+            details=line,
+        )
+    name, clock_raw, used_raw, total_raw = parts[:4]
+    try:
+        mem_clock = int(float(clock_raw))
+    except ValueError:
+        return CheckResult(
+            "NVIDIA GPU", "warn", "Could not parse memory clock", details=line
+        )
+    message = f"{name}: memory clock {mem_clock} MHz, VRAM {used_raw}/{total_raw} MiB"
+    if mem_clock > 10600:
+        return CheckResult(
+            "NVIDIA GPU",
+            "warn",
+            message,
+            details=(
+                "4090 memory clock above the known-stable ~10501 MHz stock range; "
+                "reset MSI Afterburner memory offset to 0 before benchmarking."
+            ),
+        )
+    return CheckResult("NVIDIA GPU", "ok", message)
+
+
+def _check_plaintext_launcher() -> CheckResult:
+    """Surface the known plaintext launcher-secret risk without reading its contents."""
+    launcher = Path(r"E:\Claude\OpenJarvis\jarvis.bat")
+    if launcher.exists():
+        return CheckResult(
+            "Launcher secrets",
+            "warn",
+            "jarvis.bat exists and may contain live secrets",
+            details=(
+                "Do not commit or expose this file. Planned hardening: move secrets "
+                "to a non-repo .env or Windows Credential Manager."
+            ),
+        )
+    return CheckResult("Launcher secrets", "ok", "No jarvis.bat found at canonical path")
+
+
 # -- Main command -------------------------------------------------------------
 
 _STATUS_ICONS = {
@@ -296,17 +462,24 @@ _STATUS_ICONS = {
 }
 
 
-def _run_all_checks() -> List[CheckResult]:
-    """Run all diagnostic checks and return results."""
+def _run_all_checks(*, quick: bool = False) -> List[CheckResult]:
+    """Run diagnostic checks and return results."""
     checks: List[CheckResult] = []
     checks.append(_check_python_version())
     checks.append(_check_config_exists())
     checks.append(_check_config_parses())
-    checks.extend(_check_engines())
-    checks.extend(_check_models())
-    checks.append(_check_default_model())
-    checks.extend(_check_optional_deps())
+    if not quick:
+        checks.extend(_check_engines())
+        checks.extend(_check_models())
+        checks.append(_check_default_model())
+        checks.extend(_check_optional_deps())
     checks.append(_check_nodejs())
+    checks.append(_check_pip_available())
+    checks.append(_check_pytest_available())
+    checks.append(_check_venv_integrity())
+    checks.append(_check_runtime_stack())
+    checks.append(_check_nvidia_memory_clock())
+    checks.append(_check_plaintext_launcher())
     checks.append(_check_security_profile())
     return checks
 
@@ -318,9 +491,14 @@ def _results_to_dicts(checks: List[CheckResult]) -> List[Dict[str, Any]]:
 
 @click.command()
 @click.option("--json", "as_json", is_flag=True, help="Output results as JSON.")
-def doctor(as_json: bool) -> None:
+@click.option(
+    "--quick",
+    is_flag=True,
+    help="Skip slow engine/model enumeration and run stabilization checks only.",
+)
+def doctor(as_json: bool, quick: bool) -> None:
     """Run diagnostic checks on your OpenJarvis installation."""
-    checks = _run_all_checks()
+    checks = _run_all_checks(quick=quick)
 
     if as_json:
         click.echo(json.dumps(_results_to_dicts(checks), indent=2))

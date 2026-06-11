@@ -226,17 +226,30 @@ def main(argv: list[str] | None = None) -> int:
         help="path to the eval cases JSON",
     )
     parser.add_argument("--model", default="qwen3.6-27b-local")
+    parser.add_argument(
+        "--label", default="qwen-accuracy", help="label to print in the report"
+    )
+    parser.add_argument(
+        "--min-pass-rate",
+        type=float,
+        default=0.0,
+        help="fail if pass rate is below this decimal threshold",
+    )
     parser.add_argument("--out", default="", help="optional path to write the markdown report")
     args = parser.parse_args(argv)
 
     cases = load_cases(args.cases)
-    report = run_eval(cases, run_task=lambda c: default_run_task(c, model=args.model))
+    report = run_eval(
+        cases,
+        run_task=lambda c: default_run_task(c, model=args.model),
+        label=args.label,
+    )
     when = datetime.now(timezone.utc).isoformat(timespec="seconds")
     md = format_report_markdown(report, when=when)
     print(md)
     if args.out:
         Path(args.out).write_text(md, encoding="utf-8")
-    return 0 if report.pass_rate >= 0 else 1
+    return 0 if report.pass_rate >= args.min_pass_rate else 1
 
 
 if __name__ == "__main__":

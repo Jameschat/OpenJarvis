@@ -10,10 +10,15 @@ from click.testing import CliRunner
 
 from openjarvis.cli import cli
 from openjarvis.cli.doctor_cmd import (
+    CheckResult,
     _check_config_exists,
     _check_default_model,
     _check_nodejs,
+    _check_pip_available,
+    _check_pytest_available,
     _check_python_version,
+    _check_runtime_stack,
+    _check_venv_integrity,
 )
 
 
@@ -70,6 +75,29 @@ class TestDoctorJsonOutput:
             assert "name" in entry
             assert "status" in entry
             assert "message" in entry
+
+    def test_doctor_quick_json_skips_slow_engine_model_checks(self) -> None:
+        with (
+            patch("openjarvis.cli.doctor_cmd._check_engines") as engines,
+            patch("openjarvis.cli.doctor_cmd._check_models") as models,
+            patch(
+                "openjarvis.cli.doctor_cmd._check_runtime_stack",
+                return_value=CheckResult(
+                    name="Jarvis runtime stack",
+                    status="ok",
+                    message="ready",
+                    details=None,
+                ),
+            ),
+        ):
+            result = CliRunner().invoke(cli, ["doctor", "--quick", "--json"])
+
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        names = {entry["name"] for entry in data}
+        assert "Jarvis runtime stack" in names
+        engines.assert_not_called()
+        models.assert_not_called()
 
 
 class TestCheckPythonVersion:
@@ -164,3 +192,55 @@ class TestCheckNodejs:
         assert "Not found" in result.message
         assert result.details is not None
         assert "OpenClaw" not in result.details
+
+
+class TestJarvisStabilityChecks:
+    def test_check_pip_available_reports_missing_pip(self) -> None:
+        with patch("subprocess.run", side_effect=RuntimeError("no pip")):
+            result = _check_pip_available()
+
+        assert result.status == "fail"
+        assert "pip unavailable" in result.message
+        assert result.details is not None
+        assert "repair" in result.details.lower()
+
+    def test_check_pytest_available_reports_version(self) -> None:
+        with patch(
+            "subprocess.run",
+            return_value=MagicMock(returncode=0, stdout="pytest 9.0.3\n", stderr=""),
+        ):
+            result = _check_pytest_available()
+
+        assert result.status == "ok"
+        assert result.name == "Pytest"
+        assert "9.0.3" in result.message
+
+    def test_check_venv_integrity_warns_on_pip_check_failure(self) -> None:
+        with patch(
+            "subprocess.run",
+            return_value=MagicMock(returncode=1, stdout="", stderr="broken package"),
+        ):
+            result = _check_venv_integrity()
+
+        assert result.status == "warn"
+        assert "pip check failed" in result.message
+        assert "broken package" in result.details
+
+    def test_check_runtime_stack_summarizes_down_required_services(self) -> None:
+        fake_health = {
+            "ok": False,
+            "summary": "Jarvis runtime blocked: Qwen Fast Lane",
+            "required_down": ["qwen_fast_lane"],
+            "services": [
+                {"id": "jarvis_backend", "ok": True, "required": True},
+                {"id": "qwen_fast_lane", "ok": False, "required": True},
+            ],
+        }
+        with patch(
+            "openjarvis.cli.doctor_cmd.check_runtime_health", return_value=fake_health
+        ):
+            result = _check_runtime_stack()
+
+        assert result.status == "fail"
+        assert "Qwen Fast Lane" in result.message
+        assert "qwen_fast_lane" in result.details

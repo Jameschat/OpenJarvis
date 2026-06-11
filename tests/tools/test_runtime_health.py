@@ -144,3 +144,41 @@ def test_gitignore_keeps_runtime_traces_package_packagable():
 
     assert "\n/traces/\n" in f"\n{gitignore}\n"
     assert "\ntraces/\n" not in f"\n{gitignore}\n"
+
+
+def test_qwen_eval_baseline_script_invokes_eval_module():
+    script = (ROOT / "scripts" / "run-qwen-eval-baseline.ps1").read_text(
+        encoding="utf-8"
+    )
+
+    assert "openjarvis.tools.qwen_eval" in script
+    assert "qwen-eval-baseline-latest.md" in script
+    assert "--min-pass-rate" in script
+    assert "UV_CACHE_DIR" in script
+
+
+def test_dev_env_check_script_checks_pip_and_pytest():
+    script = (ROOT / "scripts" / "check-jarvis-dev-env.ps1").read_text(
+        encoding="utf-8"
+    )
+
+    assert "-m pip check" in script
+    assert "-m pytest --version" in script
+    assert "UV_CACHE_DIR" in script
+
+
+def test_qwen_mtp_launcher_disables_warmup():
+    script = (ROOT / "scripts" / "start-qwen-mtp-froggeric-wsl.ps1").read_text(
+        encoding="utf-8"
+    )
+
+    assert "--no-warmup" in script
+
+
+def test_studio_stack_uses_robust_qwen_launcher():
+    script = (ROOT / "scripts" / "start-studio-stack.ps1").read_text(
+        encoding="utf-8"
+    )
+
+    assert "scripts\\start-qwen-mtp-froggeric-wsl.ps1" in script
+    assert "setsid nohup bash /mnt/e/Claude/OpenJarvis/dist/qwen-mtp-froggeric-8084.sh" not in script

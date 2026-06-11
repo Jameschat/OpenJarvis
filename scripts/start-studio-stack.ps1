@@ -51,29 +51,12 @@ if (Test-Http "http://127.0.0.1:8084/health") {
     Write-Host "[qwen] WSL MTP lane already healthy on 8084"
     $qwenHealthy = $true
 } else {
-    $launchScript = Join-Path $RepoRoot "dist\qwen-mtp-froggeric-8084.sh"
-    if (Test-Path $launchScript) {
-        # setsid + nohup detaches llama-server from this session inside WSL so
-        # the server (and the WSL VM) survive any parent process dying.
-        # [l]lama keeps pgrep from matching this bash -c command line itself.
-        $wslLog = "/mnt/e/Claude/OpenJarvis/dist/qwen-mtp-froggeric-8084.wsl.log"
-        wsl.exe -d $WslDistro -- bash -c "pgrep -f '[l]lama-server.*8084' >/dev/null || setsid nohup bash /mnt/e/Claude/OpenJarvis/dist/qwen-mtp-froggeric-8084.sh > $wslLog 2>&1 < /dev/null &"
-        Write-Host "[qwen] WSL llama-server launch requested (detached); model load takes ~10-15 min"
-
-        $deadline = (Get-Date).AddSeconds($QwenWaitSeconds)
-        while ((Get-Date) -lt $deadline) {
-            Start-Sleep -Seconds 15
-            # cmd /c absorbs curl's stderr; with $ErrorActionPreference=Stop a
-            # native stderr line becomes a terminating error in PS 5.1.
-            cmd /c "wsl.exe -d $WslDistro -- curl -fsS --max-time 3 http://127.0.0.1:8084/health >nul 2>nul"
-            if ($LASTEXITCODE -eq 0) { break }
-        }
-        # WSL localhost forwarding exposes 8084 on Windows once the listener binds.
-        $deadline = (Get-Date).AddSeconds(45)
-        while ((Get-Date) -lt $deadline -and -not (Test-Http "http://127.0.0.1:8084/health")) { Start-Sleep -Seconds 3 }
+    $qwenScript = Join-Path $RepoRoot "scripts\start-qwen-mtp-froggeric-wsl.ps1"
+    if (Test-Path $qwenScript) {
+        & powershell.exe -ExecutionPolicy Bypass -File $qwenScript -WslDistro $WslDistro -WaitSeconds $QwenWaitSeconds
         $qwenHealthy = Test-Http "http://127.0.0.1:8084/health"
     } else {
-        Write-Warning "[qwen] WSL launch script missing: $launchScript"
+        Write-Warning "[qwen] WSL launcher missing: $qwenScript"
     }
 
     if ($qwenHealthy) {

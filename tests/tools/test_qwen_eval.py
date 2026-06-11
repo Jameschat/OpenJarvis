@@ -75,3 +75,57 @@ def test_format_report_markdown_has_headline_and_tables():
     assert "| code |" in md
     assert "| a | code | PASS |" in md
     assert "| b | code | FAIL |" in md
+
+
+def test_qwen_eval_main_writes_report_and_fails_below_threshold(tmp_path, monkeypatch):
+    cases_path = tmp_path / "cases.json"
+    cases_path.write_text(
+        '{"cases":[{"id":"a","prompt":"p","expect":{"contains":["needle"]}}]}',
+        encoding="utf-8",
+    )
+    out_path = tmp_path / "report.md"
+    monkeypatch.setattr(
+        qwen_eval, "default_run_task", lambda case, model="", timeout=0: "no match"
+    )
+
+    exit_code = qwen_eval.main(
+        [
+            "--cases",
+            str(cases_path),
+            "--out",
+            str(out_path),
+            "--label",
+            "baseline-test",
+            "--min-pass-rate",
+            "1.0",
+        ]
+    )
+
+    assert exit_code == 1
+    report = out_path.read_text(encoding="utf-8")
+    assert "baseline-test" in report
+    assert "Pass rate: 0/1 = 0%" in report
+
+
+def test_qwen_eval_main_passes_when_threshold_is_met(tmp_path, monkeypatch):
+    cases_path = tmp_path / "cases.json"
+    cases_path.write_text(
+        '{"cases":[{"id":"a","prompt":"p","expect":{"contains":["needle"]}}]}',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        qwen_eval, "default_run_task", lambda case, model="", timeout=0: "needle"
+    )
+
+    exit_code = qwen_eval.main(
+        [
+            "--cases",
+            str(cases_path),
+            "--label",
+            "baseline-test",
+            "--min-pass-rate",
+            "1.0",
+        ]
+    )
+
+    assert exit_code == 0
