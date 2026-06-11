@@ -1,7 +1,8 @@
 param(
     [string]$WslDistro = "JarvisUbuntu",
     [string]$Server = "/root/llama.cpp-turboq-mtp/build/bin/llama-server",
-    [string]$Model = "/mnt/e/Claude/models/Qwen3.6-27B-Q4_K_M-mtp.gguf",
+    [string]$Model = "/root/models/Qwen3.6-27B-Q4_K_M-mtp.gguf",
+    [string]$FallbackModel = "/mnt/e/Claude/models/Qwen3.6-27B-Q4_K_M-mtp.gguf",
     [string]$ChatTemplate = "/mnt/e/Claude/OpenJarvis/configs/qwen/froggeric-chat-template.jinja",
     [int]$Port = 8084,
     [int]$ContextTokens = 16384,
@@ -35,6 +36,17 @@ function Invoke-WslBashExit {
     param([string]$Command)
     & wsl.exe -d $WslDistro -- bash -lc $Command | Out-Null
     return $LASTEXITCODE
+}
+
+function Convert-ToBashSingleQuoted {
+    param([string]$Value)
+    return "'" + $Value.Replace("'", "'\''") + "'"
+}
+
+function Test-WslFile {
+    param([string]$Path)
+    $quoted = Convert-ToBashSingleQuoted -Value $Path
+    return ((Invoke-WslBashExit -Command "test -f $quoted") -eq 0)
 }
 
 function Test-WslPortOpen {
@@ -140,10 +152,20 @@ $stdout = Join-Path $logDir "qwen-mtp-froggeric-8084.log"
 $stderr = Join-Path $logDir "qwen-mtp-froggeric-8084.err.log"
 $launchScript = Join-Path $logDir "qwen-mtp-froggeric-8084.sh"
 
+$modelToUse = $Model
+if (-not (Test-WslFile -Path $modelToUse)) {
+    if ($FallbackModel -and (Test-WslFile -Path $FallbackModel)) {
+        Write-Warning "Qwen WSL ext4 model missing at $Model; falling back to $FallbackModel"
+        $modelToUse = $FallbackModel
+    } else {
+        throw "Qwen model not found in WSL at $Model or fallback $FallbackModel"
+    }
+}
+
 $bashCommand = @"
 set -euo pipefail
 exec $Server \
-  -m $Model \
+  -m $modelToUse \
   --host 0.0.0.0 \
   --port $Port \
   -np 1 \
