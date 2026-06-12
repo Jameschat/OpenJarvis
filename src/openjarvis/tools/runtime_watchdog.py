@@ -84,6 +84,39 @@ def restart_qwen_lane() -> None:
         raise RuntimeError(detail)
 
 
+def _watchdog_always() -> bool:
+    return os.environ.get("OPENJARVIS_WATCHDOG_ALWAYS", "0").strip().lower() in (
+        "1",
+        "true",
+        "on",
+    )
+
+
+def desktop_app_running() -> bool:
+    """True when the Jarvis desktop app is open (operator gate, 2026-06-13).
+
+    Self-healing only runs while the operator actually has the app open —
+    when it's closed (gaming, away), the watchdog must leave the machine
+    alone. Detection failure fails CLOSED for the same reason. Headless
+    deployments opt back into always-heal via OPENJARVIS_WATCHDOG_ALWAYS=1.
+    """
+    names = os.environ.get(
+        "OPENJARVIS_WATCHDOG_APP_NAMES",
+        "openjarvis-desktop.exe,Jarvis.exe",
+    )
+    targets = [n.strip().lower() for n in names.split(",") if n.strip()]
+    try:
+        out = subprocess.run(
+            ["tasklist", "/FO", "CSV", "/NH"],
+            capture_output=True,
+            text=True,
+            timeout=20,
+        ).stdout.lower()
+    except Exception:
+        return False
+    return any(t in out for t in targets)
+
+
 def _probe_interval_minutes() -> int:
     try:
         raw = int(os.environ.get("OPENJARVIS_WATCHDOG_PROBE_MINUTES", str(_DEFAULT_PROBE_MINUTES)))
@@ -122,6 +155,7 @@ def run_watchdog(
     restart_lane: RestartStack | None = None,
     probe_state_path: Path | str | None = None,
     notifier: Callable[..., Any] | None = None,
+    app_running: Callable[[], bool] | None = None,
 ) -> dict[str, Any]:
     def _notify(message: str, level: str = "warn") -> None:
         """Operator notice for self-heal actions (#1c). Best-effort."""
@@ -134,6 +168,31 @@ def run_watchdog(
                 notify.notify(message, level=level)
         except Exception:  # pragma: no cover - notification must never break healing
             pass
+
+    # Desktop-app gate (2026-06-13): self-heal ONLY while the operator has
+    # the Jarvis desktop app open. Closed app = parked Jarvis = hands off.
+    if not _watchdog_always():
+        gated = False
+        try:
+            gated = not (app_running or desktop_app_running)()
+        except Exception:
+            gated = True  # fail closed — never disturb a parked machine
+        if gated:
+            result = {
+                "ok": True,
+                "action": "skipped_no_app",
+                "restart_attempted": False,
+                "required_down": [],
+                "summary": "Jarvis desktop app not running — watchdog parked.",
+                "checked_at": datetime.now(timezone.utc).isoformat(),
+                "error": "",
+                "probe": None,
+                "health": None,
+            }
+            path = Path(report_path) if report_path is not None else default_report_path()
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(result, indent=2, sort_keys=True), encoding="utf-8")
+            return result
 
     health = (check_health or (lambda: check_runtime_health(timeout_s=5.0)))()
     required_down = list(health.get("required_down") or [])

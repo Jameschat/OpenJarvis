@@ -1,4 +1,4 @@
-import json
+﻿import json
 from pathlib import Path
 
 from openjarvis.tools import runtime_watchdog
@@ -17,6 +17,7 @@ def test_watchdog_does_nothing_when_runtime_is_healthy(tmp_path):
         check_health=lambda: status,
         restart_stack=lambda: calls.append("restart"),
         report_path=tmp_path / "watchdog.json",
+        app_running=lambda: True,
     )
 
     assert result["action"] == "none"
@@ -39,6 +40,7 @@ def test_watchdog_restarts_when_required_services_are_down(tmp_path):
         check_health=lambda: status,
         restart_stack=lambda: calls.append("restart"),
         report_path=tmp_path / "watchdog.json",
+        app_running=lambda: True,
     )
 
     assert result["action"] == "restart_stack"
@@ -60,6 +62,7 @@ def test_watchdog_dry_run_reports_without_restart(tmp_path):
         check_health=lambda: status,
         restart_stack=lambda: calls.append("restart"),
         report_path=tmp_path / "watchdog.json",
+        app_running=lambda: True,
         dry_run=True,
     )
 
@@ -116,6 +119,7 @@ def _probe_kwargs(tmp_path, monkeypatch, *, probe_result, last_probe_age_min=Non
     monkeypatch.setenv("OPENJARVIS_WATCHDOG_PROBE_MINUTES", "30")
     return dict(
         check_health=lambda: HEALTHY,
+        app_running=lambda: True,
         restart_stack=lambda: None,
         report_path=tmp_path / "watchdog.json",
         probe_lane=lambda: probe_result,
@@ -216,3 +220,67 @@ def test_probe_garbled_dry_run_reports_without_restart(tmp_path, monkeypatch):
     )
     assert result["action"] == "would_restart_qwen_lane"
     assert lane_calls == []
+
+
+class TestDesktopAppGate:
+    """Self-heal only while the operator has the desktop app open (2026-06-13)."""
+
+    def _down_health(self):
+        return {"ok": False, "summary": "blocked", "required_down": ["qwen_fast_lane"], "services": []}
+
+    def test_skips_everything_when_app_not_running(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("OPENJARVIS_WATCHDOG_ALWAYS", raising=False)
+        probed: list[str] = []
+        restarted: list[str] = []
+        result = runtime_watchdog.run_watchdog(
+            check_health=lambda: probed.append("health") or self._down_health(),
+            restart_stack=lambda: restarted.append("stack"),
+            restart_lane=lambda: restarted.append("lane"),
+            report_path=tmp_path / "watchdog.json",
+            probe_state_path=tmp_path / "probe.json",
+            app_running=lambda: False,
+        )
+        assert result["action"] == "skipped_no_app"
+        assert probed == []          # no health probe at all
+        assert restarted == []
+        assert result["ok"] is True  # not-an-error: operator parked Jarvis
+
+    def test_heals_when_app_running(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("OPENJARVIS_WATCHDOG_ALWAYS", raising=False)
+        restarted: list[str] = []
+        result = runtime_watchdog.run_watchdog(
+            check_health=self._down_health,
+            restart_stack=lambda: restarted.append("stack"),
+            report_path=tmp_path / "watchdog.json",
+            probe_state_path=tmp_path / "probe.json",
+            app_running=lambda: True,
+        )
+        assert result["action"] == "restart_stack"
+        assert restarted == ["stack"]
+
+    def test_always_env_bypasses_gate(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("OPENJARVIS_WATCHDOG_ALWAYS", "1")
+        restarted: list[str] = []
+        result = runtime_watchdog.run_watchdog(
+            check_health=self._down_health,
+            restart_stack=lambda: restarted.append("stack"),
+            report_path=tmp_path / "watchdog.json",
+            probe_state_path=tmp_path / "probe.json",
+            app_running=lambda: False,
+        )
+        assert result["action"] == "restart_stack"
+        assert restarted == ["stack"]
+
+    def test_detection_failure_fails_closed(self, tmp_path, monkeypatch):
+        # broken detection must NOT heal (operator priority: never disturb
+        # the machine when Jarvis is parked) - it reports the failure instead
+        monkeypatch.delenv("OPENJARVIS_WATCHDOG_ALWAYS", raising=False)
+        result = runtime_watchdog.run_watchdog(
+            check_health=self._down_health,
+            restart_stack=lambda: None,
+            report_path=tmp_path / "watchdog.json",
+            probe_state_path=tmp_path / "probe.json",
+            app_running=lambda: (_ for _ in ()).throw(RuntimeError("boom")),
+        )
+        assert result["action"] == "skipped_no_app"
+

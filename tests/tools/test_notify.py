@@ -1,4 +1,4 @@
-"""Tests for the channel-agnostic notification layer (#1c)."""
+﻿"""Tests for the channel-agnostic notification layer (#1c)."""
 
 from __future__ import annotations
 
@@ -76,6 +76,7 @@ class TestWatchdogNotifies:
         monkeypatch.setenv("OPENJARVIS_WATCHDOG_PROBE_MINUTES", "30")
         return dict(
             check_health=lambda: health,
+            app_running=lambda: True,
             restart_stack=lambda: None,
             restart_lane=lambda: None,
             report_path=tmp_path / "watchdog.json",
@@ -120,3 +121,4 @@ class TestWatchdogNotifies:
             notifier=lambda msg, **kw: sent.append(msg), **kwargs
         )
         assert sent == []
+
