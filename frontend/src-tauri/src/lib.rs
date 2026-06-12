@@ -953,6 +953,35 @@ async fn stop_backend(backend: tauri::State<'_, SharedBackend>) -> Result<(), St
 }
 
 #[tauri::command]
+async fn game_mode_park(backend: tauri::State<'_, SharedBackend>) -> Result<(), String> {
+    // Stop our managed children first, then hand off to the canonical park
+    // script: it disables the (app-gated) watchdog, kills stray stack
+    // processes from other launchers, and shuts down WSL to free the ~22GB
+    // of VRAM the Qwen lane holds.
+    backend.lock().await.stop_all_runtime_processes().await;
+    let root = find_project_root().ok_or("OpenJarvis project root not found")?;
+    let script = root.join("scripts").join("jarvis-park.ps1");
+    if !script.exists() {
+        return Err(format!("park script missing: {}", script.display()));
+    }
+    let mut cmd = tokio::process::Command::new("powershell");
+    cmd.args([
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        &script.to_string_lossy(),
+    ]);
+    hide_command_window(&mut cmd);
+    let status = cmd.status().await.map_err(|e| e.to_string())?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("park script exited with {:?}", status.code()))
+    }
+}
+
+#[tauri::command]
 async fn check_health(api_url: String) -> Result<serde_json::Value, String> {
     let base = if api_url.is_empty() {
         api_base()
@@ -1854,6 +1883,7 @@ pub fn run() {
             get_api_base,
             start_backend,
             stop_backend,
+            game_mode_park,
             check_health,
             fetch_energy,
             fetch_telemetry,

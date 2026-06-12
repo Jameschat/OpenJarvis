@@ -4,6 +4,7 @@ import {
   ChevronDown,
   ChevronRight,
   FlaskConical,
+  Gamepad2,
   MoreHorizontal,
   Network,
   Plus,
@@ -30,6 +31,8 @@ interface StudioSidebarProps {
   onDeleteChat: (chatId: string) => void;
   onSelectProject: (projectId: string) => void;
   onSelectChat: (chatId: string) => void;
+  /** Desktop-only: park the whole runtime and free the GPU for gaming. */
+  onGameMode?: () => void;
 }
 
 export function StudioSidebar({
@@ -48,6 +51,7 @@ export function StudioSidebar({
   onDeleteChat,
   onSelectProject,
   onSelectChat,
+  onGameMode,
 }: StudioSidebarProps) {
   const [openMenuChatId, setOpenMenuChatId] = useState('');
   const [pluginsOpen, setPluginsOpen] = useState(false);
@@ -60,6 +64,9 @@ export function StudioSidebar({
     { label: 'Deep Research', icon: FlaskConical, action: () => onSearchQueryChange('deep research'), detail: 'Research loop' },
     { label: 'Tasks', icon: CalendarClock, action: () => setAutomationsOpen(true), detail: `${automations.length} scheduled` },
     { label: 'Settings', icon: Settings, action: () => setSettingsOpen((open) => !open), detail: 'Runtime' },
+    ...(onGameMode
+      ? [{ label: 'Game Mode', icon: Gamepad2, action: onGameMode, detail: 'Free the GPU' }]
+      : []),
   ];
 
   return (
