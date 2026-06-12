@@ -133,3 +133,19 @@ def test_notify_swallows_chat_history_failure(monkeypatch):
     # No exception should escape.
     pushed = task_followup.notify_if_operator_task(task)
     assert pushed is False
+
+
+def test_escalated_task_includes_escalation_note():
+    task = _FakeTask()
+    task.escalated_to = "t_child123"
+    msg = task_followup.format_followup(task)
+    assert msg is not None
+    assert "t_child123" in msg
+    assert "escalat" in msg.lower()
+
+
+def test_non_escalated_task_has_no_escalation_note():
+    task = _FakeTask()
+    msg = task_followup.format_followup(task)
+    assert msg is not None
+    assert "escalat" not in msg.lower()

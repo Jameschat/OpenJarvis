@@ -65,10 +65,14 @@ def format_followup(task: Any) -> Optional[str]:
     duration = _duration_str(task)
     status = str(getattr(task, "status", "") or "").lower()
     error = getattr(task, "error", None)
+    # Escalation ladder (Phase 7 #1): when the qwen task handed off to a
+    # stronger provider, say so — the operator should expect a follow-up.
+    escalated_to = getattr(task, "escalated_to", None)
+    esc_suffix = f" ⤴ escalated for stronger follow-up (task {escalated_to})." if escalated_to else ""
     if status == "done":
-        return f"✓ {agent_id}: {title} — done in {duration}."
+        return f"✓ {agent_id}: {title} — done in {duration}.{esc_suffix}"
     err_str = (str(error) if error else "no error captured")[:140]
-    return f"✗ {agent_id}: {title} — failed in {duration}: {err_str}"
+    return f"✗ {agent_id}: {title} — failed in {duration}: {err_str}{esc_suffix}"
 
 
 def push_to_chat(message: str) -> bool:
