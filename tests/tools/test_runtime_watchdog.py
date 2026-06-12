@@ -93,3 +93,126 @@ def test_watchdog_uses_runtime_timeout_that_tolerates_slow_backend():
     source = Path(runtime_watchdog.__file__).read_text(encoding="utf-8")
 
     assert "check_runtime_health(timeout_s=5.0)" in source
+
+
+HEALTHY = {
+    "ok": True,
+    "summary": "Jarvis runtime ready: required services are online.",
+    "required_down": [],
+    "services": [],
+}
+
+
+def _probe_kwargs(tmp_path, monkeypatch, *, probe_result, last_probe_age_min=None):
+    """Common run_watchdog kwargs for correctness-probe tests."""
+    import time as _time
+
+    state = tmp_path / "probe_state.json"
+    if last_probe_age_min is not None:
+        state.write_text(
+            json.dumps({"last_probe_at": _time.time() - last_probe_age_min * 60}),
+            encoding="utf-8",
+        )
+    monkeypatch.setenv("OPENJARVIS_WATCHDOG_PROBE_MINUTES", "30")
+    return dict(
+        check_health=lambda: HEALTHY,
+        restart_stack=lambda: None,
+        report_path=tmp_path / "watchdog.json",
+        probe_lane=lambda: probe_result,
+        probe_state_path=state,
+    )
+
+
+def test_probe_garbled_restarts_qwen_lane(tmp_path, monkeypatch):
+    lane_calls: list[str] = []
+    kwargs = _probe_kwargs(
+        tmp_path, monkeypatch,
+        probe_result={"ok": False, "garbled": True, "content": "3333", "error": None},
+    )
+    result = runtime_watchdog.run_watchdog(
+        restart_lane=lambda: lane_calls.append("lane"), **kwargs
+    )
+    assert result["action"] == "restart_qwen_lane"
+    assert lane_calls == ["lane"]
+    assert result["probe"]["garbled"] is True
+
+
+def test_probe_ok_no_restart_and_state_updated(tmp_path, monkeypatch):
+    lane_calls: list[str] = []
+    kwargs = _probe_kwargs(
+        tmp_path, monkeypatch,
+        probe_result={"ok": True, "garbled": False, "content": "size-ok", "error": None},
+    )
+    result = runtime_watchdog.run_watchdog(
+        restart_lane=lambda: lane_calls.append("lane"), **kwargs
+    )
+    assert result["action"] == "none"
+    assert lane_calls == []
+    state = json.loads((tmp_path / "probe_state.json").read_text(encoding="utf-8"))
+    assert state["last_probe_at"] > 0
+
+
+def test_probe_error_does_not_restart(tmp_path, monkeypatch):
+    # busy/timeout lane is NOT corruption - health path owns down lanes
+    lane_calls: list[str] = []
+    kwargs = _probe_kwargs(
+        tmp_path, monkeypatch,
+        probe_result={"ok": False, "garbled": False, "content": "", "error": "timeout"},
+    )
+    result = runtime_watchdog.run_watchdog(
+        restart_lane=lambda: lane_calls.append("lane"), **kwargs
+    )
+    assert result["action"] == "none"
+    assert lane_calls == []
+
+
+def test_probe_not_due_is_skipped(tmp_path, monkeypatch):
+    probed: list[str] = []
+    kwargs = _probe_kwargs(
+        tmp_path, monkeypatch,
+        probe_result={"ok": True, "garbled": False, "content": "size-ok", "error": None},
+        last_probe_age_min=5,
+    )
+    kwargs["probe_lane"] = lambda: probed.append("probe") or {"ok": True, "garbled": False}
+    result = runtime_watchdog.run_watchdog(restart_lane=lambda: None, **kwargs)
+    assert probed == []
+    assert result["probe"] is None
+
+
+def test_probe_disabled_via_env(tmp_path, monkeypatch):
+    probed: list[str] = []
+    kwargs = _probe_kwargs(
+        tmp_path, monkeypatch,
+        probe_result={"ok": True, "garbled": False, "content": "size-ok", "error": None},
+    )
+    monkeypatch.setenv("OPENJARVIS_WATCHDOG_PROBE_MINUTES", "0")
+    kwargs["probe_lane"] = lambda: probed.append("probe") or {"ok": True, "garbled": False}
+    runtime_watchdog.run_watchdog(restart_lane=lambda: None, **kwargs)
+    assert probed == []
+
+
+def test_probe_skipped_when_stack_unhealthy(tmp_path, monkeypatch):
+    probed: list[str] = []
+    kwargs = _probe_kwargs(
+        tmp_path, monkeypatch,
+        probe_result={"ok": True, "garbled": False, "content": "size-ok", "error": None},
+    )
+    kwargs["check_health"] = lambda: {
+        "ok": False, "summary": "blocked", "required_down": ["qwen_fast_lane"], "services": [],
+    }
+    kwargs["probe_lane"] = lambda: probed.append("probe") or {"ok": True, "garbled": False}
+    runtime_watchdog.run_watchdog(restart_lane=lambda: None, **kwargs)
+    assert probed == []
+
+
+def test_probe_garbled_dry_run_reports_without_restart(tmp_path, monkeypatch):
+    lane_calls: list[str] = []
+    kwargs = _probe_kwargs(
+        tmp_path, monkeypatch,
+        probe_result={"ok": False, "garbled": True, "content": "////", "error": None},
+    )
+    result = runtime_watchdog.run_watchdog(
+        restart_lane=lambda: lane_calls.append("lane"), dry_run=True, **kwargs
+    )
+    assert result["action"] == "would_restart_qwen_lane"
+    assert lane_calls == []
