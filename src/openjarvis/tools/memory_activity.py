@@ -91,14 +91,18 @@ def _agentmemory_node() -> Dict[str, Any]:
     try:
         from openjarvis.tools import agentmemory_client
 
+        # health() returns a plain bool in the thin client; tolerate a dict
+        # in case the client grows up later.
         health = agentmemory_client.health()
-        ok = bool(health and (health.get("status") in ("ok", "healthy")))
-        version = (health or {}).get("version", "")
+        if isinstance(health, dict):
+            ok = health.get("status") in ("ok", "healthy")
+        else:
+            ok = bool(health)
         return {
             "id": "agentmemory",
             "label": "AGENT MEMORY",
             "online": ok,
-            "stat": f"v{version} · port 7730" if ok else "offline",
+            "stat": "episodic · port 7730" if ok else "offline",
         }
     except Exception:
         return {"id": "agentmemory", "label": "AGENT MEMORY", "online": False, "stat": "offline"}

@@ -130,7 +130,10 @@ if (Test-Http "http://127.0.0.1:7730/agentmemory/livez") {
     Write-Host "[agentmemory] already healthy on 7730"
 } else {
     $iii = Join-Path $env:USERPROFILE ".local\bin\iii.exe"
-    $iiiConfig = Join-Path $env:USERPROFILE ".openjarvis\iii-agentmemory.yaml"
+    # iii-config.yaml is the PROVEN config (absolute data paths, shared with
+    # the .claude MCP hooks). iii-agentmemory.yaml has relative ./data paths
+    # (cwd-dependent) and never served livez when launched here (2026-06-13).
+    $iiiConfig = Join-Path $env:USERPROFILE ".openjarvis\iii-config.yaml"
     if ((Test-Path $iii) -and (Test-Path $iiiConfig)) {
         $psi = New-Object System.Diagnostics.ProcessStartInfo
         $psi.FileName = $iii

@@ -71,3 +71,15 @@ class TestNodesAndLog:
         except RuntimeError:
             pytest.fail("snapshot must not raise when a source breaks")
         assert "nodes" in snap
+
+
+class TestAgentmemoryNode:
+    def test_bool_health_true_is_online(self, monkeypatch):
+        monkeypatch.setattr("openjarvis.tools.agentmemory_client.health", lambda: True)
+        node = memory_activity._agentmemory_node()
+        assert node["online"] is True
+
+    def test_bool_health_false_is_offline(self, monkeypatch):
+        monkeypatch.setattr("openjarvis.tools.agentmemory_client.health", lambda: False)
+        node = memory_activity._agentmemory_node()
+        assert node["online"] is False
