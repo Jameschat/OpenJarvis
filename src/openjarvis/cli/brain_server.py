@@ -1745,6 +1745,8 @@ class _Handler(SimpleHTTPRequestHandler):
                 self._json_response(200, {"events": []})
         elif self.path == "/vault/summary":
             self._handle_vault_summary()
+        elif self.path == "/capability/inbox":
+            self._handle_capability_inbox()
         elif self.path in ("/memory-vault", "/memory-vault/"):
             self.path = "/memory-vault.html"
             super().do_GET()
@@ -1975,6 +1977,10 @@ class _Handler(SimpleHTTPRequestHandler):
             self._handle_studio_run_cancel()
         elif self.path == "/studio/qwen-profile":
             self._handle_studio_qwen_profile()
+        elif self.path == "/capability/inbox/approve":
+            self._handle_capability_inbox_decision("approve")
+        elif self.path == "/capability/inbox/dismiss":
+            self._handle_capability_inbox_decision("dismiss")
         elif self.path == "/studio/preview":
             self._handle_studio_preview()
         elif self.path == "/studio/worker-update":
@@ -2341,6 +2347,34 @@ class _Handler(SimpleHTTPRequestHandler):
             })
         except Exception:
             logger.exception("/vault/summary failed")
+            return self._json_response(500, {"error": "internal error", "ref": _err_ref()})
+
+    def _handle_capability_inbox(self) -> None:
+        """GET /capability/inbox — self-improvement approval inbox (Phase 7 #6):
+        latest capability-queue items annotated with operator decisions."""
+        try:
+            from openjarvis.tools import capability_inbox
+            return self._json_response(200, capability_inbox.list_inbox())
+        except Exception:
+            logger.exception("/capability/inbox failed")
+            return self._json_response(500, {"error": "internal error", "ref": _err_ref()})
+
+    def _handle_capability_inbox_decision(self, action: str) -> None:
+        """POST /capability/inbox/{approve,dismiss} body {"capability": "..."}.
+        Approve queues a sandboxed qwen-builder prototype task (the operator
+        approval is THIS call — the prototype itself stays inside the bridge's
+        no-shell/no-install boundaries)."""
+        try:
+            from openjarvis.tools import capability_inbox
+            data = self._read_json_body()
+            capability = str(data.get("capability") or "").strip()
+            if not capability:
+                return self._json_response(400, {"ok": False, "error": "capability required"})
+            fn = capability_inbox.approve if action == "approve" else capability_inbox.dismiss
+            result = fn(capability)
+            return self._json_response(200 if result.get("ok") else 404, result)
+        except Exception:
+            logger.exception("/capability/inbox/%s failed", action)
             return self._json_response(500, {"error": "internal error", "ref": _err_ref()})
 
     def _handle_music_status(self) -> None:

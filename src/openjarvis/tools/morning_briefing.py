@@ -136,6 +136,12 @@ def section_notifications(window_hours: int = 24) -> Optional[str]:
     return "\n".join(lines)
 
 
+def _section_inbox() -> Optional[str]:
+    from openjarvis.tools import capability_inbox
+
+    return capability_inbox.briefing_section()
+
+
 def section_study() -> Optional[str]:
     """Most recent study-agent note, if any."""
     study = _vault_root() / "Study"
@@ -191,6 +197,7 @@ def run_as_agent_task(task: Any = None) -> Dict[str, Any]:
             "Overnight tasks": section_outcomes,
             "Routing shadow log": section_shadow_routing,
             "Notifications": section_notifications,
+            "Self-improvement inbox": _section_inbox,
             "Self-study": section_study,
             "Vault": section_vault,
         }
