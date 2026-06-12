@@ -108,6 +108,34 @@ def section_shadow_routing() -> Optional[str]:
     return out
 
 
+def section_notifications(window_hours: int = 24) -> Optional[str]:
+    """Operator notifications from the last day — including any that failed
+    to deliver live (e.g. the chat bus was down mid-incident)."""
+    from openjarvis.tools import notify as notify_mod
+
+    path = notify_mod._LOG_PATH
+    if not path.exists():
+        return None
+    cutoff = time.time() - window_hours * 3600
+    rows = []
+    try:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            if row.get("ts", 0) >= cutoff:
+                rows.append(row)
+    except (OSError, ValueError):
+        return None
+    if not rows:
+        return None
+    lines = [f"{len(rows)} notification(s) in the last {window_hours}h:"]
+    for r in rows[-8:]:
+        missed = "" if any(r.get("delivered", {}).values()) else " (NOT delivered live)"
+        lines.append(f"- {r.get('ts_iso', '')[11:16]} {r.get('message', '')}{missed}")
+    return "\n".join(lines)
+
+
 def section_study() -> Optional[str]:
     """Most recent study-agent note, if any."""
     study = _vault_root() / "Study"
@@ -162,6 +190,7 @@ def run_as_agent_task(task: Any = None) -> Dict[str, Any]:
             "Runtime": section_runtime,
             "Overnight tasks": section_outcomes,
             "Routing shadow log": section_shadow_routing,
+            "Notifications": section_notifications,
             "Self-study": section_study,
             "Vault": section_vault,
         }

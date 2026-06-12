@@ -120,3 +120,34 @@ class TestComposeAndRun:
         monkeypatch.setattr(morning_briefing, "_push_chat", lambda msg: True)
         result = morning_briefing.run_as_agent_task()
         assert result["ok"] is True  # one broken section never sinks the brief
+
+
+class TestNotificationsSection:
+    def test_lists_recent_and_flags_missed(self, homes, monkeypatch, tmp_path):
+        import time as _time
+        from openjarvis.tools import notify as notify_mod
+
+        log = tmp_path / "notifications.jsonl"
+        rows = [
+            {"ts": _time.time() - 60, "ts_iso": "2026-06-12T07:01:00",
+             "level": "warn", "message": "lane restarted",
+             "delivered": {"chat": True}},
+            {"ts": _time.time() - 120, "ts_iso": "2026-06-12T03:00:00",
+             "level": "error", "message": "stack restart while bus down",
+             "delivered": {"chat": False}},
+            {"ts": _time.time() - 90000, "ts_iso": "2026-06-11T01:00:00",
+             "level": "info", "message": "old row outside window",
+             "delivered": {"chat": True}},
+        ]
+        log.write_text("\n".join(json.dumps(r) for r in rows), encoding="utf-8")
+        monkeypatch.setattr(notify_mod, "_LOG_PATH", log)
+        md = morning_briefing.section_notifications()
+        assert "lane restarted" in md
+        assert "NOT delivered live" in md
+        assert "old row outside window" not in md
+
+    def test_none_when_no_log(self, homes, monkeypatch, tmp_path):
+        from openjarvis.tools import notify as notify_mod
+
+        monkeypatch.setattr(notify_mod, "_LOG_PATH", tmp_path / "missing.jsonl")
+        assert morning_briefing.section_notifications() is None

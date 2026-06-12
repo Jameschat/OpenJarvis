@@ -121,7 +121,20 @@ def run_watchdog(
     probe_lane: Callable[[], dict[str, Any]] | None = None,
     restart_lane: RestartStack | None = None,
     probe_state_path: Path | str | None = None,
+    notifier: Callable[..., Any] | None = None,
 ) -> dict[str, Any]:
+    def _notify(message: str, level: str = "warn") -> None:
+        """Operator notice for self-heal actions (#1c). Best-effort."""
+        try:
+            if notifier is not None:
+                notifier(message, level=level)
+            else:
+                from openjarvis.tools import notify
+
+                notify.notify(message, level=level)
+        except Exception:  # pragma: no cover - notification must never break healing
+            pass
+
     health = (check_health or (lambda: check_runtime_health(timeout_s=5.0)))()
     required_down = list(health.get("required_down") or [])
     unhealthy = bool(required_down)
@@ -137,8 +150,12 @@ def run_watchdog(
             restart_attempted = True
             try:
                 (restart_stack or restart_jarvis_stack)()
+                _notify(
+                    f"⚠ Jarvis stack down ({', '.join(required_down)}) — watchdog triggered a restart."
+                )
             except Exception as exc:  # pragma: no cover - exercised via result shape
                 error = str(exc)
+                _notify(f"✗ Watchdog stack restart FAILED: {error[:140]}", level="error")
 
     # Correctness probe (#1d): only when the stack is otherwise healthy —
     # a down/restarting lane is the health path's job, not corruption.
@@ -158,8 +175,13 @@ def run_watchdog(
                 restart_attempted = True
                 try:
                     (restart_lane or restart_qwen_lane)()
+                    _notify(
+                        "♻ Qwen lane returned garbled output on the correctness probe — "
+                        "watchdog restarted the lane (~10s)."
+                    )
                 except Exception as exc:  # pragma: no cover - exercised via result shape
                     error = str(exc)
+                    _notify(f"✗ Watchdog lane restart FAILED: {error[:140]}", level="error")
 
     result = {
         "ok": not unhealthy and not (probe or {}).get("garbled"),
