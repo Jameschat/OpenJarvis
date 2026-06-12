@@ -50,8 +50,8 @@ _DEFAULT_STATUS: dict[str, Any] = {
                 "studio_json_tok_s": 34.26,
                 "tool_xml_tok_s": 61.04,
             },
-            "verdict": "reject",
-            "notes": "32K works only with CUDA graphs disabled; 200K did not fit on 24GB.",
+            "verdict": "benchmark-only",
+            "notes": "Next-jump harness on 8086; keep isolated until vLLM INT4/MTP stack and model pass Studio/tool benchmarks.",
         },
         {
             "id": "rotorquant-35b-a3b",

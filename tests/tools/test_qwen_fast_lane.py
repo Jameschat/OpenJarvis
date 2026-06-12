@@ -230,6 +230,17 @@ def test_froggeric_wsl_start_script_uses_studio_sized_context():
 
     assert "[int]$ContextTokens = 16384" in script
     assert "--ctx-size $ContextTokens" in script
+    assert "[int]$Threads = 24" in script
+    assert "[int]$BatchSize = 4092" in script
+    assert "[int]$UbatchSize = 1024" in script
+    assert "--threads $Threads" in script
+    assert "--threads-batch $Threads" in script
+    assert "--batch-size $BatchSize" in script
+    assert "--ubatch-size $UbatchSize" in script
+    assert "--top-p 0.95" in script
+    assert "--min-p 0.0" in script
+    assert "--presence-penalty 0.0" in script
+    assert "--repeat-penalty 1.0" in script
 
 
 def test_rotorquant_command_uses_long_context_coding_defaults():
@@ -263,6 +274,54 @@ def test_rotorquant_command_uses_long_context_coding_defaults():
     assert "0.95" in command
     assert "--repeat-penalty" in command
     assert "1.0" in command
+
+
+def test_vllm_int4_mtp_command_uses_isolated_jump_lane_defaults():
+    command = qwen_fast_lane.build_vllm_int4_mtp_command(
+        model_ref="local/qwen3.6-27b-int4",
+    )
+
+    assert command[:3] == ["python3", "-m", "vllm.entrypoints.openai.api_server"]
+    assert "--model" in command
+    assert "local/qwen3.6-27b-int4" in command
+    assert "--served-model-name" in command
+    assert "qwen3.6-27b-vllm" in command
+    assert "--port" in command
+    assert "8086" in command
+    assert "--max-model-len" in command
+    assert "65536" in command
+    assert "--max-num-seqs" in command
+    assert "1" in command
+    assert "--max-num-batched-tokens" in command
+    assert "4128" in command
+    assert "--enable-prefix-caching" in command
+    assert "--enable-chunked-prefill" in command
+    assert "--reasoning-parser" in command
+    assert "qwen3" in command
+    assert "--tool-call-parser" in command
+    assert "qwen3_coder" in command
+    assert "--speculative-config" in command
+    assert "mtp" in command[-1]
+
+
+def test_vllm_int4_mtp_wsl_start_script_is_guarded_and_separate():
+    script = Path("scripts/start-qwen-vllm-int4-mtp-wsl.ps1").read_text(encoding="utf-8")
+
+    assert "EXPERIMENTAL" in script
+    assert "does not replace the live 8084 lane" in script
+    assert "Refusing to start vLLM on 8084" in script
+    assert "JARVIS_VLLM_QWEN27_MODEL" in script
+    assert "vLLM is not installed" in script
+    assert "--port $Port" in script
+    assert "--served-model-name qwen3.6-27b-vllm" in script
+    assert "--max-model-len $ContextTokens" in script
+    assert "--max-num-seqs $MaxNumSeqs" in script
+    assert "--max-num-batched-tokens $MaxNumBatchedTokens" in script
+    assert "--enable-prefix-caching" in script
+    assert "--enable-chunked-prefill" in script
+    assert "--reasoning-parser qwen3" in script
+    assert "--tool-call-parser qwen3_coder" in script
+    assert "--speculative-config" in script
 
 
 def test_rotorquant_litellm_config_is_separate_deep_context_alias(tmp_path: Path):

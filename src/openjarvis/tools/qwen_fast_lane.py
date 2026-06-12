@@ -14,8 +14,10 @@ DEFAULT_LLAMA_BASE_URL = "http://localhost:8081/v1"
 DEFAULT_BEELLAMA_BASE_URL = "http://localhost:8082/v1"
 DEFAULT_TURBOQ_MTP_BASE_URL = "http://localhost:8084/v1"
 DEFAULT_ROTORQUANT_BASE_URL = "http://localhost:8085/v1"
+DEFAULT_VLLM_MTP_BASE_URL = "http://localhost:8086/v1"
 DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434"
 PUBLIC_QWEN_ALIAS = "qwen3.6-27b-local"
+VLLM_QWEN_ALIAS = "qwen3.6-27b-vllm"
 ROTORQUANT_QWEN_ALIAS = "qwen3.6-35b-a3b-rotorquant"
 OLLAMA_QWEN_ALIAS = "qwen3.6-27b-ollama"
 OLLAMA_QWEN_MODEL = "qwen3.6:27b"
@@ -445,4 +447,49 @@ def build_rotorquant_command(
         "0.0",
         "--repeat-penalty",
         "1.0",
+    ]
+
+
+def build_vllm_int4_mtp_command(
+    *,
+    model_ref: str,
+    host: str = "0.0.0.0",
+    port: int = 8086,
+    context_tokens: int = 65536,
+    max_num_seqs: int = 1,
+    max_num_batched_tokens: int = 4128,
+    speculative_config_json: str = '{"method":"mtp","num_speculative_tokens":3}',
+) -> list[str]:
+    """Return argv for the experimental vLLM INT4+MTP Qwen jump lane.
+
+    This lane is intentionally not the live Jarvis route. It exists so we can
+    benchmark vLLM with prefix caching, chunked prefill, Qwen parsers, and MTP
+    without disturbing the stable WSL/MTP Froggeric server on 8084.
+    """
+    return [
+        "python3",
+        "-m",
+        "vllm.entrypoints.openai.api_server",
+        "--host",
+        host,
+        "--port",
+        str(port),
+        "--model",
+        model_ref,
+        "--served-model-name",
+        VLLM_QWEN_ALIAS,
+        "--max-model-len",
+        str(context_tokens),
+        "--max-num-seqs",
+        str(max_num_seqs),
+        "--max-num-batched-tokens",
+        str(max_num_batched_tokens),
+        "--enable-prefix-caching",
+        "--enable-chunked-prefill",
+        "--reasoning-parser",
+        "qwen3",
+        "--tool-call-parser",
+        "qwen3_coder",
+        "--speculative-config",
+        speculative_config_json,
     ]
