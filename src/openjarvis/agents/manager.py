@@ -7,12 +7,15 @@ to the five existing primitives (Intelligence, Agent, Tools, Engine, Learning).
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 import time
 import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
+
+logger = logging.getLogger(__name__)
 
 _CREATE_AGENTS = """\
 CREATE TABLE IF NOT EXISTS managed_agents (
@@ -123,6 +126,22 @@ class AgentManager:
             except sqlite3.OperationalError:
                 pass  # Column already exists
         self._conn.commit()
+        # Stale-state recovery: ticks execute in server threads, so a process
+        # restart (or crash) orphans status='running' rows forever — every
+        # later run click then 409s with "already running" while the UI shows
+        # a stuck agent. No tick can survive a restart, so any 'running' row
+        # at construction time is stale by definition.
+        recovered = self._conn.execute(
+            "UPDATE managed_agents SET status='needs_attention', "
+            "current_activity='recovered: server restarted mid-run' "
+            "WHERE status='running'"
+        ).rowcount
+        self._conn.commit()
+        if recovered:
+            logger.warning(
+                "AgentManager: recovered %d agent(s) stuck in 'running' from a previous process",
+                recovered,
+            )
 
     def close(self) -> None:
         self._conn.close()
