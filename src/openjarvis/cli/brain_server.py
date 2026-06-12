@@ -1747,6 +1747,8 @@ class _Handler(SimpleHTTPRequestHandler):
             self._handle_vault_summary()
         elif self.path == "/capability/inbox":
             self._handle_capability_inbox()
+        elif self.path.startswith("/memory/activity"):
+            self._handle_memory_activity()
         elif self.path in ("/memory-vault", "/memory-vault/"):
             self.path = "/memory-vault.html"
             super().do_GET()
@@ -2347,6 +2349,25 @@ class _Handler(SimpleHTTPRequestHandler):
             })
         except Exception:
             logger.exception("/vault/summary failed")
+            return self._json_response(500, {"error": "internal error", "ref": _err_ref()})
+
+    def _handle_memory_activity(self) -> None:
+        """GET /memory/activity[?since=<epoch>] — data feed for the desktop
+        Memory page constellation (Phase 8): nodes + pulses + realtime log."""
+        try:
+            from urllib.parse import parse_qs, urlparse
+
+            from openjarvis.tools import memory_activity
+            qs = parse_qs(urlparse(self.path).query)
+            since = None
+            if qs.get("since"):
+                try:
+                    since = float(qs["since"][0])
+                except ValueError:
+                    since = None
+            return self._json_response(200, memory_activity.snapshot(since))
+        except Exception:
+            logger.exception("/memory/activity failed")
             return self._json_response(500, {"error": "internal error", "ref": _err_ref()})
 
     def _handle_capability_inbox(self) -> None:
