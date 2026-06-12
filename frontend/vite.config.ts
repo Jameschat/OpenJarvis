@@ -1,4 +1,4 @@
-import path from 'path';
+﻿import path from 'path';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
@@ -56,6 +56,9 @@ export default defineConfig(({ mode }) => {
     proxy: {
       '/v1': process.env.VITE_API_URL || 'http://localhost:8000',
       '/health': process.env.VITE_API_URL || 'http://localhost:8000',
+      // Jarvis backend feeds (NOT '/memory' itself - that's an SPA route)
+      '/memory/activity': process.env.VITE_JARVIS_URL || 'http://localhost:7710',
+      '/capability': process.env.VITE_JARVIS_URL || 'http://localhost:7710',
     },
   },
   };

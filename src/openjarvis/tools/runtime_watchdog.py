@@ -100,9 +100,12 @@ def desktop_app_running() -> bool:
     alone. Detection failure fails CLOSED for the same reason. Headless
     deployments opt back into always-heal via OPENJARVIS_WATCHDOG_ALWAYS=1.
     """
+    # NOTE: do NOT add "jarvis.exe" here — it substring-matches the backend's
+    # own .venv\Scripts\jarvis.exe serve process in tasklist, making the stack
+    # keep itself alive forever (false positive found live 2026-06-13).
     names = os.environ.get(
         "OPENJARVIS_WATCHDOG_APP_NAMES",
-        "openjarvis-desktop.exe,Jarvis.exe",
+        "openjarvis-desktop.exe",
     )
     targets = [n.strip().lower() for n in names.split(",") if n.strip()]
     try:
