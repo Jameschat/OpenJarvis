@@ -872,11 +872,20 @@ def test_qwen_provider_uses_reasoning_content_only_as_fallback(monkeypatch, tmp_
         def mark_finished(self, task_id, exit_code, error=None):
             assert exit_code == 0
 
+    def _ollama_unavailable(prompt, **kwargs):
+        raise RuntimeError("ollama offline (hermetic test)")
+
     monkeypatch.setitem(sys.modules, "openai", types.SimpleNamespace(OpenAI=DummyClient))
     monkeypatch.setattr(agent_runner, "RUNS_DIR", tmp_path)
     monkeypatch.setattr(agent_runner, "_reg", DummyRegistry())
     monkeypatch.setattr(agent_runner, "_build_brain_context", lambda: "")
     monkeypatch.setattr(agent_runner, "_write_agent_task_note", lambda *args, **kwargs: None)
+    # Hermetic isolation: the operator's live qwen_profile.json must not rewrite
+    # the model to the remote lane, and the empty-content Ollama retry must not
+    # reach a real server — this test is about the reasoning-content fallback,
+    # which only triggers after that retry fails.
+    monkeypatch.setenv("OPENJARVIS_QWEN_PROFILE", "fast")
+    monkeypatch.setattr(agent_runner, "_call_qwen_via_ollama", _ollama_unavailable)
 
     task = Task(
         id="task-qwen-reasoning",
