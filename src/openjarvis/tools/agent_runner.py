@@ -2253,6 +2253,13 @@ def _maybe_escalate_qwen_task(
         decision = escalation.should_escalate(task, verify_verdict, content)
         if not decision.go:
             return ""
+        # Phase 7 #2 shadow routing: log what the outcome data would pick
+        # next to the configured target. Changes nothing; never raises.
+        try:
+            from openjarvis.tools import outcome_router
+            outcome_router.shadow_route_escalation(task, decision.target_agent)
+        except Exception:
+            logger.debug("shadow routing failed (non-fatal)", exc_info=True)
         child_prompt = escalation.build_escalation_prompt(
             task, ws, verify_verdict, reason=decision.reason
         )

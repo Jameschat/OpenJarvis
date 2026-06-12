@@ -127,3 +127,30 @@ class TestOutcomeRecord:
         outcomes.record_agent_task(t)
         assert captured["escalation_of"] == "t-orig"
         assert captured["escalated_to"] is None
+
+
+class TestShadowRouting:
+    def test_escalation_writes_shadow_routing_row(self, wired, monkeypatch, tmp_path):
+        import json as _json
+        from openjarvis.tools import outcome_router
+
+        monkeypatch.setenv("OPENJARVIS_OUTCOMES_HOME", str(tmp_path / "outcomes"))
+        monkeypatch.setattr(outcome_router, "_SHADOW_DIR", tmp_path / "routing_shadow")
+        agent_runner._maybe_escalate_qwen_task(_task(), wired.ws, VERIFY_FAILED, "x")
+        files = list((tmp_path / "routing_shadow").glob("*.jsonl"))
+        assert len(files) == 1
+        row = _json.loads(files[0].read_text(encoding="utf-8").strip())
+        assert row["mode"] == "shadow"
+        assert row["configured"] == "backend-dev"
+        # no outcome history in this temp home -> router keeps the default
+        assert row["recommended"] == "backend-dev"
+
+    def test_shadow_failure_does_not_block_escalation(self, wired, monkeypatch):
+        from openjarvis.tools import outcome_router
+
+        monkeypatch.setattr(
+            outcome_router, "shadow_route_escalation",
+            lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")),
+        )
+        note = agent_runner._maybe_escalate_qwen_task(_task(), wired.ws, VERIFY_FAILED, "x")
+        assert "t_child123" in note
