@@ -48,9 +48,14 @@ def wired(tmp_path, monkeypatch):
     """Enabled escalation + stub registry + temp day-cap store + workspace."""
     from openjarvis.tools import escalation
 
+    from openjarvis.tools import outcome_router
+
     monkeypatch.setenv("OPENJARVIS_ESCALATION", "1")
     monkeypatch.delenv("OPENJARVIS_ESCALATION_AGENT", raising=False)
     monkeypatch.setattr(escalation, "_ESCALATIONS_DIR", tmp_path / "escalations")
+    # keep shadow-routing rows out of the real ~/.openjarvis store
+    monkeypatch.setattr(outcome_router, "_SHADOW_DIR", tmp_path / "routing_shadow")
+    monkeypatch.setenv("OPENJARVIS_OUTCOMES_HOME", str(tmp_path / "outcomes"))
     stub = _StubReg()
     monkeypatch.setattr(agent_runner, "_reg", stub)
     ws = tmp_path / "ws"

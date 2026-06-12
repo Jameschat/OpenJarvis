@@ -402,6 +402,23 @@ DEFAULT_AGENTS: List[Dict[str, Any]] = [
         "python_entry": "openjarvis.tools.study_agent:run_as_agent_task",
     },
     {
+        "id": "briefing-agent",
+        "name": "briefing-agent",
+        "role": (
+            "Proactive morning briefing (Phase 7 #4). Composes runtime/watchdog "
+            "state, overnight task outcomes and escalations, shadow-routing "
+            "disagreements, the latest study note, and vault activity into "
+            "Brain/Daily/<date> - morning briefing.md, then pushes a one-line "
+            "notice to the HUD chat panel. Zero LLM tokens — pure composition "
+            "of data Jarvis already collects."
+        ),
+        "model": "none",
+        "skills": ["briefing", "reporting"],
+        "color": "#ffd76a",
+        "provider": "python",
+        "python_entry": "openjarvis.tools.morning_briefing:run_as_agent_task",
+    },
+    {
         "id": "capability-scout",
         "name": "capability-scout",
         "role": (
