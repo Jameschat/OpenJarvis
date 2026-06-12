@@ -1,0 +1,55 @@
+name: Fork CI (Jarvis layer)
+
+# Slim CI for this fork's own layer (tools/studio/markets/cli/web).
+# Upstream workflows target upstream's structure; this one guards the
+# code that actually runs the Jarvis stack. No GPU, no live lanes —
+# pure-Python tests only.
+
+on:
+  push:
+    branches: [main, master, "feat/**"]
+    paths:
+      - "src/openjarvis/tools/**"
+      - "src/openjarvis/cli/**"
+      - "src/openjarvis/markets/**"
+      - "src/openjarvis/server/**"
+      - "tests/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/fork-ci.yml"
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  fork-tests:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install project + dev group
+        run: uv sync --group dev
+
+      - name: Run fork-layer tests
+        run: >-
+          uv run --no-sync pytest -q
+          tests/web/test_studio.py
+          tests/cli/test_doctor_cmd.py
+          tests/tools/test_runtime_watchdog.py
+          tests/tools/test_runtime_health.py
+          tests/tools/test_studio_runner.py
+          tests/tools/test_studio_workflows.py
+          tests/tools/test_qwen_tool_bridge.py
+          tests/tools/test_qwen_wsl_model_path.py
+          tests/tools/test_vault_stats.py
+          tests/tools/test_task_followup.py
+          tests/markets
