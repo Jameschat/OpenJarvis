@@ -782,6 +782,10 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
     let _ = sync_cmd
         .args([
             "sync",
+            // --inexact: do NOT remove packages outside the lock. Without it,
+            // every app launch stripped pip from the venv (the recurring
+            // "pip vanished" failure, root-caused 2026-06-13).
+            "--inexact",
             "--extra",
             "server",
             "--extra",
