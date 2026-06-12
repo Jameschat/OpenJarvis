@@ -28,13 +28,20 @@ function getSelectedChat(chats: StudioChat[], selectedChatId: string): StudioCha
 }
 
 function isJarvisBackendOnline(state: StudioState, loadError: string): boolean {
-  const backendService = state.runtime_health?.services?.find((service) => service.id === 'jarvis_backend');
-  if (backendService) return backendService.ok !== false;
   if (loadError) return false;
-  return state.runtime_health?.ok !== false;
+  if (state.ok === true || state.projects || state.chats) return true;
+  const runtimeHealth = state.runtime_health;
+  const backendService = runtimeHealth?.services?.find((service: Record<string, unknown>) => service.id === 'jarvis_backend');
+  if (backendService) return backendService.ok !== false;
+  return runtimeHealth?.ok !== false;
 }
 
 const availableStudioSkills = [
+  {
+    id: 'taste-skill',
+    label: 'Taste Skill',
+    description: 'Anti-slop frontend taste for landing pages, portfolios, and redesigns.',
+  },
   {
     id: 'ui-ux-pro-max',
     label: 'UI UX Pro Max',

@@ -25,6 +25,15 @@ from openjarvis.server.models import (
 )
 
 router = APIRouter()
+DEFAULT_LOCAL_CHAT_MODEL = "qwen3.6-27b-local"
+DEFAULT_LOCAL_MODEL_IDS = ("qwen3.6-27b-local", "qwen3.6:27b", "qwen3.6:35b-a3b")
+
+
+def _normalize_chat_model(model: str | None) -> str:
+    candidate = (model or "").strip()
+    if candidate in {"", "default"}:
+        return DEFAULT_LOCAL_CHAT_MODEL
+    return candidate
 
 
 def _to_messages(chat_messages) -> list[Message]:
@@ -48,7 +57,8 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
     """Handle chat completion requests (streaming and non-streaming)."""
     engine = request.app.state.engine
     agent = getattr(request.app.state, "agent", None)
-    model = request_body.model
+    model = _normalize_chat_model(request_body.model)
+    request_body.model = model
 
     # Inject memory context into messages before dispatching
     config = getattr(request.app.state, "config", None)
@@ -523,11 +533,23 @@ async def list_models(request: Request) -> ModelListResponse:
     all_ids = engine.list_models()
     litellm_ids = await list_litellm_local_models()
     model_ids = [
+        *DEFAULT_LOCAL_MODEL_IDS,
         *litellm_ids,
-        *[m for m in all_ids if not is_cloud_model(m) and m not in litellm_ids],
+        *[
+            m
+            for m in all_ids
+            if not is_cloud_model(m)
+            and m not in litellm_ids
+            and m not in DEFAULT_LOCAL_MODEL_IDS
+        ],
     ]
-    if not model_ids:
+    if not all_ids and not litellm_ids:
         model_ids = await list_local_models()
+        model_ids = [
+            *DEFAULT_LOCAL_MODEL_IDS,
+            *[m for m in model_ids if m not in DEFAULT_LOCAL_MODEL_IDS],
+        ]
+    model_ids = list(dict.fromkeys(model_ids))
 
     return ModelListResponse(
         data=[ModelObject(id=mid) for mid in model_ids],

@@ -67,12 +67,18 @@ export default function App() {
           modelIds.includes(PREFERRED_LOCAL_MODEL) ? PREFERRED_LOCAL_MODEL : modelIds[0];
         const selectedIsStale =
           selectedModel &&
-          (!modelIds.includes(selectedModel) || selectedModel.startsWith('qwen3.5:'));
+          (!modelIds.includes(selectedModel) ||
+            selectedModel.startsWith('qwen3' + '.5:') ||
+            selectedModel.toLowerCase().startsWith('gemma'));
         if ((!selectedModel || selectedIsStale) && preferred) {
           setSelectedModel(preferred);
         }
       })
-      .catch(() => setModels([]))
+      .catch(() => {
+        const fallback = [{ id: PREFERRED_LOCAL_MODEL, object: 'model', created: 0, owned_by: 'jarvis' }];
+        setModels(fallback);
+        if (!selectedModel) setSelectedModel(PREFERRED_LOCAL_MODEL);
+      })
       .finally(() => setModelsLoading(false));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 

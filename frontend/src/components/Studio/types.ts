@@ -80,6 +80,7 @@ export interface StudioRuntimeLane {
 }
 
 export interface StudioState {
+  ok?: boolean;
   projects?: StudioProject[];
   project_id?: string;
   chat_id?: string;

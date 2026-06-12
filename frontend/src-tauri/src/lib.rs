@@ -11,98 +11,10 @@ const JARVIS_PORT: u16 = 7710;
 const LITELLM_PORT: u16 = 4000;
 const QWEN_FAST_LANE_PORT: u16 = 8084;
 
-/// Small, fast model pulled at startup so the app opens quickly.
-const STARTUP_MODEL: &str = "qwen3.5:4b";
-
-/// Tiny fallback model if even the startup model can't be pulled.
-const FALLBACK_MODEL: &str = "qwen3:0.6b";
-
-/// Qwen3.5 model variants, ordered smallest to largest.
-/// Each entry is (ollama_tag, approximate_download_size_gb, min_ram_gb).
-const QWEN35_MODELS: &[(&str, f64, f64)] = &[
-    ("qwen3.5:0.8b", 1.0, 4.0),
-    ("qwen3.5:2b", 2.7, 6.0),
-    ("qwen3.5:4b", 3.4, 8.0),
-    ("qwen3.5:9b", 6.6, 12.0),
-    ("qwen3.5:27b", 17.0, 24.0),
-    ("qwen3.5:35b", 24.0, 32.0),
-    ("qwen3.5:122b", 81.0, 96.0),
-];
-
-/// Get total system RAM in GB.
-fn total_ram_gb() -> f64 {
-    #[cfg(target_os = "macos")]
-    {
-        use std::process::Command;
-        if let Ok(output) = Command::new("sysctl").args(["-n", "hw.memsize"]).output() {
-            if let Ok(s) = String::from_utf8(output.stdout) {
-                if let Ok(bytes) = s.trim().parse::<u64>() {
-                    return bytes as f64 / (1024.0 * 1024.0 * 1024.0);
-                }
-            }
-        }
-    }
-    #[cfg(target_os = "linux")]
-    {
-        if let Ok(contents) = std::fs::read_to_string("/proc/meminfo") {
-            for line in contents.lines() {
-                if line.starts_with("MemTotal:") {
-                    if let Some(kb_str) = line.split_whitespace().nth(1) {
-                        if let Ok(kb) = kb_str.parse::<u64>() {
-                            return kb as f64 / (1024.0 * 1024.0);
-                        }
-                    }
-                }
-            }
-        }
-    }
-    #[cfg(target_os = "windows")]
-    {
-        use std::process::Command;
-        // wmic returns TotalVisibleMemorySize in KB
-        if let Ok(output) = Command::new("wmic")
-            .args(["OS", "get", "TotalVisibleMemorySize", "/value"])
-            .output()
-        {
-            if let Ok(s) = String::from_utf8(output.stdout) {
-                for line in s.lines() {
-                    if let Some(val) = line.strip_prefix("TotalVisibleMemorySize=") {
-                        if let Ok(kb) = val.trim().parse::<u64>() {
-                            return kb as f64 / (1024.0 * 1024.0);
-                        }
-                    }
-                }
-            }
-        }
-    }
-    8.0
-}
-
-/// Return the list of Qwen3.5 models that fit on this machine, smallest first.
-fn models_that_fit() -> Vec<&'static str> {
-    let ram = total_ram_gb();
-    QWEN35_MODELS
-        .iter()
-        .filter(|(_, _, min_ram)| ram >= *min_ram)
-        .map(|(tag, _, _)| *tag)
-        .collect()
-}
-
-/// Pick the default model — prefers STARTUP_MODEL if it fits, otherwise
-/// falls back to the third-largest model that fits on this machine.
-fn preferred_model() -> &'static str {
-    let fitting = models_that_fit();
-    // Prefer STARTUP_MODEL when it fits (fast, good quality)
-    if fitting.contains(&STARTUP_MODEL) {
-        return STARTUP_MODEL;
-    }
-    match fitting.len() {
-        0 => FALLBACK_MODEL,
-        1 => fitting[0],
-        2 => fitting[0],
-        n => fitting[n - 3], // third-largest
-    }
-}
+/// Studio's local-first model route. LiteLLM handles this alias and falls back
+/// while the WSL Qwen runtime is still warming.
+const STARTUP_MODEL: &str = "qwen3.6-27b-local";
+const STARTUP_OLLAMA_MODEL: &str = "qwen3.6:27b";
 
 /// Get the user home directory, handling both Unix (HOME) and Windows (USERPROFILE).
 fn home_dir() -> String {
@@ -411,9 +323,15 @@ async fn kill_listening_processes_on_ports(ports: &[u16]) {
         port_list
     );
     let mut cmd = tokio::process::Command::new("powershell.exe");
-    cmd.args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &command])
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null());
+    cmd.args([
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        &command,
+    ])
+    .stdout(std::process::Stdio::null())
+    .stderr(std::process::Stdio::null());
     hide_command_window(&mut cmd);
     let _ = cmd.status().await;
 
@@ -433,6 +351,21 @@ async fn kill_listening_processes_on_ports(ports: &[u16]) {
         .stderr(std::process::Stdio::null());
     hide_command_window(&mut wsl_cmd);
     let _ = wsl_cmd.status().await;
+
+    let mut wsl_port_cmd = tokio::process::Command::new("wsl.exe");
+    wsl_port_cmd
+        .args([
+            "-d",
+            "JarvisUbuntu",
+            "--",
+            "bash",
+            "-lc",
+            "fuser -k 8084/tcp >/dev/null 2>&1 || true",
+        ])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    hide_command_window(&mut wsl_port_cmd);
+    let _ = wsl_port_cmd.status().await;
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -667,39 +600,27 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
         s.detail = "Inference engine ready.".into();
     }
 
-    // Phase 2: Pull one small model (qwen3.5:2b) so the app can open fast.
-    // Remaining models are pulled in the background after the server starts.
+    // Phase 2: confirm the Ollama fallback model without blocking startup.
+    // Studio's primary route is the LiteLLM/OpenAI-compatible Qwen lane; the
+    // desktop app should not pull or switch models while it is opening.
     {
         let mut s = status.lock().await;
         s.phase = "model".into();
-        s.detail = format!("Checking for {}...", STARTUP_MODEL);
+        s.detail = format!("Checking fallback model {}...", STARTUP_OLLAMA_MODEL);
     }
 
-    if !ollama_has_model(STARTUP_MODEL).await {
-        {
-            let mut s = status.lock().await;
-            s.detail = format!("Downloading {}... (this may take a minute)", STARTUP_MODEL);
-        }
-        if let Err(e) = pull_model(STARTUP_MODEL).await {
-            // If the startup model fails, try the tiny fallback
-            eprintln!("Warning: failed to pull {}: {}", STARTUP_MODEL, e);
-            if !ollama_has_model(FALLBACK_MODEL).await {
-                let mut s = status.lock().await;
-                s.detail = format!("Downloading {}...", FALLBACK_MODEL);
-                drop(s);
-                if let Err(e2) = pull_model(FALLBACK_MODEL).await {
-                    let mut s = status.lock().await;
-                    s.error = Some(format!("Failed to download model: {}", e2));
-                    return;
-                }
-            }
-        }
+    if !ollama_has_model(STARTUP_OLLAMA_MODEL).await {
+        let mut s = status.lock().await;
+        s.detail = format!(
+            "{} is not installed in Ollama; Studio will use the Qwen fast lane/LiteLLM route.",
+            STARTUP_OLLAMA_MODEL
+        );
     }
 
     {
         let mut s = status.lock().await;
         s.model_ready = true;
-        s.detail = "Model ready.".into();
+        s.detail = "Model route ready.".into();
     }
 
     // Phase 3: Start jarvis serve
@@ -847,15 +768,7 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
         }
     }
 
-    // Start with STARTUP_MODEL (just pulled) or preferred if already available.
-    let pref = preferred_model();
-    let startup_model = if ollama_has_model(pref).await {
-        pref
-    } else if ollama_has_model(STARTUP_MODEL).await {
-        STARTUP_MODEL
-    } else {
-        FALLBACK_MODEL
-    };
+    let startup_model = STARTUP_MODEL;
 
     let root = project_root.as_ref().unwrap();
 
@@ -896,7 +809,8 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
             if !qwen_ok {
                 let mut s = qwen_status.lock().await;
                 s.detail =
-                    "Qwen fast lane did not become ready; Ollama fallback remains available.".into();
+                    "Qwen fast lane did not become ready; Ollama fallback remains available."
+                        .into();
             }
         });
     }
@@ -999,19 +913,8 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
         s.detail = "All systems ready.".into();
     }
 
-    // Phase 4: Pull remaining Qwen3.5 models in the background.
-    // The app is already usable with qwen3.5:2b; as each model finishes
-    // it appears in the model list automatically.
-    let fitting = models_that_fit();
-    tokio::spawn(async move {
-        for model in fitting {
-            if model != STARTUP_MODEL && model != FALLBACK_MODEL {
-                if !ollama_has_model(model).await {
-                    let _ = pull_model(model).await;
-                }
-            }
-        }
-    });
+    // Do not auto-pull model variants at startup. Jarvis is intentionally
+    // constrained to Qwen 3.6 27B locally plus the remote 35B-A3B worker route.
 }
 
 // ---------------------------------------------------------------------------

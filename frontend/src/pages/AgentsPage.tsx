@@ -1569,7 +1569,7 @@ function AgentResponseFooter({
   const toolCallDetails = msg._toolCallDetails || [];
   const toolCalls = msg._toolCalls ?? toolCallDetails.length;
 
-  // Build summary line like Chat: "ollama - qwen3.5:9b - 18.3s - 50 tokens"
+  // Build summary line like Chat: "ollama - qwen3.6:27b - 18.3s - 50 tokens"
   const parts: string[] = [];
   if (t?.engine) parts.push(String(t.engine));
   if (t?.model_id) parts.push(String(t.model_id));

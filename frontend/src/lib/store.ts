@@ -35,6 +35,7 @@ const OPTIN_NAME_KEY = 'openjarvis-display-name';
 const OPTIN_EMAIL_KEY = 'openjarvis-email';
 const OPTIN_ANONID_KEY = 'openjarvis-anon-id';
 const OPTIN_SEEN_KEY = 'openjarvis-optin-seen';
+const DEFAULT_LOCAL_MODEL = 'qwen3.6-27b-local';
 
 interface ConversationStore {
   version: 1;
@@ -80,7 +81,7 @@ function loadSettings(): Settings {
     theme: 'system',
     apiUrl: '',
     fontSize: 'default',
-    defaultModel: '',
+    defaultModel: DEFAULT_LOCAL_MODEL,
     defaultAgent: '',
     temperature: 0.7,
     maxTokens: 4096,
@@ -230,7 +231,7 @@ export const useAppStore = create<AppState>((set, get) => {
 
     models: [],
     modelsLoading: true,
-    selectedModel: '',
+    selectedModel: DEFAULT_LOCAL_MODEL,
     serverInfo: null,
     savings: null,
 
@@ -296,7 +297,7 @@ export const useAppStore = create<AppState>((set, get) => {
         title: 'New chat',
         createdAt: Date.now(),
         updatedAt: Date.now(),
-        model: model || get().selectedModel || 'default',
+        model: model || get().selectedModel || DEFAULT_LOCAL_MODEL,
         messages: [],
       };
       store.conversations[conv.id] = conv;

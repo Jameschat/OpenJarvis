@@ -32,6 +32,11 @@ export async function initApiBase(): Promise<void> {
 }
 
 const DESKTOP_API_FALLBACK = 'http://127.0.0.1:7710';
+const DEFAULT_LOCAL_MODELS: ModelInfo[] = [
+  { id: 'qwen3.6-27b-local', object: 'model', created: 0, owned_by: 'jarvis' },
+  { id: 'qwen3.6:27b', object: 'model', created: 0, owned_by: 'ollama' },
+  { id: 'qwen3.6:35b-a3b', object: 'model', created: 0, owned_by: 'worker' },
+];
 
 const getSettingsApiUrl = (): string => {
   try {
@@ -51,6 +56,18 @@ export const getBase = (): string => {
   if (isTauri()) return _tauriApiBase || DESKTOP_API_FALLBACK;
   return '';
 };
+
+export function ensureLocalModels(models: ModelInfo[] | undefined | null): ModelInfo[] {
+  const merged = [...(models || [])];
+  const seen = new Set(merged.map((model) => model.id));
+  for (const model of DEFAULT_LOCAL_MODELS) {
+    if (!seen.has(model.id)) {
+      merged.unshift(model);
+      seen.add(model.id);
+    }
+  }
+  return merged;
+}
 
 async function tauriInvoke<T>(command: string, args: Record<string, unknown> = {}): Promise<T> {
   const { invoke } = await import('@tauri-apps/api/core');
@@ -89,15 +106,19 @@ export async function fetchModels(): Promise<ModelInfo[]> {
   if (isTauri()) {
     try {
       const result = await tauriInvoke<{ data?: ModelInfo[] }>('fetch_models');
-      return result?.data || [];
+      return ensureLocalModels(result?.data);
     } catch {
       // Fall through to fetch
     }
   }
-  const res = await fetch(`${getBase()}/v1/models`);
-  if (!res.ok) throw new Error(`Failed to fetch models: ${res.status}`);
-  const data = await res.json();
-  return data.data || [];
+  try {
+    const res = await fetch(`${getBase()}/v1/models`);
+    if (!res.ok) throw new Error(`Failed to fetch models: ${res.status}`);
+    const data = await res.json();
+    return ensureLocalModels(data.data);
+  } catch {
+    return ensureLocalModels([]);
+  }
 }
 
 export async function fetchRecommendedModel(): Promise<{ model: string; reason: string }> {

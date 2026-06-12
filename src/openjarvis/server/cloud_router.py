@@ -365,7 +365,7 @@ async def list_local_models() -> list[str]:
     """Return Ollama model names directly from the Ollama API."""
     host = _ollama_host()
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
+        async with httpx.AsyncClient(timeout=2) as client:
             resp = await client.get(f"{host}/api/tags")
             resp.raise_for_status()
             data = resp.json()
@@ -377,7 +377,7 @@ async def list_local_models() -> list[str]:
 async def list_litellm_local_models() -> list[str]:
     """Return local Qwen aliases exposed by the LiteLLM proxy."""
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
+        async with httpx.AsyncClient(timeout=2) as client:
             resp = await client.get("http://127.0.0.1:4000/v1/models")
             resp.raise_for_status()
             data = resp.json()

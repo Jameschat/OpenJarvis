@@ -5,18 +5,8 @@ import { pullModel, deleteModel, fetchModels, preloadModel, isTauri } from '../l
 
 /** Popular models that users can download from the catalogue. */
 const CATALOGUE_MODELS = [
-  { id: 'qwen3.5:0.8b', size: '~1 GB', desc: 'Qwen 3.5 0.8B — fast, lightweight' },
-  { id: 'qwen3.5:2b', size: '~2.7 GB', desc: 'Qwen 3.5 2B' },
-  { id: 'qwen3.5:4b', size: '~3.4 GB', desc: 'Qwen 3.5 4B — recommended default' },
-  { id: 'qwen3.5:9b', size: '~6.6 GB', desc: 'Qwen 3.5 9B' },
-  { id: 'qwen3.5:27b', size: '~17 GB', desc: 'Qwen 3.5 27B' },
-  { id: 'qwen3.5:35b', size: '~24 GB', desc: 'Qwen 3.5 35B' },
-  { id: 'qwen3.5:122b', size: '~81 GB', desc: 'Qwen 3.5 122B — largest' },
-  { id: 'llama3.3:latest', size: '~4.9 GB', desc: 'Llama 3.3 8B' },
-  { id: 'mistral:latest', size: '~4.1 GB', desc: 'Mistral 7B' },
-  { id: 'gemma3:latest', size: '~3.3 GB', desc: 'Gemma 3 4B' },
-  { id: 'deepseek-r1:7b', size: '~4.7 GB', desc: 'DeepSeek R1 7B' },
-  { id: 'phi4:latest', size: '~9.1 GB', desc: 'Phi-4 14B' },
+  { id: 'qwen3.6:27b', size: '~17 GB', desc: 'Qwen 3.6 27B - Jarvis local RTX 4090 route' },
+  { id: 'qwen3.6:35b-a3b', size: '~24 GB', desc: 'Qwen 3.6 35B-A3B - worker node route' },
 ];
 
 /** Cloud provider definitions */

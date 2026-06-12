@@ -11,6 +11,7 @@ fastapi = pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient  # noqa: E402
 
 from openjarvis.server.app import create_app  # noqa: E402
+from openjarvis.server.routes import _normalize_chat_model  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -75,6 +76,30 @@ def client_with_agent():
 
 
 class TestChatCompletions:
+    def test_blank_or_default_model_normalizes_to_qwen_local(self):
+        assert _normalize_chat_model("") == "qwen3.6-27b-local"
+        assert _normalize_chat_model("   ") == "qwen3.6-27b-local"
+        assert _normalize_chat_model("default") == "qwen3.6-27b-local"
+        assert _normalize_chat_model("gpt-5") == "gpt-5"
+
+    def test_blank_model_with_tools_uses_qwen_local_not_empty_string(self):
+        engine = _make_engine()
+        app = create_app(engine, "test-model")
+        client = TestClient(app)
+
+        resp = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "",
+                "messages": [{"role": "user", "content": "Hello"}],
+                "tools": [{"type": "function", "function": {"name": "noop"}}],
+            },
+        )
+
+        assert resp.status_code == 200
+        _, kwargs = engine.generate.call_args
+        assert kwargs["model"] == "qwen3.6-27b-local"
+
     def test_basic_completion(self, client):
         resp = client.post(
             "/v1/chat/completions",
@@ -252,8 +277,12 @@ class TestModelsEndpoint:
         assert resp.status_code == 200
         data = resp.json()
         assert data["object"] == "list"
-        assert len(data["data"]) == 1
-        assert data["data"][0]["id"] == "test-model"
+        ids = [m["id"] for m in data["data"]]
+        # The engine's model is present, and the approved local Qwen routes
+        # are seeded ahead of live results (desktop picker must never be empty).
+        assert "test-model" in ids
+        assert "qwen3.6-27b-local" in ids
+        assert ids.index("qwen3.6-27b-local") < ids.index("test-model")
 
     def test_model_object_format(self, client):
         resp = client.get("/v1/models")
@@ -267,8 +296,10 @@ class TestModelsEndpoint:
         app = create_app(engine, "model-a")
         client = TestClient(app)
         resp = client.get("/v1/models")
-        data = resp.json()
-        assert len(data["data"]) == 3
+        ids = [m["id"] for m in resp.json()["data"]]
+        # All engine models present alongside the seeded local Qwen routes.
+        for expected in ("model-a", "model-b", "model-c", "qwen3.6-27b-local"):
+            assert expected in ids
 
 
 # ---------------------------------------------------------------------------

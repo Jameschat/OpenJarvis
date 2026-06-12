@@ -8,6 +8,7 @@ import { useSpeech } from '../../hooks/useSpeech';
 import type { ChatMessage, ToolCallInfo, TokenUsage, MessageTelemetry } from '../../types';
 
 export function InputArea() {
+  const defaultLocalModel = 'qwen3.6-27b-local';
   const [input, setInput] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -15,6 +16,7 @@ export function InputArea() {
 
   const activeId = useAppStore((s) => s.activeId);
   const selectedModel = useAppStore((s) => s.selectedModel);
+  const activeModel = selectedModel || defaultLocalModel;
   const streamState = useAppStore((s) => s.streamState);
   const messages = useAppStore((s) => s.messages);
   const speechEnabled = useAppStore((s) => s.settings.speechEnabled);
@@ -91,7 +93,7 @@ export function InputArea() {
 
     let convId = activeId;
     if (!convId) {
-      convId = createConversation(selectedModel);
+      convId = createConversation(activeModel);
     }
 
     const userMsg: ChatMessage = {
@@ -145,12 +147,12 @@ export function InputArea() {
       timestamp: Date.now(),
       level: 'info',
       category: 'chat',
-      message: `Request: "${content.slice(0, 80)}${content.length > 80 ? '...' : ''}" → ${selectedModel}`,
+      message: `Request: "${content.slice(0, 80)}${content.length > 80 ? '...' : ''}" → ${activeModel}`,
     });
 
     try {
       for await (const sseEvent of streamChat(
-        { model: selectedModel, messages: apiMessages, stream: true, temperature, max_tokens: maxTokens },
+        { model: activeModel, messages: apiMessages, stream: true, temperature, max_tokens: maxTokens },
         controller.signal,
       )) {
         const eventName = sseEvent.event;
@@ -161,7 +163,7 @@ export function InputArea() {
           setStreamState({ phase: 'Generating...' });
           useAppStore.getState().addLogEntry({
             timestamp: Date.now(), level: 'info', category: 'chat',
-            message: `Generating with ${selectedModel}...`,
+            message: `Generating with ${activeModel}...`,
           });
         } else if (eventName === 'tool_call_start') {
           try {
@@ -244,10 +246,10 @@ export function InputArea() {
       }
       const totalMs = Date.now() - startTime;
       const _CLOUD_PREFIXES = ['gpt-', 'o1-', 'o3-', 'o4-', 'claude-', 'gemini-', 'openrouter/', 'MiniMax-', 'chatgpt-'];
-      const engineLabel = _CLOUD_PREFIXES.some(p => selectedModel.startsWith(p)) ? 'cloud' : 'ollama';
+      const engineLabel = _CLOUD_PREFIXES.some(p => activeModel.startsWith(p)) ? 'cloud' : 'ollama';
       const telemetry: MessageTelemetry = {
         engine: engineLabel,
-        model_id: selectedModel,
+        model_id: activeModel,
         total_ms: totalMs,
         ttft_ms: ttftMs,
         tokens_per_sec: usage?.completion_tokens
@@ -297,7 +299,7 @@ export function InputArea() {
   }, [
     input,
     activeId,
-    selectedModel,
+    activeModel,
     streamState.isStreaming,
     createConversation,
     addMessage,
