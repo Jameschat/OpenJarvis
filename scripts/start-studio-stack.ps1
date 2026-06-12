@@ -120,6 +120,37 @@ if (Test-Http "http://127.0.0.1:7710/studio/ping") {
     }
 }
 
+# --- 4. agentmemory sidecar (7730) ---
+# Episodic memory. Was only started by jarvis.bat, so every Game Mode
+# park/resume cycle left it dead (Memory page showed it offline, 2026-06-13).
+# OPENAI_API_KEY is stripped for this child only: agentmemory's provider
+# detection picks openai first, whose chat is unsupported - with it cleared,
+# the ANTHROPIC_* block in ~/.agentmemory/.env routes reflect to local Qwen.
+if (Test-Http "http://127.0.0.1:7730/agentmemory/livez") {
+    Write-Host "[agentmemory] already healthy on 7730"
+} else {
+    $iii = Join-Path $env:USERPROFILE ".local\bin\iii.exe"
+    $iiiConfig = Join-Path $env:USERPROFILE ".openjarvis\iii-agentmemory.yaml"
+    if ((Test-Path $iii) -and (Test-Path $iiiConfig)) {
+        $psi = New-Object System.Diagnostics.ProcessStartInfo
+        $psi.FileName = $iii
+        $psi.Arguments = "--config `"$iiiConfig`""
+        $psi.UseShellExecute = $false
+        $psi.CreateNoWindow = $true
+        $psi.EnvironmentVariables.Remove('OPENAI_API_KEY') | Out-Null
+        [System.Diagnostics.Process]::Start($psi) | Out-Null
+        $deadline = (Get-Date).AddSeconds(45)
+        while ((Get-Date) -lt $deadline -and -not (Test-Http "http://127.0.0.1:7730/agentmemory/livez")) { Start-Sleep -Seconds 3 }
+        if (Test-Http "http://127.0.0.1:7730/agentmemory/livez") {
+            Write-Host "[agentmemory] healthy on 7730"
+        } else {
+            Write-Host "[agentmemory] did not come up within 45s (non-fatal - episodic recall degrades gracefully)"
+        }
+    } else {
+        Write-Host "[agentmemory] iii.exe or config missing - skipping (episodic memory disabled)"
+    }
+}
+
 Write-Host ""
 Write-Host "Studio stack status:"
 foreach ($svc in @(
