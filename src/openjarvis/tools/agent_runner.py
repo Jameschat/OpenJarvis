@@ -1052,6 +1052,11 @@ class Task:
     retry_count: int = 0
     parent_task_id: Optional[str] = None     # set on retries: original task.id
     verifier_for: Optional[str] = None       # set on the reviewer task: target task.id
+    # Escalation ladder (Phase 7 #1, 2026-06-12). Defaulted so existing
+    # state.json deserializes without migration. One hop max: a task with
+    # escalation_of set is never escalated again.
+    escalation_of: Optional[str] = None      # set on the child: original qwen task.id
+    escalated_to: Optional[str] = None       # set on the original: child task.id
 
 
 @dataclass
@@ -1264,7 +1269,8 @@ class _Registry:
                  verifier_for: Optional[str] = None,
                  retry_count: int = 0,
                  plan_step_id: Optional[str] = None,
-                 repo_root: Optional[str] = None) -> str:
+                 repo_root: Optional[str] = None,
+                 escalation_of: Optional[str] = None) -> str:
         if agent_id not in self.stats:
             raise ValueError(f"unknown agent: {agent_id}")
         effective, swapped = self._maybe_swap_agent(agent_id)
@@ -1274,7 +1280,8 @@ class _Registry:
                     parent_task_id=parent_task_id,
                     verifier_for=verifier_for,
                     retry_count=int(retry_count),
-                    repo_root=repo_root)
+                    repo_root=repo_root,
+                    escalation_of=escalation_of)
         with self._lock:
             self.tasks[tid] = task
             self._save_unlocked()
@@ -2229,6 +2236,52 @@ def _extract_qwen_proposed_files(all_tool_results: list[Dict[str, Any]]) -> list
     return None
 
 
+def _maybe_escalate_qwen_task(
+    task: Task,
+    ws: Path,
+    verify_verdict: Optional[Dict[str, Any]],
+    content: Optional[str],
+) -> str:
+    """Escalation ladder (Phase 7 #1): when a Qwen task fails verification or
+    self-reports BLOCKED, queue a follow-up task on a stronger provider with
+    the full failure context. Returns a markdown note for RESULT.md, or ""
+    when no escalation happened. Best-effort — never raises, never blocks the
+    task from finishing. Default OFF via OPENJARVIS_ESCALATION."""
+    try:
+        from openjarvis.tools import escalation
+
+        decision = escalation.should_escalate(task, verify_verdict, content)
+        if not decision.go:
+            return ""
+        child_prompt = escalation.build_escalation_prompt(
+            task, ws, verify_verdict, reason=decision.reason
+        )
+        child_id = _reg.add_task(
+            f"[escalated] {task.title}"[:120],
+            decision.target_agent,
+            child_prompt,
+            task.project_id,
+            priority=getattr(task, "priority", 50),
+            parent_task_id=task.id,
+            repo_root=task.repo_root,
+            escalation_of=task.id,
+        )
+        task.escalated_to = child_id
+        escalation.record_escalation(task.id, child_id)
+        logger.info(
+            "agent_runner: qwen task %s escalated to %s as %s (reason: %s)",
+            task.id, decision.target_agent, child_id, decision.reason,
+        )
+        return (
+            "\n## Escalation\n\n"
+            f"Escalated to {decision.target_agent} as task `{child_id}` "
+            f"(reason: {decision.reason}).\n"
+        )
+    except Exception:
+        logger.exception("qwen escalation hook failed (non-fatal)")
+        return ""
+
+
 def _run_qwen_task(task: Task, agent_spec: Dict[str, Any]) -> None:
     """Run a local Qwen-backed single-shot agent through LiteLLM.
 
@@ -2559,6 +2612,9 @@ def _run_qwen_task(task: Task, agent_spec: Dict[str, Any]) -> None:
                 f"Last exit code: {verify_verdict.get('exit_code', 'n/a')}\n"
             )
 
+        # Escalation ladder (Phase 7 #1): default off; one hop; day-capped.
+        escalation_note = _maybe_escalate_qwen_task(task, ws, verify_verdict, content)
+
         written_files: list[str] = []
         if workspace_write:
             written_files = _write_qwen_workspace_files(content, ws)
@@ -2584,6 +2640,7 @@ def _run_qwen_task(task: Task, agent_spec: Dict[str, Any]) -> None:
             f"{visible_content.strip()}\n\n"
             f"{qwen_quality_loop.format_quality_report(quality)}"
             f"{verify_block}"
+            f"{escalation_note}"
         )
         result_path = ws / (f"{task.id}.RESULT.md" if task.project_id else "RESULT.md")
         result_path.write_text(result_md, encoding="utf-8")

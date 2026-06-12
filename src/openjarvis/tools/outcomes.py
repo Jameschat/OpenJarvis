@@ -163,6 +163,8 @@ def record_agent_task(task: Any, agent_spec: Optional[Dict[str, Any]] = None) ->
             "verifier_notes":  (_g("verifier_notes", "") or "")[:500] or None,
             "retry_count":     _g("retry_count", 0),
             "parent_task_id":  _g("parent_task_id", None),
+            "escalation_of":   _g("escalation_of", None),
+            "escalated_to":    _g("escalated_to", None),
             "plan_step_id":    None,   # populated below if present
             "department":      department,
             "quota_hit":       quota_hit,
