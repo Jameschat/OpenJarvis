@@ -284,3 +284,37 @@ class TestLauncherSecrets:
         result = _check_plaintext_launcher(tmp_path / "missing.bat")
         assert result.status == "ok"
 
+
+
+class TestStackSingleton:
+    def test_one_listener_per_port_is_ok(self) -> None:
+        from openjarvis.cli.doctor_cmd import analyze_port_listeners
+
+        result = analyze_port_listeners(
+            {7710: [9128], 4000: [9500], 8084: [13464]}
+        )
+        assert result.status == "ok"
+        assert "7710" in result.message
+
+    def test_true_duplicate_listener_fails(self) -> None:
+        from openjarvis.cli.doctor_cmd import analyze_port_listeners
+
+        result = analyze_port_listeners({7710: [111, 222], 4000: [9500], 8084: []})
+        assert result.status == "fail"
+        assert "7710" in result.message
+        # the misdiagnosis guard: details must teach launcher+child is normal
+        assert "launcher" in (result.details or "").lower()
+
+    def test_launcher_child_same_pid_not_duplicate(self) -> None:
+        from openjarvis.cli.doctor_cmd import analyze_port_listeners
+
+        # netstat can report the same pid on multiple rows (IPv4+IPv6)
+        result = analyze_port_listeners({7710: [9128, 9128], 4000: [], 8084: []})
+        assert result.status == "ok"
+
+    def test_all_ports_down_is_ok_here(self) -> None:
+        from openjarvis.cli.doctor_cmd import analyze_port_listeners
+
+        # liveness belongs to the runtime-stack check, not this one
+        result = analyze_port_listeners({7710: [], 4000: [], 8084: []})
+        assert result.status == "ok"

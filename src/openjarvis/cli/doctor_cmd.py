@@ -444,6 +444,70 @@ _SECRET_KEY_PATTERN = re.compile(
 )
 
 
+_STACK_PORTS = (7710, 4000, 8084)
+
+
+def analyze_port_listeners(listeners: Dict[int, List[int]]) -> CheckResult:
+    """Pure verdict over {port: [owner pids]} for the stack ports.
+
+    IMPORTANT (2026-06-13 misdiagnosis correction): on Windows a venv
+    python.exe is a LAUNCHER that spawns the base interpreter as a child, so
+    every stack service normally shows as TWO processes. Counting processes
+    produced false "duplicate stack" alarms twice — healthy servers got
+    killed. The truthful duplicate signal is more than one DISTINCT pid
+    LISTENING on the same stack port."""
+    duplicated = {p: pids for p, pids in listeners.items() if len(set(pids)) > 1}
+    if duplicated:
+        detail = "; ".join(
+            f"port {p}: pids {sorted(set(pids))}" for p, pids in duplicated.items()
+        )
+        return CheckResult(
+            "Stack singleton",
+            "fail",
+            f"Multiple listeners on stack port(s): {detail}",
+            details=(
+                "Two real servers are competing. Note venv launcher+child pairs "
+                "are NORMAL — only multiple listeners indicate true duplication."
+            ),
+        )
+    down = [p for p in _STACK_PORTS if not listeners.get(p)]
+    up = [p for p in _STACK_PORTS if listeners.get(p)]
+    msg = f"One listener per port ({', '.join(str(p) for p in up)})" if up else "No stack ports listening"
+    if down and up:
+        msg += f"; not listening: {', '.join(str(p) for p in down)} (runtime-stack check owns liveness)"
+    return CheckResult("Stack singleton", "ok", msg)
+
+
+def _collect_port_owners(ports: tuple = _STACK_PORTS) -> Dict[int, List[int]]:
+    """Parse `netstat -ano` LISTENING rows for the given local ports."""
+    owners: Dict[int, List[int]] = {p: [] for p in ports}
+    try:
+        out = subprocess.run(
+            ["netstat", "-ano", "-p", "TCP"],
+            capture_output=True,
+            text=True,
+            timeout=20,
+        ).stdout
+    except Exception:
+        return owners
+    for line in out.splitlines():
+        parts = line.split()
+        if len(parts) >= 5 and parts[3].upper() == "LISTENING":
+            local = parts[1]
+            try:
+                port = int(local.rsplit(":", 1)[1])
+                pid = int(parts[4])
+            except (ValueError, IndexError):
+                continue
+            if port in owners:
+                owners[port].append(pid)
+    return owners
+
+
+def _check_stack_singleton() -> CheckResult:
+    return analyze_port_listeners(_collect_port_owners())
+
+
 def _check_plaintext_launcher(launcher: Optional[Path] = None) -> CheckResult:
     """Scan jarvis.bat for secret-looking set lines; report key NAMES only, never values."""
     if launcher is None:
@@ -499,6 +563,7 @@ def _run_all_checks(*, quick: bool = False) -> List[CheckResult]:
     checks.append(_check_pytest_available())
     checks.append(_check_venv_integrity())
     checks.append(_check_runtime_stack())
+    checks.append(_check_stack_singleton())
     checks.append(_check_nvidia_memory_clock())
     checks.append(_check_plaintext_launcher())
     checks.append(_check_security_profile())
