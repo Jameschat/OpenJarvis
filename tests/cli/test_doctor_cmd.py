@@ -1,4 +1,4 @@
-"""Tests for ``jarvis doctor`` CLI command."""
+﻿"""Tests for ``jarvis doctor`` CLI command."""
 
 from __future__ import annotations
 
@@ -16,6 +16,7 @@ from openjarvis.cli.doctor_cmd import (
     _check_nodejs,
     _check_pip_available,
     _check_pytest_available,
+    _check_plaintext_launcher,
     _check_python_version,
     _check_runtime_stack,
     _check_venv_integrity,
@@ -244,3 +245,42 @@ class TestJarvisStabilityChecks:
         assert result.status == "fail"
         assert "Qwen Fast Lane" in result.message
         assert "qwen_fast_lane" in result.details
+
+
+class TestLauncherSecrets:
+    def test_warns_on_secret_looking_set_lines(self, tmp_path: Path) -> None:
+        launcher = tmp_path / "jarvis.bat"
+        launcher.write_text(
+            "@echo off\n"
+            "set OPENJARVIS_TUNNEL_TOKEN=abc123\n"
+            'set "OPENJARVIS_PUBLIC_PIN=123456"\n'
+            "set OPENJARVIS_FALLBACK_MODEL=gpt-5.4-mini\n",
+            encoding="utf-8",
+        )
+        result = _check_plaintext_launcher(launcher)
+        assert result.status == "warn"
+        assert "OPENJARVIS_TUNNEL_TOKEN" in result.message
+        assert "OPENJARVIS_PUBLIC_PIN" in result.message
+        # never leak values, and non-secret config keys are not flagged
+        assert "abc123" not in result.message
+        assert "123456" not in result.message
+        assert "FALLBACK_MODEL" not in result.message
+
+    def test_ok_when_secrets_externalized(self, tmp_path: Path) -> None:
+        launcher = tmp_path / "jarvis.bat"
+        launcher.write_text(
+            "@echo off\n"
+            'if exist "%USERPROFILE%\\.openjarvis\\jarvis.env" (\n'
+            '  for /f "usebackq eol=# tokens=1,* delims==" %%a in '
+            '("%USERPROFILE%\\.openjarvis\\jarvis.env") do set "%%a=%%b"\n'
+            ")\n"
+            "set OPENJARVIS_FALLBACK_MODEL=gpt-5.4-mini\n",
+            encoding="utf-8",
+        )
+        result = _check_plaintext_launcher(launcher)
+        assert result.status == "ok"
+
+    def test_ok_when_launcher_missing(self, tmp_path: Path) -> None:
+        result = _check_plaintext_launcher(tmp_path / "missing.bat")
+        assert result.status == "ok"
+

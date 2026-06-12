@@ -43,6 +43,15 @@ Select-String -Path (Join-Path $RepoRoot "jarvis.bat") -Pattern '^\s*set\s+([A-Z
     $i = $m.IndexOf('=')
     if ($i -gt 0) { Set-Item -Path "env:$($m.Substring(0,$i))" -Value $m.Substring($i + 1) }
 }
+
+# --- Load secrets from %USERPROFILE%\.openjarvis\jarvis.env (migrated out of jarvis.bat) ---
+$jarvisEnvFile = Join-Path $env:USERPROFILE '.openjarvis\jarvis.env'
+if (Test-Path $jarvisEnvFile) {
+    Get-Content $jarvisEnvFile | Where-Object { $_ -and ($_ -notmatch '^\s*#') } | ForEach-Object {
+        $i = $_.IndexOf('=')
+        if ($i -gt 0) { Set-Item -Path "env:$($_.Substring(0,$i))" -Value $_.Substring($i + 1) }
+    }
+}
 $env:PYTHONIOENCODING = 'utf-8'
 
 # --- 1. Qwen fast lane (WSL MTP/Froggeric, 8084 primary) ---

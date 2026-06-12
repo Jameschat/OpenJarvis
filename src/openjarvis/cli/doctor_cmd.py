@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -437,20 +438,40 @@ def _check_nvidia_memory_clock() -> CheckResult:
     return CheckResult("NVIDIA GPU", "ok", message)
 
 
-def _check_plaintext_launcher() -> CheckResult:
-    """Surface the known plaintext launcher-secret risk without reading its contents."""
-    launcher = Path(r"E:\Claude\OpenJarvis\jarvis.bat")
-    if launcher.exists():
+_SECRET_KEY_PATTERN = re.compile(
+    r"^\s*set\s+\"?([A-Za-z_]*(?:TOKEN|SECRET|PIN|PASSWORD|API_KEY|_KEY)[A-Za-z_]*)=",
+    re.IGNORECASE,
+)
+
+
+def _check_plaintext_launcher(launcher: Optional[Path] = None) -> CheckResult:
+    """Scan jarvis.bat for secret-looking set lines; report key NAMES only, never values."""
+    if launcher is None:
+        launcher = Path(r"E:\Claude\OpenJarvis\jarvis.bat")
+    if not launcher.exists():
+        return CheckResult("Launcher secrets", "ok", "No jarvis.bat found at canonical path")
+    try:
+        lines = launcher.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError as exc:
+        return CheckResult("Launcher secrets", "warn", f"Could not read jarvis.bat: {exc}")
+    secret_keys = sorted(
+        {m.group(1) for line in lines if (m := _SECRET_KEY_PATTERN.match(line))}
+    )
+    if secret_keys:
         return CheckResult(
             "Launcher secrets",
             "warn",
-            "jarvis.bat exists and may contain live secrets",
+            f"jarvis.bat still sets secret-looking keys: {', '.join(secret_keys)}",
             details=(
-                "Do not commit or expose this file. Planned hardening: move secrets "
-                "to a non-repo .env or Windows Credential Manager."
+                "Run scripts\\migrate-jarvis-secrets.ps1 to move them to "
+                "%USERPROFILE%\\.openjarvis\\jarvis.env (git-ignored, user-only ACL)."
             ),
         )
-    return CheckResult("Launcher secrets", "ok", "No jarvis.bat found at canonical path")
+    return CheckResult(
+        "Launcher secrets",
+        "ok",
+        "No plaintext secret keys in jarvis.bat (externalized to ~/.openjarvis/jarvis.env)",
+    )
 
 
 # -- Main command -------------------------------------------------------------
