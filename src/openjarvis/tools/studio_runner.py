@@ -69,6 +69,15 @@ _ECC_LITE_SKILL_GUIDANCE = {
 }
 
 _STUDIO_SKILL_GUIDANCE = {
+    "taste-skill": {
+        "label": "Taste Skill",
+        "aliases": ("taste skill", "tasteskill", "design taste", "design-taste-frontend"),
+        "guidance": (
+            "Use the installed Taste Skill for frontend work: infer the page kind, audience, reference/vibe signals, "
+            "and brand constraints before touching code; state a one-line design read; avoid templated/slop layouts; "
+            "and apply it mainly to landing pages, portfolios, redesigns, and public-facing website polish."
+        ),
+    },
     "ui-ux-pro-max": {
         "label": "UI UX Pro Max",
         "aliases": ("ui ux pro max", "ux ui pro max", "ui/ux pro max", "ux/ui pro max"),
