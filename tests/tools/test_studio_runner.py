@@ -677,7 +677,10 @@ def test_sync_marks_stale_studio_runs_failed(monkeypatch, tmp_path):
     assert any("timed out" in m["content"].lower() for m in chat["messages"])
 
 
-def test_sync_timeout_marks_agent_task_failed(monkeypatch, tmp_path):
+def test_sync_timeout_leaves_running_task_but_fails_run(monkeypatch, tmp_path):
+    # 2026-06-13: a still-running task must NOT be force-finished by the run
+    # timeout (that wrote a false 'failed' outcome and dropped escalations).
+    # The run is marked failed for the UI; the task is left to complete.
     monkeypatch.setattr(studio_runner.studio_store, "STUDIO_ROOT", tmp_path / "studio")
     monkeypatch.setattr(studio_runner, "STUDIO_RUN_STALE_AFTER_SECONDS", 60)
     store = studio_runner.studio_store.StudioStore(tmp_path / "studio")
@@ -704,7 +707,45 @@ def test_sync_timeout_marks_agent_task_failed(monkeypatch, tmp_path):
 
     studio_runner.sync_completed_run_outputs(store)
 
-    assert marked == [("task-stuck", -1, "Studio run timed out after 60s.")]
+    # running task left alone — NOT force-finished
+    assert marked == []
+    # but the run is still failed for the UI, with the timeout event
+    updated = store.get_run(run["id"])
+    assert updated["status"] == "failed"
+    assert any(e["type"] == "run.timeout" for e in updated["events"])
+
+
+def test_sync_timeout_reaps_non_running_task(monkeypatch, tmp_path):
+    # A non-terminal task that never started running (still 'queued' past the
+    # deadline) IS still cleaned up by the timeout path — only actively
+    # 'running' tasks are spared.
+    monkeypatch.setattr(studio_runner.studio_store, "STUDIO_ROOT", tmp_path / "studio")
+    monkeypatch.setattr(studio_runner, "STUDIO_RUN_STALE_AFTER_SECONDS", 60)
+    store = studio_runner.studio_store.StudioStore(tmp_path / "studio")
+    store.ensure_project("openjarvis", title="OpenJarvis")
+    chat = store.create_chat("openjarvis", title="Chat")
+    run = store.create_run("openjarvis", chat["id"], "Stale task", workflow="execute")
+    run["status"] = "running"
+    run["tasks"] = ["task-gone"]
+    store._write_json(store._run_path(run["id"]), run)
+
+    monkeypatch.setattr(
+        studio_runner,
+        "_load_agent_task_index",
+        lambda: {"task-gone": {"id": "task-gone", "status": "queued", "started_at": 1779771600}},
+    )
+    monkeypatch.setattr(studio_runner.time, "time", lambda: 1779771901)
+    marked = []
+
+    class FakeRegistry:
+        def mark_finished(self, task_id, exit_code, error=None):
+            marked.append((task_id, exit_code, error))
+
+    monkeypatch.setattr(studio_runner, "_agent_registry", lambda: FakeRegistry())
+
+    studio_runner.sync_completed_run_outputs(store)
+
+    assert marked == [("task-gone", -1, "Studio run timed out after 60s.")]
 
 
 def test_sync_marks_orphaned_studio_runs_failed(monkeypatch, tmp_path):

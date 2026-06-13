@@ -10,7 +10,11 @@ from typing import Any
 
 from openjarvis.tools import project_preview, studio_context, studio_research, studio_store, studio_workflows
 
-STUDIO_RUN_STALE_AFTER_SECONDS = 300
+# Soft run-timeout: stops the UI spinner after this long. Raised from 300s
+# (2026-06-13) because remote deep-work Qwen tasks (128K context + revision
+# loop + escalation) legitimately run several minutes; the old value reaped
+# them mid-flight. Still-running tasks are now LEFT to complete, not killed.
+STUDIO_RUN_STALE_AFTER_SECONDS = 600
 STUDIO_CONTEXT_CHAR_LIMIT = int(os.environ.get("OPENJARVIS_STUDIO_CONTEXT_CHAR_LIMIT", "512000"))
 BRAIN_ROOT = Path(os.environ.get("OPENJARVIS_BRAIN_ROOT", r"E:\Claude\Obsidian\Claude\Brain"))
 _FILE_ACTIVITY_IGNORES = {
@@ -1573,10 +1577,21 @@ def _mark_studio_run_timed_out(
     store: studio_store.StudioStore,
     run: dict[str, Any],
     task_ids: list[str],
+    task_index: dict[str, dict[str, Any]] | None = None,
 ) -> None:
+    # Stop the run spinner, but DON'T force-finish a task that is still
+    # actively running — it will complete (and possibly escalate) on its own.
+    # Force-marking an in-flight task wrote a false 'failed' outcome and raced
+    # the worker thread, which silently dropped escalations (found live
+    # 2026-06-13). Only reap tasks that are already terminal-but-unsynced.
+    if task_index is None:
+        task_index = _load_agent_task_index()
     try:
         registry = _agent_registry()
         for task_id in task_ids:
+            task = task_index.get(task_id)
+            if task and str(task.get("status")) == "running":
+                continue  # leave it; its real completion + escalation stand
             registry.mark_finished(
                 task_id,
                 -1,
@@ -1674,7 +1689,7 @@ def sync_completed_run_outputs(store: studio_store.StudioStore | None = None) ->
                 default=_iso_to_epoch(str(run.get("updated_at") or "")) or 0,
             )
             if oldest and (time.time() - oldest) > STUDIO_RUN_STALE_AFTER_SECONDS:
-                _mark_studio_run_timed_out(store, run, task_ids)
+                _mark_studio_run_timed_out(store, run, task_ids, task_index)
                 synced += 1
             continue
 
