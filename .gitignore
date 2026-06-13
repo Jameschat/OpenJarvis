@@ -129,3 +129,5 @@ set_spotify_creds.bat
 
 # CodeGraph local index
 .codegraph/
+
+frontend/tsconfig.tsbuildinfo
