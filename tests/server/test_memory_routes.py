@@ -96,3 +96,57 @@ class TestCapabilityInbox:
         monkeypatch.setattr(capability_inbox, "dismiss", lambda cap: {"ok": True})
         resp = client.post("/capability/inbox/dismiss", json={"capability": "x"})
         assert resp.json()["ok"] is True
+
+
+class TestWhatsappPairing:
+    def test_start_returns_status(self, client, monkeypatch):
+        from openjarvis.channels import whatsapp_pairing
+        monkeypatch.setattr(whatsapp_pairing, "start_pairing_session",
+                            lambda: {"status": "starting", "qr": None})
+        resp = client.post("/whatsapp/pair/start")
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "starting"
+
+    def test_status_exposes_qr(self, client, monkeypatch):
+        from openjarvis.channels import whatsapp_pairing
+        monkeypatch.setattr(whatsapp_pairing, "pairing_status",
+                            lambda: {"status": "awaiting_scan", "qr": "QRDATA", "jid": None})
+        resp = client.get("/whatsapp/pair/status")
+        assert resp.json()["qr"] == "QRDATA"
+
+    def test_enable_requires_connected(self, client, monkeypatch):
+        from openjarvis.channels import whatsapp_pairing
+        monkeypatch.setattr(whatsapp_pairing, "pairing_status",
+                            lambda: {"status": "awaiting_scan", "qr": "x", "jid": None})
+        resp = client.post("/whatsapp/pair/enable")
+        assert resp.status_code == 409
+
+    def test_enable_writes_env(self, client, monkeypatch, tmp_path):
+        from openjarvis.channels import whatsapp_pairing
+        from openjarvis.server import memory_routes
+        monkeypatch.setattr(whatsapp_pairing, "pairing_status",
+                            lambda: {"status": "connected", "qr": None, "jid": "44@s.whatsapp.net"})
+        env = tmp_path / "jarvis.env"
+        monkeypatch.setattr(memory_routes, "_upsert_jarvis_env",
+                            lambda values: env.write_text("\n".join(f"{k}={v}" for k,v in values.items())) or True)
+        resp = client.post("/whatsapp/pair/enable")
+        assert resp.status_code == 200
+        assert resp.json()["jid"] == "44@s.whatsapp.net"
+
+
+class TestUpsertEnv:
+    def test_upsert_replaces_and_appends(self, monkeypatch, tmp_path):
+        from openjarvis.server import memory_routes
+        env = tmp_path / ".openjarvis" / "jarvis.env"
+        env.parent.mkdir(parents=True)
+        env.write_text("OTHER=keep\nOPENJARVIS_NOTIFY_WHATSAPP=0\n", encoding="utf-8")
+        monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+        ok = memory_routes._upsert_jarvis_env(
+            {"OPENJARVIS_NOTIFY_WHATSAPP": "1", "OPENJARVIS_NOTIFY_WHATSAPP_TO": "44@x"}
+        )
+        assert ok
+        text = env.read_text(encoding="utf-8")
+        assert "OTHER=keep" in text
+        assert "OPENJARVIS_NOTIFY_WHATSAPP=1" in text
+        assert "OPENJARVIS_NOTIFY_WHATSAPP=0" not in text
+        assert "OPENJARVIS_NOTIFY_WHATSAPP_TO=44@x" in text

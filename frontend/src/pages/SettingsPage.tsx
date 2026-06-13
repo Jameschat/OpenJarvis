@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { WhatsAppPairing } from '../components/WhatsAppPairing';
 import {
   Palette,
   Globe,
@@ -293,6 +294,11 @@ export function SettingsPage() {
                 }}
               />
             </SettingRow>
+          </Section>
+
+          {/* WhatsApp Notifications */}
+          <Section title="WhatsApp Notifications">
+            <WhatsAppPairing />
           </Section>
 
           {/* Models */}

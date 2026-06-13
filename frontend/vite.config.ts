@@ -59,6 +59,7 @@ export default defineConfig(({ mode }) => {
       // Jarvis backend feeds (NOT '/memory' itself - that's an SPA route)
       '/memory/activity': process.env.VITE_JARVIS_URL || 'http://localhost:7710',
       '/capability': process.env.VITE_JARVIS_URL || 'http://localhost:7710',
+      '/whatsapp': process.env.VITE_JARVIS_URL || 'http://localhost:7710',
     },
   },
   };

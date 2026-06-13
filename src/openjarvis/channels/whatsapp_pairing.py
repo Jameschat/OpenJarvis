@@ -177,4 +177,132 @@ def run_pairing(timeout_s: int = 120, build_if_missing: bool = True) -> Dict[str
     }
 
 
-__all__ = ["PairingState", "parse_bridge_line", "preflight", "run_pairing"]
+# ---------------------------------------------------------------------------
+# Stateful session for the in-app (GUI) pairing surface
+# ---------------------------------------------------------------------------
+
+import threading
+
+
+class _PairingSession:
+    """A single background pairing run the desktop app can poll.
+
+    Status flow: idle -> starting -> awaiting_scan (qr available) ->
+    connected | error. Only one session runs at a time."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._thread: Optional[threading.Thread] = None
+        self._proc: Optional[subprocess.Popen] = None
+        self.status = "idle"
+        self.qr: Optional[str] = None
+        self.jid: Optional[str] = None
+        self.reason: Optional[str] = None
+
+    def snapshot(self) -> Dict[str, Any]:
+        with self._lock:
+            return {
+                "status": self.status,
+                "qr": self.qr,
+                "jid": self.jid,
+                "reason": self.reason,
+            }
+
+    def start(self, timeout_s: int = 180) -> Dict[str, Any]:
+        with self._lock:
+            if self.status in ("starting", "awaiting_scan"):
+                return self.snapshot()  # already running
+            self.status = "starting"
+            self.qr = None
+            self.jid = None
+            self.reason = None
+            self._thread = threading.Thread(
+                target=self._run, args=(timeout_s,), daemon=True
+            )
+            self._thread.start()
+        return self.snapshot()
+
+    def _set(self, **kw: Any) -> None:
+        with self._lock:
+            for k, v in kw.items():
+                setattr(self, k, v)
+
+    def _run(self, timeout_s: int) -> None:
+        pf = preflight(build_if_missing=True)
+        if not pf.ok:
+            self._set(status="error", reason=pf.reason)
+            return
+        assert pf.bridge_js is not None
+        try:
+            runtime_bridge = _stage_runtime(pf.bridge_js)
+        except OSError as exc:
+            self._set(status="error", reason=f"stage failed: {exc}")
+            return
+        auth_dir = str(_RUNTIME_DIR / "auth")
+        Path(auth_dir).mkdir(parents=True, exist_ok=True)
+
+        state = PairingState()
+        try:
+            proc = subprocess.Popen(
+                ["node", str(runtime_bridge), "--auth-dir", auth_dir],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,  # GUI renders the QR itself from the string
+                text=True,
+                bufsize=1,
+            )
+        except Exception as exc:  # noqa: BLE001
+            self._set(status="error", reason=f"failed to start bridge: {exc}")
+            return
+        self._proc = proc
+
+        deadline = time.monotonic() + timeout_s
+        while time.monotonic() < deadline and proc.stdout is not None:
+            line = proc.stdout.readline()
+            if not line:
+                if proc.poll() is not None:
+                    break
+                continue
+            event = parse_bridge_line(line)
+            if not event:
+                continue
+            state.apply(event)
+            if event.get("type") == "qr":
+                self._set(status="awaiting_scan", qr=event.get("data"))
+            if state.done:
+                break
+        try:
+            proc.terminate()
+            proc.wait(timeout=5)
+        except Exception:  # noqa: BLE001
+            pass
+
+        if state.connected:
+            self._set(status="connected", jid=state.jid)
+        else:
+            self._set(
+                status="error",
+                reason=state.error or "timed out before scan completed",
+            )
+
+
+_session = _PairingSession()
+
+
+def start_pairing_session(timeout_s: int = 180) -> Dict[str, Any]:
+    """Kick off (or report) a background pairing session for the GUI."""
+    return _session.start(timeout_s=timeout_s)
+
+
+def pairing_status() -> Dict[str, Any]:
+    """Current pairing session state for the GUI to poll."""
+    return _session.snapshot()
+
+
+__all__ = [
+    "PairingState",
+    "parse_bridge_line",
+    "preflight",
+    "run_pairing",
+    "start_pairing_session",
+    "pairing_status",
+]
