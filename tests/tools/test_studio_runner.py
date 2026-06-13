@@ -1342,3 +1342,36 @@ def test_common_studio_request_matrix_routes_without_hanging(monkeypatch, tmp_pa
         assert result["decision"]["workflow"] == expected_workflow, prompt
         if expected_status == "running":
             assert result["run"]["tasks"], prompt
+
+
+def test_infer_project_ignores_stopword_overlap(monkeypatch):
+    # 2026-06-13 regression: the real misroute. The prompt only shared STOP
+    # words ('the','and','this') with the-lounge-sports-bar, and its slug
+    # starts with 'the-' so 'the' gave a false slug match. Stop-word filtering
+    # must make this prompt NOT switch away from openjarvis.
+    from openjarvis.tools import studio_runner
+    candidate = {
+        "id": "the-lounge-sports-bar",
+        "title": "The Lounge Sports Bar",
+        "keywords": studio_runner._words("the lounge sports bar venue menu drinks events"),
+    }
+    monkeypatch.setattr(studio_runner, "_vault_project_candidates", lambda: [candidate])
+    current = {"id": "openjarvis"}
+    prompt = "how does the remote 35b-a3b profile handle tasks between this pc and worker pc?"
+    assert studio_runner._infer_project_from_prompt(prompt, current) is None
+
+
+def test_infer_project_switches_on_explicit_slug(monkeypatch):
+    from openjarvis.tools import studio_runner
+    candidate = {
+        "id": "westhill-hotel",
+        "title": "Westhill Country Hotel",
+        "keywords": {"westhill", "hotel", "website", "dining"},
+    }
+    monkeypatch.setattr(studio_runner, "_vault_project_candidates", lambda: [candidate])
+    current = {"id": "openjarvis"}
+    # 'westhill' is a slug word present in the prompt -> switch is allowed
+    result = studio_runner._infer_project_from_prompt(
+        "continue the westhill website dining page", current
+    )
+    assert result is not None and result["id"] == "westhill-hotel"

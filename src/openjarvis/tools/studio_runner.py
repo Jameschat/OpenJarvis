@@ -973,11 +973,28 @@ def _vault_project_workdir(vault_project: str | None) -> Path | None:
     return None
 
 
+# Function words that carry no project signal. Without filtering these, every
+# prompt scored >=3 on {the, and, this, ...} against every project, and any
+# project whose slug contains a stop word ("the-lounge-sports-bar") got a false
+# slug match from a prompt's "the" — which misrouted an explicit openjarvis run
+# (2026-06-13). Length<3 words are already dropped, so only 3+ char ones here.
+_STOP_WORDS = frozenset({
+    "the", "and", "for", "are", "but", "not", "you", "all", "any", "can", "had",
+    "has", "her", "his", "its", "our", "out", "was", "who", "why", "how", "does",
+    "did", "this", "that", "with", "your", "from", "they", "them", "then", "than",
+    "into", "what", "when", "where", "will", "would", "could", "should", "have",
+    "been", "were", "there", "their", "about", "which", "while", "because",
+    "between", "over", "under", "also", "just", "such", "only", "very", "more",
+    "most", "some", "each", "other", "through", "during", "before", "after",
+    "again", "once", "let", "lets", "please", "need", "want", "make", "get",
+})
+
+
 def _words(text: str) -> set[str]:
     return {
         word
         for word in "".join(ch.lower() if ch.isalnum() else " " for ch in text).split()
-        if len(word) >= 3
+        if len(word) >= 3 and word not in _STOP_WORDS
     }
 
 
@@ -1030,7 +1047,13 @@ def _infer_project_from_prompt(prompt: str, current_project: dict[str, Any] | No
         explicit_slug_match = bool(prompt_words & slug_words)
         if slug_words and slug_words.issubset(prompt_words | keywords) and prompt_words & slug_words:
             score += 4
-        if score >= 3 and (current_id == "openjarvis" or explicit_slug_match or score >= 6) and (
+        # Switching away from the current project requires a STRONG signal:
+        # the project's slug actually appears in the prompt, or a high keyword
+        # score (>=6). Generic-word overlap (>=3 on words like "tasks/pc/
+        # profile") is NOT enough — that misrouted an explicit openjarvis run
+        # into an unrelated project (2026-06-13). The old code let any score>=3
+        # switch while current was openjarvis, which is what caused it.
+        if score >= 3 and (explicit_slug_match or score >= 6) and (
             best is None or score > best[0]
         ):
             best = (score, candidate)
