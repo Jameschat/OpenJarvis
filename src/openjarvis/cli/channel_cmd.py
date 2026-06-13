@@ -264,3 +264,33 @@ def channel_status(
     key = channel_type or config.channel.default_channel or "unknown"
     console.print(f"Channel: [cyan]{key}[/cyan]")
     console.print(f"Status: [{color}]{st.value}[/{color}]")
+
+
+@channel.command("pair")
+@click.option("--timeout", default=120, show_default=True,
+              help="Seconds to wait for the QR scan before giving up.")
+def channel_pair(timeout: int) -> None:
+    """Pair WhatsApp: render a QR to scan with your phone, then report the
+    env vars that route Jarvis notifications to WhatsApp (Phase 8 #1)."""
+    console = Console()
+    from openjarvis.channels.whatsapp_pairing import run_pairing
+
+    console.print("[cyan]WhatsApp pairing[/cyan] - preparing the Baileys bridge...")
+    console.print("On your phone: WhatsApp -> Settings -> Linked Devices -> Link a Device,")
+    console.print("then scan the QR code that appears below.\n")
+
+    result = run_pairing(timeout_s=timeout)
+
+    if result.get("paired"):
+        jid = result.get("jid") or "(your own number)"
+        console.print(f"\n[green]Paired![/green] Linked device for {jid}.")
+        console.print("\nTo route Jarvis notifications to WhatsApp, set:")
+        console.print("  [cyan]OPENJARVIS_NOTIFY_WHATSAPP=1[/cyan]")
+        console.print("  [cyan]OPENJARVIS_NOTIFY_WHATSAPP_TO=<your-jid>[/cyan]  "
+                      "(e.g. 447700900123@s.whatsapp.net)")
+        console.print("in ~/.openjarvis/jarvis.env, then restart the stack.")
+    else:
+        console.print(f"\n[red]Not paired:[/red] {result.get('reason', 'unknown')}")
+        if result.get("qr_shown"):
+            console.print("[yellow]The QR appeared but the scan did not complete in time. "
+                          "Re-run `jarvis channel pair` and scan promptly.[/yellow]")

@@ -16,6 +16,7 @@
 
 import makeWASocket, {
   DisconnectReason,
+  fetchLatestBaileysVersion,
   useMultiFileAuthState,
   WASocket,
 } from "@whiskeysockets/baileys";
@@ -53,10 +54,26 @@ async function main(): Promise<void> {
 
   let sock: WASocket | null = null;
 
+  // Pin to the WhatsApp Web version baileys currently negotiates with. Without
+  // this, a stale built-in version caused "Connection Failure" before the QR
+  // could be generated (observed 2026-06-13 with baileys 7.0.0-rc.9).
+  const { version } = await fetchLatestBaileysVersion();
+  emit({ type: "info", message: `using WA version ${version.join(".")}` });
+
+  // Silence baileys' pino logger so it does not pollute the JSON protocol on
+  // stdout. We only want our own emit() lines there.
+  const silentLogger: any = {
+    level: "silent",
+    fatal() {}, error() {}, warn() {}, info() {}, debug() {}, trace() {},
+    child() { return silentLogger; },
+  };
+
   function startSocket(): void {
     sock = makeWASocket({
+      version,
       auth: state,
       printQRInTerminal: false,
+      logger: silentLogger,
     });
 
     sock.ev.on("creds.update", saveCreds);
@@ -73,9 +90,9 @@ async function main(): Promise<void> {
       }
 
       if (connection === "close") {
+        // Baileys 7.x removed DisconnectReason.unknown; fall back to 0.
         const statusCode =
-          (lastDisconnect?.error as any)?.output?.statusCode ??
-          DisconnectReason.unknown;
+          (lastDisconnect?.error as any)?.output?.statusCode ?? 0;
 
         if (statusCode === DisconnectReason.loggedOut) {
           emit({ type: "status", status: "disconnected" });
@@ -86,6 +103,12 @@ async function main(): Promise<void> {
           startSocket();
         }
       } else if (connection === "open") {
+        // Announce our own jid so the pairing CLI can show the operator the
+        // exact value for OPENJARVIS_NOTIFY_WHATSAPP_TO.
+        const selfJid = sock?.user?.id;
+        if (selfJid) {
+          emit({ type: "self", jid: selfJid });
+        }
         emit({ type: "status", status: "connected" });
       }
     });
