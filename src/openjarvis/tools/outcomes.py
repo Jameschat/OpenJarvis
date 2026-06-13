@@ -137,7 +137,8 @@ def record_agent_task(task: Any, agent_spec: Optional[Dict[str, Any]] = None) ->
         err = (_g("error", "") or "")
         err_l = err.lower()
         quota_hit = ("monthly usage limit" in err_l or "quota" in err_l or
-                     "rate limit" in err_l or "rate-limit" in err_l)
+                     "rate limit" in err_l or "rate-limit" in err_l or
+                     "session limit" in err_l or "usage limit" in err_l)
         refusal = ("i can't" in err_l or "i cannot" in err_l or
                    "refuse" in err_l)
 

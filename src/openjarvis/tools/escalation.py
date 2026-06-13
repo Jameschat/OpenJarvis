@@ -19,12 +19,15 @@ Pure logic only — the actual ``add_task()`` wiring lives in
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional
+
+logger = logging.getLogger(__name__)
 
 _ESCALATIONS_DIR = Path.home() / ".openjarvis" / "learning" / "escalations"
 
@@ -54,8 +57,46 @@ def _enabled() -> bool:
     )
 
 
-def _target_agent() -> str:
+def _configured_target() -> str:
     return os.environ.get("OPENJARVIS_ESCALATION_AGENT", "").strip() or _DEFAULT_TARGET_AGENT
+
+
+def _fallback_target() -> str:
+    """Provider to use when the primary escalation target recently hit its
+    quota. Defaults to a Codex agent so a spent Claude subscription doesn't
+    sink the whole ladder (the failure observed 2026-06-13)."""
+    return os.environ.get("OPENJARVIS_ESCALATION_FALLBACK_AGENT", "").strip() or "gpt-backend"
+
+
+def _recently_quota_blocked(agent_id: str) -> bool:
+    """True if the agent's most recent outcome was a quota failure — so we
+    skip it for this escalation rather than burn the hop on a dead provider."""
+    try:
+        from openjarvis.tools import outcomes
+
+        recent = outcomes.recent_outcomes(window_days=1, kind="agent-task",
+                                          agent_id=agent_id, limit=1)
+        if not recent:
+            return False
+        rec = recent[0]
+        if rec.get("quota_hit"):
+            return True
+        err = (rec.get("error") or "").lower()
+        return "session limit" in err or "usage limit" in err or "quota" in err
+    except Exception:
+        return False
+
+
+def _target_agent() -> str:
+    """Pick the escalation target, falling back off a quota-blocked primary."""
+    primary = _configured_target()
+    if _recently_quota_blocked(primary):
+        fallback = _fallback_target()
+        if fallback != primary and not _recently_quota_blocked(fallback):
+            logger.info("escalation: %s recently quota-blocked, using fallback %s",
+                        primary, fallback)
+            return fallback
+    return primary
 
 
 def _max_per_day() -> int:

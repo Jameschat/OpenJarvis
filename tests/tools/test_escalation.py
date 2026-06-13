@@ -184,3 +184,38 @@ class TestQualityGateTrigger:
         # verify-failed is checked first; quality is the fallback signal
         d = escalation.should_escalate(_task(), VERIFY_FAILED, "x", quality=self._q(True))
         assert d.go and d.reason == "verify-failed"
+
+
+class TestTargetFallback:
+    def _stub_outcomes(self, monkeypatch, quota_agents):
+        """quota_agents: set of agent_ids whose latest outcome is quota-blocked."""
+        from openjarvis.tools import outcomes
+        def fake_recent(window_days=1, kind=None, agent_id=None, limit=1):
+            if agent_id in quota_agents:
+                return [{"agent_id": agent_id, "quota_hit": True, "error": "session limit"}]
+            return [{"agent_id": agent_id, "quota_hit": False, "error": None}]
+        monkeypatch.setattr(outcomes, "recent_outcomes", fake_recent)
+
+    def test_no_quota_uses_configured_primary(self, esc_home, monkeypatch):
+        self._stub_outcomes(monkeypatch, set())
+        d = escalation.should_escalate(_task(), VERIFY_FAILED, "x")
+        assert d.target_agent == "backend-dev"
+
+    def test_primary_quota_blocked_falls_back_to_codex(self, esc_home, monkeypatch):
+        self._stub_outcomes(monkeypatch, {"backend-dev"})
+        d = escalation.should_escalate(_task(), VERIFY_FAILED, "x")
+        assert d.target_agent == "gpt-backend"
+
+    def test_both_blocked_keeps_primary(self, esc_home, monkeypatch):
+        self._stub_outcomes(monkeypatch, {"backend-dev", "gpt-backend"})
+        d = escalation.should_escalate(_task(), VERIFY_FAILED, "x")
+        assert d.target_agent == "backend-dev"
+
+    def test_session_limit_error_detected_without_quota_flag(self, esc_home, monkeypatch):
+        from openjarvis.tools import outcomes
+        monkeypatch.setattr(outcomes, "recent_outcomes",
+            lambda **k: [{"agent_id": k.get("agent_id"), "quota_hit": False,
+                          "error": "You've hit your session limit"}] if k.get("agent_id")=="backend-dev"
+                        else [{"agent_id": k.get("agent_id"), "error": None}])
+        d = escalation.should_escalate(_task(), VERIFY_FAILED, "x")
+        assert d.target_agent == "gpt-backend"
