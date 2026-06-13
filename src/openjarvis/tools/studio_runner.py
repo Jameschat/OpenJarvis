@@ -68,6 +68,7 @@ _ECC_LITE_SKILL_GUIDANCE = {
     "browser-qa": "For web/UI work, request preview and browser_visual_check evidence before final claims.",
     "search-first": "For current or missing information, request web_search/github_search before guessing.",
     "plan-orchestrate": "Turn broad requests into ordered steps with acceptance criteria and owner/agent fit.",
+    "karpathy-guidelines": "Reduce coding mistakes: state assumptions and ask when unclear; write the minimum code that solves it (no speculative abstractions/config/error handling); make surgical changes that match existing style and only clean up orphans YOUR change created; define a verifiable success check and loop until it passes.",
     "security-review": "Check secrets, auth, privacy, permission, and destructive-action risk before proposing execution.",
     "benchmark-optimization-loop": "For performance work, record baseline, one change, retest, and compare evidence.",
 }
@@ -201,9 +202,10 @@ def _select_ecc_lite_skills(prompt: str, workflow: str) -> list[str]:
             "portal",
         )
     ):
-        add("agentic-engineering", "plan-orchestrate", "verification-loop", "tdd-workflow")
+        add("agentic-engineering", "plan-orchestrate", "verification-loop", "tdd-workflow",
+            "karpathy-guidelines")
     if any(term in text for term in ("code", "fix", "implement", "test", "regression", "debug")):
-        add("tdd-workflow")
+        add("tdd-workflow", "karpathy-guidelines")
     if any(term in text for term in ("website", "web page", "frontend", "ui", "browser", "preview", "visual")):
         add("browser-qa")
     if workflow == "qwen_workflow" or any(term in text for term in ("research", "search", "github", "internet", "latest", "look up")):

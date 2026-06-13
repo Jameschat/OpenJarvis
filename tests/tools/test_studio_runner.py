@@ -121,6 +121,7 @@ def test_start_run_injects_ecc_lite_guidance_for_build_tasks(monkeypatch, tmp_pa
     assert "verification-loop" in task_prompt
     assert "browser-qa" in task_prompt
     assert "tdd-workflow" in task_prompt
+    assert "karpathy-guidelines" in task_prompt
     queued_event = next(event for event in result["run"]["events"] if event["type"] == "run.task_queued")
     assert queued_event["data"]["ecc_command"] == "feature-dev"
 
