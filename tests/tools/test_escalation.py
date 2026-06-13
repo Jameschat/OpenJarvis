@@ -153,3 +153,34 @@ class TestBuildEscalationPrompt:
         )
         assert len(prompt) < 30_000
         assert "truncated" in prompt.lower()
+
+
+class TestQualityGateTrigger:
+    def _q(self, needs_escalation):
+        from types import SimpleNamespace
+        return SimpleNamespace(score=46, issues=["a", "b", "c"], needs_escalation=needs_escalation)
+
+    def test_quality_gate_escalation_required_triggers(self, esc_home):
+        d = escalation.should_escalate(_task(), VERIFY_PASSED, "DONE, sort of",
+                                       quality=self._q(True))
+        assert d.go
+        assert d.reason == "quality-gate-failed"
+
+    def test_quality_gate_ok_does_not_trigger(self, esc_home):
+        d = escalation.should_escalate(_task(), VERIFY_PASSED, "DONE all good",
+                                       quality=self._q(False))
+        assert not d.go
+
+    def test_quality_dict_form_supported(self, esc_home):
+        d = escalation.should_escalate(_task(), None, "answer",
+                                       quality={"needs_escalation": True, "score": 46})
+        assert d.go and d.reason == "quality-gate-failed"
+
+    def test_quality_none_is_safe(self, esc_home):
+        d = escalation.should_escalate(_task(), VERIFY_PASSED, "DONE", quality=None)
+        assert not d.go
+
+    def test_verify_fail_still_wins_priority(self, esc_home):
+        # verify-failed is checked first; quality is the fallback signal
+        d = escalation.should_escalate(_task(), VERIFY_FAILED, "x", quality=self._q(True))
+        assert d.go and d.reason == "verify-failed"

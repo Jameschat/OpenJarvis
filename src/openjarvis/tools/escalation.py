@@ -100,11 +100,22 @@ def _content_reports_blocked(content: Optional[str]) -> bool:
     return bool(content) and bool(_BLOCKED_RE.search(content))
 
 
+def _quality_failed(quality: Any) -> bool:
+    """True when the Qwen quality gate itself asked for escalation. Tolerates a
+    QualityAssessment object or a dict; defensive about missing attrs."""
+    if quality is None:
+        return False
+    if isinstance(quality, dict):
+        return bool(quality.get("needs_escalation"))
+    return bool(getattr(quality, "needs_escalation", False))
+
+
 def should_escalate(
     task: Any,
     verify_verdict: Optional[Dict[str, Any]],
     content: Optional[str],
     *,
+    quality: Any = None,
     now: Optional[float] = None,
 ) -> EscalationDecision:
     """Decide whether a finished Qwen task should escalate to a stronger provider."""
@@ -118,8 +129,13 @@ def should_escalate(
         reason = "verify-failed"
     elif _content_reports_blocked(content):
         reason = "blocked"
+    elif _quality_failed(quality):
+        # The Qwen quality gate exhausted its revision loop and flagged
+        # escalation-required (e.g. an architecture/multi-file question the
+        # local 27B can't answer to bar). Hand it to a stronger provider.
+        reason = "quality-gate-failed"
     if reason is None:
-        return EscalationDecision(False, "no failure signal (verify ok / no BLOCKED state)")
+        return EscalationDecision(False, "no failure signal (verify ok / no BLOCKED / quality ok)")
 
     cap = _max_per_day()
     if _read_day_record(now)["count"] >= cap:

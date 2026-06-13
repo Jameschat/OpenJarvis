@@ -2258,16 +2258,18 @@ def _maybe_escalate_qwen_task(
     ws: Path,
     verify_verdict: Optional[Dict[str, Any]],
     content: Optional[str],
+    quality: Any = None,
 ) -> str:
-    """Escalation ladder (Phase 7 #1): when a Qwen task fails verification or
-    self-reports BLOCKED, queue a follow-up task on a stronger provider with
-    the full failure context. Returns a markdown note for RESULT.md, or ""
-    when no escalation happened. Best-effort — never raises, never blocks the
-    task from finishing. Default OFF via OPENJARVIS_ESCALATION."""
+    """Escalation ladder (Phase 7 #1): when a Qwen task fails verification,
+    self-reports BLOCKED, or the quality gate flags escalation-required, queue
+    a follow-up task on a stronger provider with the full failure context.
+    Returns a markdown note for RESULT.md, or "" when no escalation happened.
+    Best-effort — never raises, never blocks the task from finishing. Default
+    OFF via OPENJARVIS_ESCALATION."""
     try:
         from openjarvis.tools import escalation
 
-        decision = escalation.should_escalate(task, verify_verdict, content)
+        decision = escalation.should_escalate(task, verify_verdict, content, quality=quality)
         if not decision.go:
             return ""
         # Phase 7 #2 shadow routing: log what the outcome data would pick
@@ -2637,7 +2639,7 @@ def _run_qwen_task(task: Task, agent_spec: Dict[str, Any]) -> None:
             )
 
         # Escalation ladder (Phase 7 #1): default off; one hop; day-capped.
-        escalation_note = _maybe_escalate_qwen_task(task, ws, verify_verdict, content)
+        escalation_note = _maybe_escalate_qwen_task(task, ws, verify_verdict, content, quality)
 
         written_files: list[str] = []
         if workspace_write:
