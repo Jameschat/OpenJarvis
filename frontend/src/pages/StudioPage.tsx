@@ -78,7 +78,7 @@ export function StudioPage() {
   const [steeringMessageId, setSteeringMessageId] = useState('');
   const [steeringSummary, setSteeringSummary] = useState('');
   const [loading, setLoading] = useState(true);
-  const [gameMode, setGameMode] = useState<'idle' | 'parking' | 'parked'>('idle');
+  const [gameMode, setGameMode] = useState<'idle' | 'parking' | 'parked' | 'resuming'>('idle');
   const [loadError, setLoadError] = useState('');
   const [lastLoadedAt, setLastLoadedAt] = useState('');
 
@@ -310,7 +310,7 @@ export function StudioPage() {
 
   const handleGameMode = useCallback(async () => {
     const sure = window.confirm(
-      'Park Jarvis for gaming?\n\nThis stops the backend, disables self-healing, and frees ~22GB of GPU memory. Reopen the app (or use the Jarvis Resume shortcut) to bring everything back.'
+      'Park Jarvis for gaming?\n\nThis stops the backend, disables self-healing, and frees ~22GB of GPU memory. A Resume button will bring it all back when you are done — no need to close the app.'
     );
     if (!sure) return;
     setGameMode('parking');
@@ -324,19 +324,50 @@ export function StudioPage() {
     }
   }, []);
 
+  const handleGameModeResume = useCallback(async () => {
+    setGameMode('resuming');
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      await invoke('game_mode_resume');
+      setGameMode('idle');
+      toast.success('Jarvis resumed', { description: 'Backend and self-healing are back online.' });
+    } catch (error) {
+      setGameMode('parked');
+      toast.error('Resume failed', { description: String(error) });
+    }
+  }, []);
+
   if (gameMode !== 'idle') {
+    const busy = gameMode === 'parking' || gameMode === 'resuming';
+    const heading =
+      gameMode === 'parking' ? 'Parking Jarvis…'
+      : gameMode === 'resuming' ? 'Resuming Jarvis…'
+      : 'Jarvis is parked';
+    const body =
+      gameMode === 'parking'
+        ? 'Stopping the backend, disabling self-healing, and shutting down the Qwen lane to free your GPU.'
+        : gameMode === 'resuming'
+        ? 'Re-enabling self-healing and starting the stack — the Qwen lane loads from ext4 in seconds.'
+        : 'GPU freed — go play. When you are done, hit Resume to bring everything back without closing the app.';
     return (
       <div className="studio-shell" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{ textAlign: 'center', maxWidth: 420, padding: 32 }}>
+        <div style={{ textAlign: 'center', maxWidth: 440, padding: 32 }}>
           <div style={{ fontSize: 48, marginBottom: 16 }}>🎮</div>
-          <h2 style={{ marginBottom: 8 }}>
-            {gameMode === 'parking' ? 'Parking Jarvis…' : 'Jarvis is parked'}
-          </h2>
-          <p style={{ opacity: 0.75, lineHeight: 1.5 }}>
-            {gameMode === 'parking'
-              ? 'Stopping the backend, disabling self-healing, and shutting down the Qwen lane to free your GPU.'
-              : 'GPU freed — go play. Close this window; reopening the app (or the Jarvis Resume shortcut) brings everything back in seconds.'}
-          </p>
+          <h2 style={{ marginBottom: 8 }}>{heading}</h2>
+          <p style={{ opacity: 0.75, lineHeight: 1.5, marginBottom: 24 }}>{body}</p>
+          {gameMode === 'parked' && (
+            <button
+              type="button"
+              onClick={handleGameModeResume}
+              className="px-4 py-2 rounded-lg text-sm font-medium"
+              style={{ background: 'var(--color-accent, #5ee0a1)', color: '#0b0f16', cursor: 'pointer' }}
+            >
+              ▶ Resume Jarvis
+            </button>
+          )}
+          {busy && (
+            <div style={{ fontSize: 13, opacity: 0.6 }}>This takes a few seconds…</div>
+          )}
         </div>
       </div>
     );

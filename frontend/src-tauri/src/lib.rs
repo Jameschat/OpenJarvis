@@ -986,6 +986,33 @@ async fn game_mode_park(backend: tauri::State<'_, SharedBackend>) -> Result<(), 
 }
 
 #[tauri::command]
+async fn game_mode_resume() -> Result<(), String> {
+    // Bring Jarvis back without closing the app: the canonical resume script
+    // re-enables the app-gated watchdog and starts the JarvisStudioStack, then
+    // waits for the backend on 7710. Runs from the still-alive Tauri shell.
+    let root = find_project_root().ok_or("OpenJarvis project root not found")?;
+    let script = root.join("scripts").join("jarvis-resume.ps1");
+    if !script.exists() {
+        return Err(format!("resume script missing: {}", script.display()));
+    }
+    let mut cmd = tokio::process::Command::new("powershell");
+    cmd.args([
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        &script.to_string_lossy(),
+    ]);
+    hide_command_window(&mut cmd);
+    let status = cmd.status().await.map_err(|e| e.to_string())?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("resume script exited with {:?}", status.code()))
+    }
+}
+
+#[tauri::command]
 async fn check_health(api_url: String) -> Result<serde_json::Value, String> {
     let base = if api_url.is_empty() {
         api_base()
@@ -1888,6 +1915,7 @@ pub fn run() {
             start_backend,
             stop_backend,
             game_mode_park,
+            game_mode_resume,
             check_health,
             fetch_energy,
             fetch_telemetry,
