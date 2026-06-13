@@ -44,11 +44,17 @@ def assess_qwen_output(
     complex_task = _looks_complex(task)
     if complex_task and len(text) < 240:
         issues.append("answer is too thin for a complex task")
-    if complex_task and not _has_any_heading(text, ("assumption", "assumptions")):
+    # The assumptions / verification / next-action headers are deliverable-
+    # engineering markers — they belong on tasks that PRODUCE or CHANGE an
+    # artifact (build/code/fix), not on explanation or Q&A tasks. Requiring them
+    # everywhere made a correct prose answer score 46 (100 - 3*18) and escalate
+    # even from the remote 35B (Phase 9 #6).
+    needs_structure = complex_task and not _is_explanatory(task)
+    if needs_structure and not _has_any_heading(text, ("assumption", "assumptions")):
         issues.append("missing assumptions")
-    if complex_task and not _has_any_heading(text, ("verification", "checked", "evidence")):
+    if needs_structure and not _has_any_heading(text, ("verification", "checked", "evidence")):
         issues.append("missing verification/evidence")
-    if complex_task and not _has_any_heading(text, ("next", "recommend", "action", "steps")):
+    if needs_structure and not _has_any_heading(text, ("next", "recommend", "action", "steps")):
         issues.append("missing next action")
 
     score = max(0, 100 - (18 * len(issues)))
@@ -177,6 +183,35 @@ def _looks_complex(task: str) -> bool:
         "implement",
     )
     return any(keyword in task for keyword in keywords)
+
+
+_EXPLANATORY_MARKERS = (
+    "explain",
+    "describe",
+    "compare",
+    "comparison",
+    "summarise",
+    "summarize",
+    "analyse",
+    "analyze",
+    "what is",
+    "what are",
+    "why ",
+    "how does",
+    "how do ",
+    "difference between",
+    "pros and cons",
+    "tell me about",
+)
+
+
+def _is_explanatory(task: str) -> bool:
+    """True when the task asks for an explanation / answer rather than a
+    produced or changed artifact. Such tasks should be judged on substance, not
+    on deliverable-engineering headers (assumptions/verification/next-action)."""
+    if "?" in task:
+        return True
+    return any(marker in task for marker in _EXPLANATORY_MARKERS)
 
 
 def _has_any_heading(text: str, words: tuple[str, ...]) -> bool:

@@ -40,6 +40,51 @@ def test_is_complex_predicate():
     assert qwen_quality_loop.is_complex("hello there") is False
 
 
+def test_explanatory_question_does_not_require_structure_headings():
+    # Phase 9 #6: a correct, substantial answer to an EXPLANATION / Q&A task
+    # must not be penalised for lacking assumptions / verification / next-action
+    # headers. Those are deliverable-engineering markers, not answer quality — a
+    # right prose answer used to score 46 (100 - 3*18) and auto-escalate.
+    from openjarvis.tools import qwen_quality_loop
+
+    answer = (
+        "Jarvis routes a request to the local Qwen MTP lane first because it is "
+        "free and low-latency; the remote 35B lane is reserved for prompts that "
+        "exceed the local context window or that the quality gate escalates. The "
+        "routing choice is made in agent_runner before dispatch, using the live "
+        "profile and the prompt size, so the bigger remote model is only used when "
+        "the local lane genuinely cannot serve the request."
+    )
+    assessment = qwen_quality_loop.assess_qwen_output(
+        answer, "compare the local and remote Qwen routing lanes"
+    )
+
+    assert assessment.passed is True
+    assert assessment.issues == []
+
+
+def test_deliverable_task_still_requires_structure_headings():
+    # Regression guard for Phase 9 #6: build / implement tasks DO still need
+    # assumptions / verification / next-action — the fix must not weaken the gate
+    # for tasks that actually produce or change an artifact.
+    from openjarvis.tools import qwen_quality_loop
+
+    answer = (
+        "I rewrote the lane routing function so it picks the local Qwen lane "
+        "first and only falls through to the remote 35B lane when the prompt "
+        "overflows the local context window. The edit lives in agent_runner near "
+        "the dispatch path and reads consistently with the surrounding code."
+    )
+    assessment = qwen_quality_loop.assess_qwen_output(
+        answer, "implement the lane routing change"
+    )
+
+    assert assessment.passed is False
+    assert "missing assumptions" in assessment.issues
+    assert "missing verification/evidence" in assessment.issues
+    assert "missing next action" in assessment.issues
+
+
 def test_revise_until_pass_returns_immediately_when_first_draft_passes():
     from openjarvis.tools import qwen_quality_loop
 
