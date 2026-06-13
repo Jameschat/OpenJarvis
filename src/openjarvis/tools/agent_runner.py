@@ -2253,6 +2253,38 @@ def _extract_qwen_proposed_files(all_tool_results: list[Dict[str, Any]]) -> list
     return None
 
 
+_CLI_FAILURE_MARKERS = (
+    ("session limit", "claude session limit reached"),
+    ("usage limit", "provider usage limit reached"),
+    ("rate limit", "provider rate limit"),
+    ("quota", "provider quota exhausted"),
+    ("not logged in", "provider not authenticated"),
+    ("please run `claude login`", "claude not authenticated"),
+    ("authentication", "provider authentication error"),
+)
+
+
+def _detect_cli_failure_reason(stdout_log: Path, stderr_log: Path) -> str:
+    """Read the tails of a failed CLI agent's logs and return a concise,
+    machine-actionable reason (quota/auth markers prioritised). Falls back to
+    the last non-empty stderr/stdout line, else a generic message."""
+    texts = []
+    for path in (stderr_log, stdout_log):
+        try:
+            texts.append(path.read_text(encoding="utf-8", errors="replace"))
+        except OSError:
+            texts.append("")
+    blob = ("\n".join(texts)).lower()
+    for marker, reason in _CLI_FAILURE_MARKERS:
+        if marker in blob:
+            return reason
+    for text in texts:
+        for line in reversed(text.splitlines()):
+            if line.strip():
+                return line.strip()[:200]
+    return "CLI agent exited non-zero with no output"
+
+
 def _maybe_escalate_qwen_task(
     task: Task,
     ws: Path,
@@ -3036,7 +3068,14 @@ def _run_task(task: Task) -> None:
             except Exception:
                 logger.exception("failed writing prompt to stdin for %s", task.id)
         exit_code = proc.wait()
-        _reg.mark_finished(task.id, exit_code=exit_code)
+        # Surface WHY a CLI agent failed into the task error, so the outcome
+        # record is actionable (quota walls, auth) instead of an empty string.
+        # Without this a `claude -p` session-limit hit recorded no error and
+        # the escalation fallback couldn't see it (found live 2026-06-13).
+        fail_reason = (
+            _detect_cli_failure_reason(stdout_log, stderr_log) if exit_code != 0 else None
+        )
+        _reg.mark_finished(task.id, exit_code=exit_code, error=fail_reason)
         logger.info("agent_runner: finished task %s exit=%d", task.id, exit_code)
         # Salvage path: if the agent produced no new project artifacts
         # but its stdout has substantive content, write that as a

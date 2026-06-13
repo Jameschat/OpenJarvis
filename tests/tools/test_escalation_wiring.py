@@ -159,3 +159,25 @@ class TestShadowRouting:
         )
         note = agent_runner._maybe_escalate_qwen_task(_task(), wired.ws, VERIFY_FAILED, "x")
         assert "t_child123" in note
+
+
+class TestCliFailureReason:
+    def test_session_limit_detected_from_stdout(self, tmp_path):
+        from openjarvis.tools.agent_runner import _detect_cli_failure_reason
+        out = tmp_path / "o.log"; err = tmp_path / "e.log"
+        out.write_text("You've hit your session limit . resets 9:40am", encoding="utf-8")
+        err.write_text("", encoding="utf-8")
+        assert _detect_cli_failure_reason(out, err) == "claude session limit reached"
+
+    def test_falls_back_to_last_stderr_line(self, tmp_path):
+        from openjarvis.tools.agent_runner import _detect_cli_failure_reason
+        out = tmp_path / "o.log"; err = tmp_path / "e.log"
+        out.write_text("", encoding="utf-8")
+        err.write_text("traceback...\nTypeError: boom\n", encoding="utf-8")
+        assert _detect_cli_failure_reason(out, err) == "TypeError: boom"
+
+    def test_generic_when_empty(self, tmp_path):
+        from openjarvis.tools.agent_runner import _detect_cli_failure_reason
+        out = tmp_path / "o.log"; err = tmp_path / "e.log"
+        out.write_text("", encoding="utf-8"); err.write_text("", encoding="utf-8")
+        assert "non-zero" in _detect_cli_failure_reason(out, err)
