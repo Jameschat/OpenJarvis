@@ -54,8 +54,11 @@ export default defineConfig(({ mode }) => {
   server: {
     port: 5173,
     proxy: {
-      '/v1': process.env.VITE_API_URL || 'http://localhost:8000',
-      '/health': process.env.VITE_API_URL || 'http://localhost:8000',
+      // The live FastAPI backend serves /v1 and /health on 7710 (same as the
+      // Jarvis feeds below). The old 8000 default was a dead port — dev-preview
+      // chat silently 500'd. Override with VITE_API_URL if running the API elsewhere.
+      '/v1': process.env.VITE_API_URL || 'http://localhost:7710',
+      '/health': process.env.VITE_API_URL || 'http://localhost:7710',
       // Jarvis backend feeds (NOT '/memory' itself - that's an SPA route)
       '/memory/activity': process.env.VITE_JARVIS_URL || 'http://localhost:7710',
       '/capability': process.env.VITE_JARVIS_URL || 'http://localhost:7710',
