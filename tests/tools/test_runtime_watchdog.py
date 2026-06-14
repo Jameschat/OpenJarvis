@@ -127,7 +127,11 @@ def test_watchdog_install_script_registers_minute_task():
     assert "JarvisRuntimeWatchdog" in script
     assert "/SC MINUTE" in script
     assert "/MO" in script
-    assert "watch-jarvis-runtime.ps1" in script
+    # Windowless launch (2026-06-14): the task runs the venv pythonw host on the
+    # watchdog module directly, NOT powershell+watch-jarvis-runtime.ps1, so it
+    # never flashes a console mid-game.
+    assert "pythonw.exe" in script
+    assert "openjarvis.tools.runtime_watchdog" in script
 
 
 def test_watchdog_uses_runtime_timeout_that_tolerates_slow_backend():
