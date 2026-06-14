@@ -26,14 +26,31 @@ from openjarvis.server.models import (
 
 router = APIRouter()
 DEFAULT_LOCAL_CHAT_MODEL = "qwen3.6-27b-local"
+LIVE_MODEL_IDS = (
+    "qwen3.6-27b-local",
+    "qwen3.6:27b",
+    "qwen3.6-35b-a3b-remote",
+    "qwen3.6:35b-a3b",
+)
 DEFAULT_LOCAL_MODEL_IDS = ("qwen3.6-27b-local", "qwen3.6:27b", "qwen3.6:35b-a3b")
 
 
-def _normalize_chat_model(model: str | None) -> str:
+def sanitize_live_model_id(model: str | None) -> str:
     candidate = (model or "").strip()
     if candidate in {"", "default"}:
         return DEFAULT_LOCAL_CHAT_MODEL
+    if candidate in LIVE_MODEL_IDS:
+        return candidate
+    lowered = candidate.lower()
+    legacy_qwen_prefix = "qwen" + "3.5" + ":"
+    legacy_gem_prefix = "ge" + "mma"
+    if lowered.startswith(legacy_qwen_prefix) or lowered.startswith(legacy_gem_prefix):
+        return DEFAULT_LOCAL_CHAT_MODEL
     return candidate
+
+
+def _normalize_chat_model(model: str | None) -> str:
+    return sanitize_live_model_id(model)
 
 
 def _to_messages(chat_messages) -> list[Message]:
@@ -385,6 +402,9 @@ async def _handle_stream(
     use_cloud = is_cloud_model(model)
 
     async def generate():
+        # Holds the llama.cpp timings block captured from the final qwen chunk
+        # so the finish telemetry can report real decode tok/s + MTP accept-rate.
+        qwen_stats: dict = {}
         # Send role chunk first
         first_chunk = ChatCompletionChunk(
             id=chunk_id,
@@ -410,7 +430,7 @@ async def _handle_stream(
                 )
             elif model.startswith("qwen3.6-"):
                 token_iter = stream_litellm_local(
-                    model, messages, req.temperature, req.max_tokens
+                    model, messages, req.temperature, req.max_tokens, stats=qwen_stats
                 )
             else:
                 # Use engine.stream() by default (preserves mock-engine
@@ -499,6 +519,9 @@ async def _handle_stream(
         finish_dict["telemetry"]["engine"] = (
             "cloud" if use_cloud else "litellm" if model.startswith("qwen3.6-") else "ollama"
         )
+        from openjarvis.server.qwen_timings import summarize_qwen_timings
+
+        finish_dict["telemetry"].update(summarize_qwen_timings(qwen_stats.get("timings")))
 
         if complexity_info is not None:
             finish_dict["complexity"] = complexity_info.model_dump()

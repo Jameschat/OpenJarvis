@@ -329,8 +329,13 @@ async def stream_litellm_local(
     messages: Sequence[Message],
     temperature: float = 0.7,
     max_tokens: int = 1024,
+    stats: dict | None = None,
 ) -> AsyncIterator[str]:
-    """Stream tokens through the local LiteLLM proxy."""
+    """Stream tokens through the local LiteLLM proxy.
+
+    If ``stats`` is provided, the final chunk's llama.cpp ``timings`` block is
+    stored under ``stats["timings"]`` (best-effort; absent on cloud fallbacks).
+    """
     payload = {
         "model": model,
         "messages": _to_openai_msgs(messages),
@@ -354,6 +359,8 @@ async def stream_litellm_local(
                     break
                 try:
                     chunk = json.loads(data)
+                    if stats is not None and isinstance(chunk.get("timings"), dict):
+                        stats["timings"] = chunk["timings"]
                     delta = chunk["choices"][0]["delta"].get("content") or ""
                     if delta:
                         yield delta
