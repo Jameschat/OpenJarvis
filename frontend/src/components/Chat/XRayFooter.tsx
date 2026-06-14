@@ -60,8 +60,15 @@ export function XRayFooter({ usage, telemetry }: Props) {
   if (telemetry?.suggested_max_tokens) {
     rows.push({ label: 'Token budget', value: `${telemetry.suggested_max_tokens}` });
   }
-  if (telemetry?.tokens_per_sec) {
-    rows.push({ label: 'Speed', value: `${Math.round(telemetry.tokens_per_sec)} tok/s` });
+  const decode = telemetry?.decode_tok_s ?? telemetry?.tokens_per_sec;
+  if (decode) {
+    rows.push({ label: 'Decode', value: `${Math.round(decode)} tok/s` });
+  }
+  if (telemetry?.prefill_tok_s) {
+    rows.push({ label: 'Prefill', value: `${Math.round(telemetry.prefill_tok_s)} tok/s` });
+  }
+  if (telemetry?.accept_rate != null) {
+    rows.push({ label: 'MTP accept', value: `${Math.round(telemetry.accept_rate * 100)}%` });
   }
   if (telemetry?.ttft_ms != null || telemetry?.total_ms != null) {
     const latencyParts: string[] = [];
@@ -84,7 +91,7 @@ export function XRayFooter({ usage, telemetry }: Props) {
         />
         <span
           className="text-[11px] flex-1"
-          style={{ color: 'var(--color-text-tertiary)', fontFamily: 'system-ui' }}
+          style={{ color: 'var(--color-text-tertiary)', fontFamily: 'var(--font-hud)' }}
         >
           {summary}
         </span>

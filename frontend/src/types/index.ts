@@ -59,6 +59,11 @@ export interface MessageTelemetry {
   complexity_score?: number;
   complexity_tier?: string;
   suggested_max_tokens?: number;
+  // Real llama.cpp timings from the qwen finish chunk (see qwen_timings.py).
+  decode_tok_s?: number;
+  prefill_tok_s?: number;
+  accept_rate?: number | null;
+  predicted_n?: number;
 }
 
 export interface ChatMessage {

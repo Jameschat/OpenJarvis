@@ -2,7 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { Send, Square, Paperclip } from 'lucide-react';
 import { useAppStore, generateId } from '../../lib/store';
 import { streamChat } from '../../lib/sse';
-import { fetchSavings, getBase } from '../../lib/api';
+import { fetchSavings, getBase, sanitizeModelId } from '../../lib/api';
 import { MicButton } from './MicButton';
 import { useSpeech } from '../../hooks/useSpeech';
 import type { ChatMessage, ToolCallInfo, TokenUsage, MessageTelemetry } from '../../types';
@@ -16,7 +16,8 @@ export function InputArea() {
 
   const activeId = useAppStore((s) => s.activeId);
   const selectedModel = useAppStore((s) => s.selectedModel);
-  const activeModel = selectedModel || defaultLocalModel;
+  // Legacy invariant: const activeModel = selectedModel || defaultLocalModel;
+  const activeModel = sanitizeModelId(selectedModel);
   const streamState = useAppStore((s) => s.streamState);
   const messages = useAppStore((s) => s.messages);
   const speechEnabled = useAppStore((s) => s.settings.speechEnabled);
@@ -132,6 +133,7 @@ export function InputArea() {
     let accumulatedContent = '';
     let usage: TokenUsage | undefined;
     let complexity: { score: number; tier: string; suggested_max_tokens: number } | undefined;
+    let serverTelemetry: Partial<MessageTelemetry> | undefined;
     const toolCalls: ToolCallInfo[] = [];
     let lastFlush = 0;
     let ttftMs: number | undefined;
@@ -208,6 +210,7 @@ export function InputArea() {
             const delta = data.choices?.[0]?.delta;
             if (data.usage) usage = data.usage;
             if (data.complexity) complexity = data.complexity;
+            if (data.telemetry) serverTelemetry = data.telemetry;
             if (delta?.content) {
               if (!ttftMs) ttftMs = Date.now() - startTime;
               accumulatedContent += delta.content;
@@ -248,13 +251,21 @@ export function InputArea() {
       const _CLOUD_PREFIXES = ['gpt-', 'o1-', 'o3-', 'o4-', 'claude-', 'gemini-', 'openrouter/', 'MiniMax-', 'chatgpt-'];
       const engineLabel = _CLOUD_PREFIXES.some(p => activeModel.startsWith(p)) ? 'cloud' : 'ollama';
       const telemetry: MessageTelemetry = {
-        engine: engineLabel,
+        engine: serverTelemetry?.engine ?? engineLabel,
         model_id: activeModel,
         total_ms: totalMs,
         ttft_ms: ttftMs,
-        tokens_per_sec: usage?.completion_tokens
-          ? usage.completion_tokens / (totalMs / 1000)
-          : undefined,
+        // Prefer the real llama.cpp decode speed; fall back to the client-side
+        // estimate (completion_tokens / wall-clock, which overcounts TTFT +
+        // thinking tokens) only when the server did not report timings.
+        tokens_per_sec: serverTelemetry?.decode_tok_s
+          ?? (usage?.completion_tokens
+            ? usage.completion_tokens / (totalMs / 1000)
+            : undefined),
+        decode_tok_s: serverTelemetry?.decode_tok_s,
+        prefill_tok_s: serverTelemetry?.prefill_tok_s,
+        accept_rate: serverTelemetry?.accept_rate,
+        predicted_n: serverTelemetry?.predicted_n,
         complexity_score: complexity?.score,
         complexity_tier: complexity?.tier,
         suggested_max_tokens: complexity?.suggested_max_tokens,
