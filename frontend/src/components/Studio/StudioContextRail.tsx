@@ -59,10 +59,16 @@ function runtimeSpeed(lane: Record<string, unknown>): string {
 
 function skillLabel(skillId: string): string {
   const labels: Record<string, string> = {
+    'taste-skill': 'Taste Skill',
     'ui-ux-pro-max': 'UI UX Pro Max',
     superpowers: 'Superpowers',
     'browser-qa': 'Browser QA',
     'unreal-engine': 'Unreal Engine',
+    'context7-docs': 'Context7 Docs',
+    'playwright-mcp': 'Playwright MCP',
+    'shadcn-ui': 'shadcn/ui',
+    'ccpm-planning': 'CCPM Planning',
+    'wshobson-agents': 'Curated Agents',
   };
   return labels[skillId] || skillId;
 }
@@ -75,10 +81,13 @@ export function StudioContextRail({
   onOpenPreview,
   onUpdateWorker,
 }: StudioContextRailProps) {
-  const runtimeLane = state.qwen_runtime?.lanes?.find((lane) => lane.active) || state.qwen_runtime?.lanes?.[0];
-  const qwenRuntime = state.qwen_runtime;
-  const runtimeHealth = state.runtime_health;
-  const runtimeServices = state.runtime_health?.services || [];
+  const runtimeSupervisor = state.runtime_supervisor;
+  const qwenRuntime = runtimeSupervisor?.qwen_runtime || state.qwen_runtime;
+  const runtimeLane = qwenRuntime?.lanes?.find((lane) => lane.active) || qwenRuntime?.lanes?.[0];
+  const runtimeHealth = runtimeSupervisor?.runtime_health || state.runtime_health;
+  const runtimeServices = runtimeSupervisor?.services || state.runtime_health?.services || [];
+  const runtimeOverall = String(runtimeSupervisor?.overall || (backendOnline ? 'ready' : 'failed'));
+  const runtimeIsParked = runtimeOverall === 'parked' || runtimeSupervisor?.parked === true;
   const system = state.system || {};
   const gpu = (system.gpu || {}) as Record<string, unknown>;
   const remoteLane = qwenRuntime?.lanes?.find((lane) => String(lane.id || '').includes('remote') || lane.role === 'remote-worker');
@@ -93,8 +102,14 @@ export function StudioContextRail({
     <aside className="studio-context-rail">
       <section className="studio-card">
         <h2>Desktop Actions</h2>
-        <div className={`studio-native-status ${backendOnline ? 'online' : 'offline'}`}>
-          <span>{backendOnline ? 'Native app connected' : 'Backend unavailable'}</span>
+        <div className={`studio-native-status ${backendOnline || runtimeIsParked ? 'online' : 'offline'}`}>
+          <span>
+            {runtimeIsParked
+              ? 'Parked - Resume Jarvis'
+              : backendOnline
+                ? 'Native app connected'
+                : 'Backend unavailable'}
+          </span>
           <strong>{lastLoadedAt || 'not loaded'}</strong>
         </div>
         <button type="button" className="studio-row" onClick={onOpenPreview}>Open Preview</button>
@@ -172,6 +187,10 @@ export function StudioContextRail({
         ) : null}
       </StatusCard>
 
+      <details style={{ marginBottom: '4px' }}>
+        <summary style={{ cursor: 'pointer', padding: '6px 2px', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--color-text-tertiary)', fontFamily: 'var(--font-hud)' }}>
+          Runtime &amp; worker
+        </summary>
       <StatusCard title="Remote Worker">
         <div className="studio-metric-row">
           <span className={`studio-led ${remoteLane?.online === false ? 'offline' : 'online'}`} />
@@ -185,7 +204,13 @@ export function StudioContextRail({
       </StatusCard>
 
       <StatusCard title="Runtime Readiness">
-        <p className="studio-run-summary-note">{runtimeHealth?.summary || 'Runtime health pending.'}</p>
+        <p className="studio-run-summary-note">
+          {runtimeSupervisor?.summary || runtimeHealth?.summary || 'Runtime health pending.'}
+        </p>
+        <div className="studio-metric-row">
+          <span>Supervisor</span>
+          <strong>{runtimeIsParked ? 'Parked' : runtimeOverall}</strong>
+        </div>
         {runtimeServices.slice(0, 6).map((service, index) => (
           <div className="studio-metric-row" key={String(service.id || service.label || index)}>
             <span className={`studio-led ${service.ok === false ? 'offline' : 'online'}`} />
@@ -194,6 +219,7 @@ export function StudioContextRail({
           </div>
         ))}
       </StatusCard>
+      </details>
 
       <StatusCard title="System Health">
         <div className="studio-metric-row">
@@ -260,6 +286,10 @@ export function StudioContextRail({
         )}
       </StatusCard>
 
+      <details style={{ marginBottom: '4px' }}>
+        <summary style={{ cursor: 'pointer', padding: '6px 2px', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--color-text-tertiary)', fontFamily: 'var(--font-hud)' }}>
+          Tools &amp; integrations
+        </summary>
       <StatusCard title="Browser">
         <div className="studio-metric-row">
           <Globe size={14} />
@@ -298,6 +328,7 @@ export function StudioContextRail({
           </div>
         ))}
       </StatusCard>
+      </details>
     </aside>
   );
 }

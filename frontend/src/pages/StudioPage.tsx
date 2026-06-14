@@ -62,6 +62,31 @@ const availableStudioSkills = [
     label: 'Unreal Engine',
     description: 'UE project planning, validation, and build-aware workflow guidance.',
   },
+  {
+    id: 'context7-docs',
+    label: 'Context7 Docs',
+    description: 'Use current library documentation before coding against changing APIs.',
+  },
+  {
+    id: 'playwright-mcp',
+    label: 'Playwright MCP',
+    description: 'Drive browser preview, screenshots, and visual QA for website/app work.',
+  },
+  {
+    id: 'shadcn-ui',
+    label: 'shadcn/ui',
+    description: 'Use shadcn/ui as the preferred component system for modern frontend builds.',
+  },
+  {
+    id: 'ccpm-planning',
+    label: 'CCPM Planning',
+    description: 'Prototype PRD, issue, and phased project planning before larger builds.',
+  },
+  {
+    id: 'wshobson-agents',
+    label: 'Curated Agents',
+    description: 'Use selected coding, review, docs, and frontend agents without bulk importing.',
+  },
 ];
 
 export function StudioPage() {

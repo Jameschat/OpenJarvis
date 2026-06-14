@@ -104,6 +104,15 @@ export interface StudioState {
     services?: Array<Record<string, unknown>>;
     checked_at?: string;
   };
+  runtime_supervisor?: {
+    overall?: 'ready' | 'starting' | 'parked' | 'degraded' | 'failed' | string;
+    parked?: boolean;
+    summary?: string;
+    active_lane?: string;
+    services?: Array<Record<string, unknown>>;
+    runtime_health?: StudioState['runtime_health'];
+    qwen_runtime?: StudioState['qwen_runtime'];
+  };
   preview?: Record<string, unknown>;
   system?: Record<string, unknown>;
   provider?: string;

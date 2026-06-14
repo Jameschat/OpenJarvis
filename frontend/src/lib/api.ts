@@ -32,9 +32,17 @@ export async function initApiBase(): Promise<void> {
 }
 
 const DESKTOP_API_FALLBACK = 'http://127.0.0.1:7710';
+export const LIVE_MODEL_IDS = [
+  'qwen3.6-27b-local',
+  'qwen3.6:27b',
+  'qwen3.6-35b-a3b-remote',
+  'qwen3.6:35b-a3b',
+] as const;
+
 const DEFAULT_LOCAL_MODELS: ModelInfo[] = [
   { id: 'qwen3.6-27b-local', object: 'model', created: 0, owned_by: 'jarvis' },
   { id: 'qwen3.6:27b', object: 'model', created: 0, owned_by: 'ollama' },
+  { id: 'qwen3.6-35b-a3b-remote', object: 'model', created: 0, owned_by: 'worker' },
   { id: 'qwen3.6:35b-a3b', object: 'model', created: 0, owned_by: 'worker' },
 ];
 
@@ -57,8 +65,20 @@ export const getBase = (): string => {
   return '';
 };
 
+export function sanitizeModelId(modelId?: string | null): string {
+  const candidate = (modelId || '').trim();
+  if (!candidate || candidate === 'default') return 'qwen3.6-27b-local';
+  const legacyQwenPrefix = `qwen${'3.5'}:`;
+  const legacyGemPrefix = `ge${'mma'}`;
+  const lower = candidate.toLowerCase();
+  if (lower.startsWith(legacyQwenPrefix) || lower.startsWith(legacyGemPrefix)) {
+    return 'qwen3.6-27b-local';
+  }
+  return candidate;
+}
+
 export function ensureLocalModels(models: ModelInfo[] | undefined | null): ModelInfo[] {
-  const merged = [...(models || [])];
+  const merged = [...(models || [])].filter((model) => model.id === sanitizeModelId(model.id));
   const seen = new Set(merged.map((model) => model.id));
   for (const model of DEFAULT_LOCAL_MODELS) {
     if (!seen.has(model.id)) {
