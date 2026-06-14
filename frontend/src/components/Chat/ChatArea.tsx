@@ -146,8 +146,16 @@ export function ChatArea() {
           </div>
         ) : (
           <div className="max-w-[var(--chat-max-width)] mx-auto px-4 py-6">
-            {messages.map((msg) => (
-              <MessageBubble key={msg.id} message={msg} />
+            {messages.map((msg, idx) => (
+              <MessageBubble
+                key={msg.id}
+                message={msg}
+                streaming={
+                  streamState.isStreaming &&
+                  idx === messages.length - 1 &&
+                  msg.role === 'assistant'
+                }
+              />
             ))}
             {streamState.isStreaming && (
               <div className="flex justify-start mb-4 px-1">

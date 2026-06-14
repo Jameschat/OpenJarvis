@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, memo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
 import rehypeKatex from 'rehype-katex';
@@ -19,6 +19,11 @@ function stripThinkTags(text: string): string {
 
 interface Props {
   message: ChatMessage;
+  // While true (the actively-streaming assistant message), render cheap plain
+  // text instead of the full markdown+highlight+katex pipeline — re-parsing the
+  // growing message every 80ms flush otherwise saturates the main thread and
+  // makes the whole UI (and the working indicator) janky.
+  streaming?: boolean;
 }
 
 function getTextContent(node: any): string {
@@ -97,7 +102,11 @@ function CopyMessageButton({ content }: { content: string }) {
   );
 }
 
-export function MessageBubble({ message }: Props) {
+// Memoised: during streaming the whole message list re-renders on every token;
+// without memo, every PRIOR assistant message re-runs its markdown+highlight
+// pipeline each token and freezes the main thread. memo skips bubbles whose
+// props (message ref / streaming flag) haven't changed.
+function MessageBubbleImpl({ message, streaming = false }: Props) {
   const isUser = message.role === 'user';
 
   if (isUser) {
@@ -135,19 +144,28 @@ export function MessageBubble({ message }: Props) {
       {/* Audio player (e.g. morning digest) */}
       {message.audio?.url && <AudioPlayer src={message.audio.url} />}
 
-      {/* Assistant message */}
+      {/* Assistant message — plain text while streaming, full markdown once done */}
       {cleanContent && (
-        <div className="prose max-w-none">
-          <ReactMarkdown
-            remarkPlugins={[remarkGfm, remarkMath]}
-            rehypePlugins={[[rehypeHighlight, { detect: true }], rehypeKatex]}
-            components={{
-              pre: CodeBlockPre,
-            }}
+        streaming ? (
+          <div
+            className="text-sm leading-relaxed"
+            style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: 'var(--color-text)' }}
           >
             {cleanContent}
-          </ReactMarkdown>
-        </div>
+          </div>
+        ) : (
+          <div className="prose max-w-none">
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm, remarkMath]}
+              rehypePlugins={[[rehypeHighlight, { detect: true }], rehypeKatex]}
+              components={{
+                pre: CodeBlockPre,
+              }}
+            >
+              {cleanContent}
+            </ReactMarkdown>
+          </div>
+        )
       )}
 
       {/* Footer: copy + x-ray */}
@@ -158,3 +176,5 @@ export function MessageBubble({ message }: Props) {
     </div>
   );
 }
+
+export const MessageBubble = memo(MessageBubbleImpl);

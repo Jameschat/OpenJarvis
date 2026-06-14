@@ -215,16 +215,23 @@ export function InputArea() {
             if (delta?.content) {
               if (!ttftMs) ttftMs = Date.now() - startTime;
               accumulatedContent += delta.content;
-              // Live, approximate output-token count (~4 chars/token) for the
-              // working indicator; replaced by the server's exact usage at the end.
-              setStreamState({
-                content: accumulatedContent,
-                phase: '',
-                tokens: Math.ceil(accumulatedContent.length / 4),
-              });
-
+              // Throttle ALL UI updates to ~12/s. Updating the store on every
+              // token (~80/s) re-rendered the thread + indicator each token and
+              // froze the main thread on long replies. Both the live store
+              // (content/tokens for the working indicator) and the rendered
+              // message now refresh together on the 80ms tick.
               const now = Date.now();
               if (now - lastFlush >= 80) {
+                // elapsedMs is updated HERE (not only via the setInterval):
+                // the SSE `for await` loop floods the microtask queue while
+                // streaming, starving the macrotask timer so the clock froze
+                // mid-generation. Updating it in the flush keeps it ticking.
+                setStreamState({
+                  content: accumulatedContent,
+                  phase: '',
+                  tokens: Math.ceil(accumulatedContent.length / 4),
+                  elapsedMs: now - startTime,
+                });
                 updateLastAssistant(
                   convId,
                   accumulatedContent,
