@@ -17,6 +17,12 @@ from openjarvis.tools.runtime_health import check_runtime_health
 HealthCheck = Callable[[], dict[str, Any]]
 RestartStack = Callable[[], None]
 
+# The watchdog runs every 5 min via Task Scheduler in the operator's interactive
+# session. Console-subsystem children (tasklist/wsl/schtasks/powershell) would
+# each pop a visible window — a flash on screen mid-game. CREATE_NO_WINDOW (no-op
+# off Windows) suppresses it. Pair with a windowless host (pythonw) in the task.
+_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform == "win32" else 0
+
 # Correctness probe (roadmap #1d, 2026-06-12 incident): the MTP lane can
 # silently degrade into ////-style garbage on long prompts while /health
 # stays green and clocks are stock. A periodic long-prompt probe catches
@@ -39,6 +45,7 @@ def restart_jarvis_stack() -> None:
         capture_output=True,
         text=True,
         timeout=20,
+        creationflags=_NO_WINDOW,
     )
     if result.returncode != 0:
         detail = (result.stderr or result.stdout or "schtasks failed").strip()
@@ -71,6 +78,7 @@ def restart_qwen_lane() -> None:
         capture_output=True,
         text=True,
         timeout=30,
+        creationflags=_NO_WINDOW,
     )
     script = Path(__file__).resolve().parents[3] / "scripts" / "start-qwen-mtp-froggeric-wsl.ps1"
     result = subprocess.run(
@@ -78,6 +86,7 @@ def restart_qwen_lane() -> None:
         capture_output=True,
         text=True,
         timeout=180,
+        creationflags=_NO_WINDOW,
     )
     if result.returncode != 0:
         detail = (result.stderr or result.stdout or "lane start script failed").strip()
@@ -114,6 +123,7 @@ def desktop_app_running() -> bool:
             capture_output=True,
             text=True,
             timeout=20,
+            creationflags=_NO_WINDOW,
         ).stdout.lower()
     except Exception:
         return False

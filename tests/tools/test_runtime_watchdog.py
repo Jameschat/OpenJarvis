@@ -1,7 +1,45 @@
 ﻿import json
+import subprocess
+import sys
 from pathlib import Path
 
+import pytest
+
 from openjarvis.tools import runtime_watchdog
+
+
+def test_subprocess_calls_suppress_console_window(monkeypatch):
+    # The watchdog runs every 5 min via Task Scheduler; each child process
+    # (tasklist, wsl, schtasks, powershell) must launch WITHOUT a console or it
+    # flashes a window on the operator's screen mid-game. Assert every
+    # subprocess.run goes out with creationflags=CREATE_NO_WINDOW on Windows.
+    captured: list[dict] = []
+
+    def fake_run(*args, **kwargs):
+        captured.append(kwargs)
+
+        class _R:
+            returncode = 0
+            stdout = ""
+            stderr = ""
+
+        return _R()
+
+    monkeypatch.setattr(runtime_watchdog.subprocess, "run", fake_run)
+
+    runtime_watchdog.desktop_app_running()  # calls tasklist every cycle
+    try:
+        runtime_watchdog.restart_jarvis_stack()
+    except Exception:
+        pass
+
+    assert captured, "expected subprocess.run to be invoked"
+    expected = runtime_watchdog._NO_WINDOW
+    if sys.platform == "win32":
+        assert expected == subprocess.CREATE_NO_WINDOW
+        assert expected != 0
+    for kwargs in captured:
+        assert kwargs.get("creationflags", 0) == expected
 
 
 def test_watchdog_does_nothing_when_runtime_is_healthy(tmp_path):
