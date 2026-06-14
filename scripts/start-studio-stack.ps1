@@ -37,6 +37,19 @@ function Test-Http {
     } catch { return $false }
 }
 
+function Stop-NativeQwenFallback {
+    # Do not keep the Windows-native fallback co-loaded after the WSL lane is
+    # healthy. Two 27B lanes on one 24GB card causes VRAM pressure and slow UI.
+    $listeners = Get-NetTCPConnection -LocalPort 8082 -State Listen -ErrorAction SilentlyContinue
+    foreach ($listener in $listeners) {
+        $proc = Get-Process -Id $listener.OwningProcess -ErrorAction SilentlyContinue
+        if ($proc -and $proc.Path -and $proc.Path -match 'beellama|llama-server') {
+            Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+            Write-Host "[qwen] stopped native fallback on 8082 because WSL fast lane is healthy"
+        }
+    }
+}
+
 # --- Load env vars from jarvis.bat (secrets stay out of logs) ---
 Select-String -Path (Join-Path $RepoRoot "jarvis.bat") -Pattern '^\s*set\s+([A-Z_]+)=(.+)$' | ForEach-Object {
     $m = $_.Line -replace '^\s*set\s+', ''
@@ -55,31 +68,57 @@ if (Test-Path $jarvisEnvFile) {
 $env:PYTHONIOENCODING = 'utf-8'
 
 # --- 1. Qwen fast lane (WSL MTP/Froggeric, 8084 primary) ---
+# BEST-EFFORT: a down or cold-loading lane must NEVER abort this script. The
+# whole try/catch exists because $ErrorActionPreference=Stop (above) turns a
+# native sub-script's stderr (e.g. its own curl health-probe firing before the
+# port is listening) into a terminating error - which previously aborted the
+# run before LiteLLM/backend started, so the app-gated watchdog could not
+# self-heal a dead lane (ROADMAP Phase 9 #7, 2026-06-14). On any qwen failure
+# we log and fall through: the lane launches via setsid nohup (survives this
+# script) and a cold no-mmap ext4 load takes minutes, so the backend comes up
+# now and the lane converges on the next watchdog cycle. Local Qwen is optional
+# here - LiteLLM/chat fall back to BeeLlama (8082) then Ollama.
 $qwenHealthy = $false
-if (Test-Http "http://127.0.0.1:8084/health") {
-    Write-Host "[qwen] WSL MTP lane already healthy on 8084"
-    $qwenHealthy = $true
-} else {
-    $qwenScript = Join-Path $RepoRoot "scripts\start-qwen-mtp-froggeric-wsl.ps1"
-    if (Test-Path $qwenScript) {
-        & powershell.exe -ExecutionPolicy Bypass -File $qwenScript -WslDistro $WslDistro -WaitSeconds $QwenWaitSeconds
-        $qwenHealthy = Test-Http "http://127.0.0.1:8084/health"
+try {
+    if (Test-Http "http://127.0.0.1:8084/health") {
+        Write-Host "[qwen] WSL MTP lane already healthy on 8084"
+        $qwenHealthy = $true
+        Stop-NativeQwenFallback
     } else {
-        Write-Warning "[qwen] WSL launcher missing: $qwenScript"
-    }
-
-    if ($qwenHealthy) {
-        Write-Host "[qwen] WSL MTP lane healthy on 8084"
-    } else {
-        Write-Warning "[qwen] WSL lane failed; falling back to native BeeLlama (8082, plain decode - short prompts only)"
-        $beellamaScript = Join-Path $RepoRoot "scripts\start-qwen-beellama-dflash-service.ps1"
-        & powershell.exe -ExecutionPolicy Bypass -File $beellamaScript -ContextTokens 16384 -WaitSeconds 420
-        if (Test-Http "http://127.0.0.1:8082/health" -TimeoutSec 5) {
-            Write-Host "[qwen] BeeLlama fallback healthy on 8082 (LiteLLM falls through to it when 8084 is down)"
+        $qwenScript = Join-Path $RepoRoot "scripts\start-qwen-mtp-froggeric-wsl.ps1"
+        if (Test-Path $qwenScript) {
+            try {
+                & powershell.exe -ExecutionPolicy Bypass -File $qwenScript -WslDistro $WslDistro -WaitSeconds $QwenWaitSeconds
+            } catch {
+                Write-Warning "[qwen] MTP launcher reported an error ($($_.Exception.Message)); lane may still be loading async"
+            }
+            $qwenHealthy = Test-Http "http://127.0.0.1:8084/health"
         } else {
-            Write-Warning "[qwen] no local Qwen lane is up; chat will fall back to Ollama"
+            Write-Warning "[qwen] WSL launcher missing: $qwenScript"
+        }
+
+        if ($qwenHealthy) {
+            Write-Host "[qwen] WSL MTP lane healthy on 8084"
+            Stop-NativeQwenFallback
+        } else {
+            Write-Warning "[qwen] WSL lane not healthy yet; trying native BeeLlama fallback (8082, plain decode - short prompts only)"
+            $beellamaScript = Join-Path $RepoRoot "scripts\start-qwen-beellama-dflash-service.ps1"
+            if (Test-Path $beellamaScript) {
+                try {
+                    & powershell.exe -ExecutionPolicy Bypass -File $beellamaScript -ContextTokens 16384 -WaitSeconds 420
+                } catch {
+                    Write-Warning "[qwen] BeeLlama fallback launcher errored ($($_.Exception.Message))"
+                }
+            }
+            if (Test-Http "http://127.0.0.1:8082/health" -TimeoutSec 5) {
+                Write-Host "[qwen] BeeLlama fallback healthy on 8082 (LiteLLM falls through to it when 8084 is down)"
+            } else {
+                Write-Warning "[qwen] no local Qwen lane up yet; continuing to LiteLLM/backend (chat falls back to Ollama, lane converges next watchdog cycle)"
+            }
         }
     }
+} catch {
+    Write-Warning "[qwen] lane bring-up errored ($($_.Exception.Message)); continuing so the stack still recovers"
 }
 
 # --- 2. LiteLLM proxy (4000) ---
