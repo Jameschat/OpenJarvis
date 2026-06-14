@@ -63,6 +63,16 @@ export default defineConfig(({ mode }) => {
       '/memory/activity': process.env.VITE_JARVIS_URL || 'http://localhost:7710',
       '/capability': process.env.VITE_JARVIS_URL || 'http://localhost:7710',
       '/whatsapp': process.env.VITE_JARVIS_URL || 'http://localhost:7710',
+      // Studio API (state/runs/projects/etc.) — without this the Studio page is
+      // dead in the dev preview. '/studio' is ALSO the SPA route, so bypass the
+      // proxy for browser navigation (Accept: text/html) and only proxy the
+      // fetch/XHR API calls.
+      '/studio': {
+        target: process.env.VITE_JARVIS_URL || 'http://localhost:7710',
+        changeOrigin: true,
+        bypass: (req: { headers: Record<string, string | undefined>; url?: string }) =>
+          (req.headers.accept || '').includes('text/html') ? (req.url || '/') : undefined,
+      },
     },
   },
   };
