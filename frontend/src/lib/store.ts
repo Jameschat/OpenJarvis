@@ -108,6 +108,7 @@ const INITIAL_STREAM: StreamState = {
   elapsedMs: 0,
   activeToolCalls: [],
   content: '',
+  tokens: 0,
 };
 
 interface AppState {

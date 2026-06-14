@@ -2,7 +2,7 @@ import { useRef, useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router';
 import { MessageBubble } from './MessageBubble';
 import { InputArea } from './InputArea';
-import { StreamingDots } from './StreamingDots';
+import { WorkingStatus } from './WorkingStatus';
 import { useAppStore } from '../../lib/store';
 import { Sparkles, PanelRightOpen, PanelRightClose, Database, MessageSquare, X } from 'lucide-react';
 import { listConnectors } from '../../lib/connectors-api';
@@ -149,9 +149,13 @@ export function ChatArea() {
             {messages.map((msg) => (
               <MessageBubble key={msg.id} message={msg} />
             ))}
-            {streamState.isStreaming && streamState.content === '' && (
-              <div className="flex justify-start mb-4">
-                <StreamingDots phase={streamState.phase} />
+            {streamState.isStreaming && (
+              <div className="flex justify-start mb-4 px-1">
+                <WorkingStatus
+                  elapsedMs={streamState.elapsedMs}
+                  tokens={streamState.tokens}
+                  phase={streamState.phase}
+                />
               </div>
             )}
           </div>

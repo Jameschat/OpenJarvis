@@ -100,6 +100,7 @@ export interface StreamState {
   elapsedMs: number;
   activeToolCalls: ToolCallInfo[];
   content: string;
+  tokens: number; // live (approx) output-token count while generating
 }
 
 // --- API Types ---

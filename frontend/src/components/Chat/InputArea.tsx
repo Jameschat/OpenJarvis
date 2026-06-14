@@ -144,6 +144,7 @@ export function InputArea() {
       elapsedMs: 0,
       activeToolCalls: [],
       content: '',
+      tokens: 0,
     });
     useAppStore.getState().addLogEntry({
       timestamp: Date.now(),
@@ -214,7 +215,13 @@ export function InputArea() {
             if (delta?.content) {
               if (!ttftMs) ttftMs = Date.now() - startTime;
               accumulatedContent += delta.content;
-              setStreamState({ content: accumulatedContent, phase: '' });
+              // Live, approximate output-token count (~4 chars/token) for the
+              // working indicator; replaced by the server's exact usage at the end.
+              setStreamState({
+                content: accumulatedContent,
+                phase: '',
+                tokens: Math.ceil(accumulatedContent.length / 4),
+              });
 
               const now = Date.now();
               if (now - lastFlush >= 80) {
