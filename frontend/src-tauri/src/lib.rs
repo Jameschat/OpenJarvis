@@ -303,6 +303,25 @@ fn hide_command_window(cmd: &mut tokio::process::Command) {
 #[cfg(not(target_os = "windows"))]
 fn hide_command_window(_cmd: &mut tokio::process::Command) {}
 
+// The runtime watchdog should fire ONLY while the desktop app is open. The
+// watchdog also gates itself (skipped_no_app), but the operator wants the
+// scheduled task to not even wake when the app is closed (gaming). So we
+// enable its task on launch and disable it on exit. Best-effort: a missing
+// task or permission error is non-fatal — the in-process gate is the backstop.
+#[cfg(target_os = "windows")]
+fn set_watchdog_task_enabled(enabled: bool) {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+    let flag = if enabled { "/ENABLE" } else { "/DISABLE" };
+    let _ = std::process::Command::new("schtasks")
+        .args(["/Change", "/TN", "JarvisRuntimeWatchdog", flag])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output();
+}
+
+#[cfg(not(target_os = "windows"))]
+fn set_watchdog_task_enabled(_enabled: bool) {}
+
 #[cfg(target_os = "windows")]
 async fn kill_listening_processes_on_ports(ports: &[u16]) {
     if ports.is_empty() {
@@ -1907,6 +1926,10 @@ pub fn run() {
             // Auto-start backend services on launch
             tauri::async_runtime::spawn(boot_backend(boot_backend_ref, boot_status_ref));
 
+            // Watchdog runs only while the app is open: enable its scheduled
+            // task now, disable it on exit (RunEvent::ExitRequested below).
+            set_watchdog_task_enabled(true);
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -1944,6 +1967,8 @@ pub fn run() {
         .expect("error while building OpenJarvis Desktop")
         .run(move |_app, event| {
             if let tauri::RunEvent::ExitRequested { .. } = event {
+                // App closing → watchdog goes dormant (won't fire while closed).
+                set_watchdog_task_enabled(false);
                 stop_all_blocking(backend.clone());
             }
         });
