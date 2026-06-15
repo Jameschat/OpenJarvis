@@ -4,7 +4,7 @@ param(
     [string]$Model = "/root/models/Qwen3-Coder-30B-A3B-Instruct-UD-Q4_K_XL.gguf",
     [string]$FallbackModel = "/mnt/e/Claude/models/Qwen3-Coder-30B-A3B-Instruct-UD-Q4_K_XL.gguf",
     [int]$Port = 8088,
-    [int]$ContextTokens = 65536,
+    [int]$ContextTokens = 98304,
     [string]$CacheTypeK = "q4_0",
     [string]$CacheTypeV = "q4_0",
     [int]$Threads = 24,
