@@ -5,6 +5,27 @@ from openjarvis.tools import agent_runner, studio_runner
 from openjarvis.tools.studio_store import StudioStore
 
 
+def test_context_pack_kwargs_default_is_16k_safe(monkeypatch):
+    for k in ("OPENJARVIS_STUDIO_CONTEXT_CHARS", "OPENJARVIS_STUDIO_EXCERPT_CHARS",
+              "OPENJARVIS_STUDIO_RECALL_LIMIT", "OPENJARVIS_STUDIO_SNIPPET_CHARS",
+              "OPENJARVIS_STUDIO_EPISODIC_LIMIT"):
+        monkeypatch.delenv(k, raising=False)
+    kw = studio_runner._context_pack_kwargs()
+    # Bigger than the old 8000/1200 sliver, but a ~3K-token pack that still fits
+    # the 16K incumbent lane alongside prompt + output.
+    assert kw["budget_chars"] == 12000
+    assert kw["excerpt_chars"] == 3000
+    assert kw["recall_limit"] == 6
+
+
+def test_context_pack_kwargs_env_override(monkeypatch):
+    monkeypatch.setenv("OPENJARVIS_STUDIO_CONTEXT_CHARS", "40000")
+    monkeypatch.setenv("OPENJARVIS_STUDIO_EXCERPT_CHARS", "8000")
+    kw = studio_runner._context_pack_kwargs()
+    assert kw["budget_chars"] == 40000
+    assert kw["excerpt_chars"] == 8000
+
+
 def test_queue_agent_task_starts_worker_before_adding_task(monkeypatch):
     calls = []
 
@@ -36,7 +57,7 @@ def test_start_run_records_context_workflow_and_task(monkeypatch, tmp_path):
     monkeypatch.setattr(
         studio_runner.studio_context,
         "build_project_context_pack",
-        lambda prompt, project=None: {"markdown": "ctx", "warnings": []},
+        lambda prompt, project=None, **_kw: {"markdown": "ctx", "warnings": []},
     )
     monkeypatch.setattr(
         studio_runner.studio_workflows,
@@ -81,7 +102,7 @@ def test_start_run_injects_ecc_lite_guidance_for_build_tasks(monkeypatch, tmp_pa
     monkeypatch.setattr(
         studio_runner.studio_context,
         "build_project_context_pack",
-        lambda prompt, project=None: {"markdown": "ctx", "warnings": []},
+        lambda prompt, project=None, **_kw: {"markdown": "ctx", "warnings": []},
     )
     monkeypatch.setattr(
         studio_runner.studio_workflows,
@@ -132,7 +153,7 @@ def test_start_run_injects_selected_studio_skill_guidance(monkeypatch, tmp_path)
     monkeypatch.setattr(
         studio_runner.studio_context,
         "build_project_context_pack",
-        lambda prompt, project=None: {"markdown": "ctx", "warnings": []},
+        lambda prompt, project=None, **_kw: {"markdown": "ctx", "warnings": []},
     )
     monkeypatch.setattr(
         studio_runner.studio_workflows,
@@ -175,7 +196,7 @@ def test_start_run_routes_test_requests_to_qwen_tester(monkeypatch, tmp_path):
     monkeypatch.setattr(
         studio_runner.studio_context,
         "build_project_context_pack",
-        lambda prompt, project=None: {"markdown": "ctx", "warnings": []},
+        lambda prompt, project=None, **_kw: {"markdown": "ctx", "warnings": []},
     )
     monkeypatch.setattr(
         studio_runner,
@@ -198,7 +219,7 @@ def test_start_run_blocks_when_approval_required(monkeypatch, tmp_path):
     monkeypatch.setattr(
         studio_runner.studio_context,
         "build_project_context_pack",
-        lambda prompt, project=None: {"markdown": "ctx", "warnings": []},
+        lambda prompt, project=None, **_kw: {"markdown": "ctx", "warnings": []},
     )
     monkeypatch.setattr(
         studio_runner.studio_workflows,
@@ -230,7 +251,7 @@ def test_start_run_answers_greeting_without_queueing_agent(monkeypatch, tmp_path
     monkeypatch.setattr(
         studio_runner.studio_context,
         "build_project_context_pack",
-        lambda prompt, project=None: {"markdown": "ctx", "warnings": []},
+        lambda prompt, project=None, **_kw: {"markdown": "ctx", "warnings": []},
     )
     monkeypatch.setattr(
         studio_runner,
@@ -283,7 +304,7 @@ def test_start_run_answers_memory_question_from_context_without_queueing_agent(m
     monkeypatch.setattr(
         studio_runner.studio_context,
         "build_project_context_pack",
-        lambda prompt, project=None: (_ for _ in ()).throw(AssertionError("full context should not be built")),
+        lambda prompt, project=None, **_kw: (_ for _ in ()).throw(AssertionError("full context should not be built")),
     )
     monkeypatch.setattr(
         studio_runner.studio_workflows,
@@ -995,7 +1016,7 @@ def test_start_studio_run_routes_named_vault_project(monkeypatch, tmp_path):
     monkeypatch.setattr(
         studio_runner.studio_context,
         "build_project_context_pack",
-        lambda prompt, project=None: {"ok": True, "markdown": "Westhill context", "warnings": []},
+        lambda prompt, project=None, **_kw: {"ok": True, "markdown": "Westhill context", "warnings": []},
     )
     monkeypatch.setattr(
         studio_runner.studio_workflows,
@@ -1059,7 +1080,7 @@ def test_start_studio_run_routes_named_vault_project_from_stale_selection(monkey
     monkeypatch.setattr(
         studio_runner.studio_context,
         "build_project_context_pack",
-        lambda prompt, project=None: {"ok": True, "markdown": "Westhill context", "warnings": []},
+        lambda prompt, project=None, **_kw: {"ok": True, "markdown": "Westhill context", "warnings": []},
     )
     monkeypatch.setattr(
         studio_runner.studio_workflows,
@@ -1105,7 +1126,7 @@ def test_start_studio_run_answers_project_continuation_without_queueing(monkeypa
     monkeypatch.setattr(
         studio_runner.studio_context,
         "build_project_context_pack",
-        lambda prompt, project=None: {
+        lambda prompt, project=None, **_kw: {
             "ok": True,
             "warnings": [],
             "markdown": "\n".join(
@@ -1153,7 +1174,7 @@ def test_start_studio_run_answers_new_project_platform_brief_without_queueing(mo
     monkeypatch.setattr(
         studio_runner.studio_context,
         "build_project_context_pack",
-        lambda prompt, project=None: {"ok": True, "markdown": "", "warnings": []},
+        lambda prompt, project=None, **_kw: {"ok": True, "markdown": "", "warnings": []},
     )
     queued = []
     monkeypatch.setattr(studio_runner, "_queue_agent_task", lambda **kwargs: queued.append(kwargs) or "task")
@@ -1269,7 +1290,7 @@ def test_website_preview_request_starts_project_preview_without_qwen(monkeypatch
     monkeypatch.setattr(
         studio_runner.studio_context,
         "build_project_context_pack",
-        lambda prompt, project=None: {"ok": True, "markdown": "", "warnings": []},
+        lambda prompt, project=None, **_kw: {"ok": True, "markdown": "", "warnings": []},
     )
     monkeypatch.setattr(
         studio_runner.project_preview,
@@ -1306,7 +1327,7 @@ def test_common_studio_request_matrix_routes_without_hanging(monkeypatch, tmp_pa
     monkeypatch.setattr(
         studio_runner.studio_context,
         "build_project_context_pack",
-        lambda prompt, project=None: {"ok": True, "markdown": "Project context", "warnings": []},
+        lambda prompt, project=None, **_kw: {"ok": True, "markdown": "Project context", "warnings": []},
     )
     monkeypatch.setattr(
         studio_runner.project_preview,

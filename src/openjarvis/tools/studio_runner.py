@@ -17,6 +17,28 @@ from openjarvis.tools import project_preview, studio_context, studio_research, s
 STUDIO_RUN_STALE_AFTER_SECONDS = 600
 STUDIO_CONTEXT_CHAR_LIMIT = int(os.environ.get("OPENJARVIS_STUDIO_CONTEXT_CHAR_LIMIT", "512000"))
 BRAIN_ROOT = Path(os.environ.get("OPENJARVIS_BRAIN_ROOT", r"E:\Claude\Obsidian\Claude\Brain"))
+
+
+def _context_pack_kwargs() -> dict[str, int]:
+    """Caps for the Studio/Qwen context pack. Defaults give a ~3K-token pack
+    (bigger than the old ~2K sliver) that still fits the 16K incumbent lane
+    alongside the prompt + output. Running a big-window lane (e.g. the 96K
+    Qwen3-Coder lane)? Raise these via env so the model uses the window:
+      OPENJARVIS_STUDIO_CONTEXT_CHARS / _EXCERPT_CHARS / _RECALL_LIMIT /
+      _SNIPPET_CHARS / _EPISODIC_LIMIT  (e.g. 40000 / 8000 / 8 / 800 / 5)."""
+    def _i(name: str, default: int) -> int:
+        try:
+            return max(0, int((os.environ.get(name) or "").strip() or default))
+        except ValueError:
+            return default
+
+    return {
+        "budget_chars": _i("OPENJARVIS_STUDIO_CONTEXT_CHARS", 12000),
+        "excerpt_chars": _i("OPENJARVIS_STUDIO_EXCERPT_CHARS", 3000),
+        "recall_limit": _i("OPENJARVIS_STUDIO_RECALL_LIMIT", 6),
+        "snippet_chars": _i("OPENJARVIS_STUDIO_SNIPPET_CHARS", 600),
+        "episodic_limit": _i("OPENJARVIS_STUDIO_EPISODIC_LIMIT", 4),
+    }
 _FILE_ACTIVITY_IGNORES = {
     "jarvis.bat",
     "uv.lock",
@@ -110,6 +132,31 @@ _STUDIO_SKILL_GUIDANCE = {
         "label": "Unreal Engine",
         "aliases": ("unreal engine", "ue5"),
         "guidance": "For Unreal work, use UE-specific project context, module boundaries, validation, and editor/test evidence.",
+    },
+    "context7-docs": {
+        "label": "Context7 Docs",
+        "aliases": ("context7", "context 7", "current docs", "library docs"),
+        "guidance": "Before coding against current libraries, request or use Context7-style current documentation instead of relying on stale memory.",
+    },
+    "playwright-mcp": {
+        "label": "Playwright MCP",
+        "aliases": ("playwright", "playwright mcp", "browser automation", "website preview"),
+        "guidance": "For browser/UI work, use Playwright-style browser automation for previews, screenshots, interaction checks, and visual evidence.",
+    },
+    "shadcn-ui": {
+        "label": "shadcn/ui",
+        "aliases": ("shadcn", "shadcn/ui", "component system"),
+        "guidance": "Use shadcn/ui patterns as the preferred frontend component system when a React component library is appropriate.",
+    },
+    "ccpm-planning": {
+        "label": "CCPM Planning",
+        "aliases": ("ccpm", "project planning", "prd"),
+        "guidance": "For larger projects, produce a CCPM-style PRD, issue breakdown, acceptance criteria, and handoff plan before implementation.",
+    },
+    "wshobson-agents": {
+        "label": "Curated Agents",
+        "aliases": ("wshobson agents", "agent packs", "coding agents"),
+        "guidance": "Select only the relevant specialist agent guidance for coding, review, docs, frontend, and QA work; do not bulk-import every agent.",
     },
 }
 
@@ -1883,7 +1930,9 @@ def start_studio_run(
             },
             "reply": reply,
         }
-    context_pack = studio_context.build_project_context_pack(prompt, project=project)
+    context_pack = studio_context.build_project_context_pack(
+        prompt, project=project, **_context_pack_kwargs()
+    )
     store.append_run_event(
         run["id"],
         "run.context_built",

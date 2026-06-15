@@ -42,7 +42,9 @@ def _codegraph_status_safe() -> dict[str, Any]:
     return _codegraph_status()
 
 
-def _project_file_excerpt(brain_root: Path, project_name: str | None, filename: str) -> dict[str, str]:
+def _project_file_excerpt(
+    brain_root: Path, project_name: str | None, filename: str, excerpt_chars: int = 1200
+) -> dict[str, str]:
     if not project_name:
         return {"path": "", "excerpt": ""}
     path = brain_root / "Projects" / project_name / filename
@@ -50,23 +52,35 @@ def _project_file_excerpt(brain_root: Path, project_name: str | None, filename: 
         return {"path": str(path), "excerpt": ""}
     return {
         "path": str(path),
-        "excerpt": _clip(path.read_text(encoding="utf-8", errors="replace"), 1200),
+        "excerpt": _clip(path.read_text(encoding="utf-8", errors="replace"), excerpt_chars),
     }
 
 
-def _vault_file_excerpt(brain_root: Path, filename: str) -> dict[str, str]:
+def _vault_file_excerpt(brain_root: Path, filename: str, excerpt_chars: int = 1200) -> dict[str, str]:
     path = brain_root / filename
     if not path.exists():
         return {"path": str(path), "excerpt": ""}
     return {
         "path": str(path),
-        "excerpt": _clip(path.read_text(encoding="utf-8", errors="replace"), 1200),
+        "excerpt": _clip(path.read_text(encoding="utf-8", errors="replace"), excerpt_chars),
     }
 
 
 def build_project_context_pack(
-    query: str, project: dict[str, Any] | None = None, *, budget_chars: int = 8000
+    query: str,
+    project: dict[str, Any] | None = None,
+    *,
+    budget_chars: int = 8000,
+    excerpt_chars: int = 1200,
+    recall_limit: int = 4,
+    snippet_chars: int = 420,
+    episodic_limit: int = 3,
 ) -> dict[str, Any]:
+    # Caps default to the original small-pack values (no regression for Ollama /
+    # small-window callers); a big-window lane (e.g. the 96K Qwen3-Coder lane)
+    # passes wider values so the model actually sees fuller project files +
+    # more recall instead of a ~2K-token sliver. (Pack budget still bounds the
+    # total, and per-file excerpt_chars keeps any one file from starving the rest.)
     warnings: list[str] = []
     query = (query or "").strip()
     project = project or {}
@@ -78,25 +92,25 @@ def build_project_context_pack(
         return {"ok": False, "query": query, "warnings": [f"vault unavailable: {exc}"], "markdown": ""}
 
     vault_project = project.get("vault_project") or project.get("title") or "OpenJarvis"
-    handoff = _vault_file_excerpt(brain_root, "00 Session Handoff.md")
-    state = _project_file_excerpt(brain_root, vault_project, "STATE.md")
-    context = _project_file_excerpt(brain_root, vault_project, "CONTEXT.md")
-    roadmap = _project_file_excerpt(brain_root, vault_project, "ROADMAP.md")
+    handoff = _vault_file_excerpt(brain_root, "00 Session Handoff.md", excerpt_chars)
+    state = _project_file_excerpt(brain_root, vault_project, "STATE.md", excerpt_chars)
+    context = _project_file_excerpt(brain_root, vault_project, "CONTEXT.md", excerpt_chars)
+    roadmap = _project_file_excerpt(brain_root, vault_project, "ROADMAP.md", excerpt_chars)
 
     vault_hits: list[dict[str, str]] = []
     try:
-        for path, snippet in ob.recall(query or vault_project, limit=4):
+        for path, snippet in ob.recall(query or vault_project, limit=recall_limit):
             try:
                 rel = Path(path).relative_to(brain_root).as_posix()
             except Exception:
                 rel = str(path)
-            vault_hits.append({"path": rel, "snippet": _clip(snippet, 420)})
+            vault_hits.append({"path": rel, "snippet": _clip(snippet, snippet_chars)})
     except Exception as exc:
         warnings.append(f"vault recall unavailable: {exc}")
 
     episodic: dict[str, Any] = {"online": True, "hits": []}
     try:
-        episodic["hits"] = _agentmemory_hits(query, limit=3)
+        episodic["hits"] = _agentmemory_hits(query, limit=episodic_limit)
     except Exception as exc:
         episodic = {"online": False, "hits": [], "error": str(exc)}
         warnings.append("agentmemory offline")
