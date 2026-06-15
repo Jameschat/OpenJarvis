@@ -1,0 +1,64 @@
+# Opt-in LiteLLM config for the Qwen3-Coder-30B-A3B benchmark/alternate lane.
+#
+# NOT live by default — promotion is manual. Start the lane first:
+#   scripts/start-qwen3-coder-30b-a3b-wsl.ps1   (serves http://127.0.0.1:8088/v1)
+# then point LiteLLM at this config to expose `qwen3-coder-30b-a3b-local`.
+#
+# Falls back to the local 27B (8084) and the remote 35B-A3B worker if the
+# coder lane is down. Benchmarked 2026-06-15 vs the 27B: 6/6 eval, clean
+# long-prompt probes, ~98 tok/s decode -> lane_promotion verdict PROMOTE.
+
+model_list:
+  - model_name: gpt-5.4-mini
+    litellm_params:
+      model: openai/gpt-5.4-mini
+      api_key: os.environ/OPENAI_API_KEY
+
+  - model_name: gpt-4o-mini
+    litellm_params:
+      model: openai/gpt-4o-mini
+      api_key: os.environ/OPENAI_API_KEY
+
+  # Candidate coder lane (local 4090, plain MoE, port 8088).
+  - model_name: qwen3-coder-30b-a3b-local
+    litellm_params:
+      model: openai/qwen3-coder-30b-a3b-local
+      api_base: http://localhost:8088/v1
+      api_key: sk-noop
+
+  # Incumbent local lane (27B MTP, port 8084) - fallback.
+  - model_name: qwen3.6-27b-local
+    litellm_params:
+      model: openai/qwen3.6-27b-local
+      api_base: http://localhost:8084/v1
+      api_key: sk-noop
+
+  # Remote 35B-A3B worker (deep context) - secondary fallback.
+  - model_name: qwen3.6-35b-a3b-remote
+    litellm_params:
+      model: openai/qwen3.6-35b-a3b-rotorquant
+      api_base: http://192.168.1.191:4000/v1
+      api_key: sk-noop
+
+  - model_name: qwen3.6-27b-ollama
+    litellm_params:
+      model: ollama_chat/qwen3.6:27b
+      api_base: http://localhost:11434
+
+  - model_name: gpt-4o
+    litellm_params:
+      model: openai/gpt-4o
+      api_key: os.environ/OPENAI_API_KEY
+
+litellm_settings:
+  fallbacks:
+    - qwen3-coder-30b-a3b-local: ["qwen3.6-27b-local", "qwen3.6-35b-a3b-remote", "qwen3.6-27b-ollama"]
+    - qwen3.6-27b-local: ["qwen3.6-27b-ollama"]
+    - gpt-5.4-mini: ["gpt-4o-mini", "qwen3-coder-30b-a3b-local"]
+    - gpt-4o-mini: ["qwen3-coder-30b-a3b-local"]
+  num_retries: 1
+  request_timeout: 600
+  drop_params: true
+
+general_settings:
+  store_model_in_db: false
