@@ -261,11 +261,15 @@ async def studio_qwen_profile_get() -> dict[str, Any]:
 
 def _maybe_switch_local_lane(prior: str, new: str) -> bool:
     """fast<->coder share the single local 8084 GPU lane (24GB can't co-load).
-    On that transition, fire-and-forget the swap script: it stops the active lane
-    (frees VRAM) and loads the target model. Best-effort, Windows-only, detached
-    so the HTTP request returns immediately while the ~1min swap runs."""
+    On that transition, run the swap script (stop the active lane to free VRAM,
+    load the target) in a DAEMON THREAD via subprocess.run so the HTTP request
+    returns immediately while the ~1min swap runs. (Detached Popen variants
+    silently failed to launch from the backend; a thread+run is reliable, and the
+    swap script itself starts the WSL lane detached so it survives this process.)"""
+    import os
     import subprocess
     import sys
+    import threading
     from pathlib import Path
 
     lane_of = {"fast": "fast", "coder": "coder"}
@@ -276,25 +280,37 @@ def _maybe_switch_local_lane(prior: str, new: str) -> bool:
     script = repo / "scripts" / "switch-qwen-lane.ps1"
     if not script.exists():
         return False
-    try:
-        log_path = repo / "dist" / "switch-qwen-lane-launch.log"
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-        out = open(log_path, "a", encoding="utf-8")  # noqa: SIM115 - child inherits the handle
-        # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP is the reliable fire-and-forget
-        # combo on Windows; redirecting stdio (not the earlier CREATE_NO_WINDOW combo,
-        # which silently failed to run) so the launch is verifiable in the log.
-        subprocess.Popen(
-            ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script), "-Target", target],
-            creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
-            stdin=subprocess.DEVNULL,
-            stdout=out,
-            stderr=subprocess.STDOUT,
-            cwd=str(repo),
-            close_fds=True,
-        )
-        return True
-    except Exception:
-        return False
+    pwsh = os.path.join(
+        os.environ.get("SystemRoot", r"C:\Windows"), "System32", "WindowsPowerShell", "v1.0", "powershell.exe"
+    )
+    if not os.path.exists(pwsh):
+        pwsh = "powershell.exe"
+    log_path = repo / "dist" / "switch-qwen-lane-launch.log"
+
+    def _run() -> None:
+        try:
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(log_path, "a", encoding="utf-8") as out:
+                out.write(f"\n=== launching swap -> {target} ===\n")
+                out.flush()
+                subprocess.run(
+                    [pwsh, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script), "-Target", target],
+                    stdin=subprocess.DEVNULL,
+                    stdout=out,
+                    stderr=subprocess.STDOUT,
+                    cwd=str(repo),
+                    timeout=400,
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                )
+        except Exception as exc:  # noqa: BLE001 - log and move on
+            try:
+                with open(log_path, "a", encoding="utf-8") as out:
+                    out.write(f"swap launch error: {exc}\n")
+            except Exception:
+                pass
+
+    threading.Thread(target=_run, daemon=True).start()
+    return True
 
 
 @studio_router.post("/qwen-profile")
