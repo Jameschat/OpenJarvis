@@ -129,3 +129,44 @@ def test_qwen_eval_main_passes_when_threshold_is_met(tmp_path, monkeypatch):
     )
 
     assert exit_code == 0
+
+
+def test_coding_eval_set_is_wellformed_and_discriminates():
+    # The harder coding set must load, use known graders, have checkable
+    # expectations, and actually separate right from wrong answers (correct
+    # substrings pass; blank answers fail) so the gate measures quality.
+    path = Path(__file__).resolve().parents[2] / "evals" / "qwen" / "cases-coding.json"
+    cases = qwen_eval.load_cases(path)
+    assert len(cases) >= 12
+    for c in cases:
+        assert c.grader in qwen_eval.GRADERS, f"{c.id}: unknown grader {c.grader}"
+        assert c.expect.get("contains"), f"{c.id}: no contains expectation"
+
+    good = qwen_eval.run_eval(cases, run_task=lambda c: c.expect["contains"][0])
+    assert good.passed == good.total, [r.id for r in good.results if not r.passed]
+
+    blank = qwen_eval.run_eval(cases, run_task=lambda c: "")
+    assert blank.passed == 0
+
+
+def test_code_exec_grader_runs_tests():
+    case = EvalCase(
+        id="add", prompt="", grader="code_exec",
+        expect={"tests": ["assert add(2, 3) == 5", "assert add(-1, 1) == 0"]},
+    )
+    good = "Here you go:\n```python\ndef add(a, b):\n    return a + b\n```"
+    buggy = "```python\ndef add(a, b):\n    return a - b\n```"
+    assert qwen_eval.grade_code_exec(good, case)["passed"] is True
+    assert qwen_eval.grade_code_exec(buggy, case)["passed"] is False
+    assert qwen_eval.grade_code_exec("no code at all", case)["passed"] is False
+
+
+def test_code_exec_grader_times_out_on_infinite_loop():
+    case = EvalCase(
+        id="loop", prompt="", grader="code_exec",
+        expect={"tests": ["spin()"], "timeout": 3},
+    )
+    spinner = "```python\ndef spin():\n    while True:\n        pass\n```"
+    res = qwen_eval.grade_code_exec(spinner, case)
+    assert res["passed"] is False
+    assert "timeout" in res["detail"]

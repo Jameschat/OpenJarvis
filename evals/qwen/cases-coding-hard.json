@@ -1,0 +1,83 @@
+{
+  "cases": [
+    {
+      "id": "regex-wildcard-match",
+      "category": "hard-algorithms",
+      "grader": "code_exec",
+      "prompt": "Write a Python function regex_match(s, p) implementing regular-expression matching where '.' matches any single character and '*' matches zero or more of the preceding element. The match must cover the ENTIRE input string. Return only the function in a Python code block.",
+      "expect": {
+        "tests": [
+          "assert regex_match('aa', 'a') == False",
+          "assert regex_match('aa', 'a*') == True",
+          "assert regex_match('ab', '.*') == True",
+          "assert regex_match('aab', 'c*a*b') == True",
+          "assert regex_match('mississippi', 'mis*is*p*.') == False",
+          "assert regex_match('mississippi', 'mis*is*ip*.') == True"
+        ],
+        "timeout": 15
+      }
+    },
+    {
+      "id": "word-break-dp",
+      "category": "hard-algorithms",
+      "grader": "code_exec",
+      "prompt": "Write a Python function word_break(s, words) that returns True if the string s can be segmented into a space-separated sequence of one or more words from the list `words` (each word reusable). The empty string returns True. Return only the function in a Python code block.",
+      "expect": {
+        "tests": [
+          "assert word_break('leetcode', ['leet','code']) == True",
+          "assert word_break('applepenapple', ['apple','pen']) == True",
+          "assert word_break('catsandog', ['cats','dog','sand','and','cat']) == False",
+          "assert word_break('', ['a']) == True",
+          "assert word_break('aaaaaaa', ['aaaa','aaa']) == True"
+        ],
+        "timeout": 15
+      }
+    },
+    {
+      "id": "basic-calculator-precedence",
+      "category": "hard-parsing",
+      "grader": "code_exec",
+      "prompt": "Write a Python function calculate(s) that evaluates a string arithmetic expression containing non-negative integers and the operators + - * / and spaces, with normal operator precedence and no parentheses. Division truncates toward zero. Return only the function in a Python code block.",
+      "expect": {
+        "tests": [
+          "assert calculate('3+2*2') == 7",
+          "assert calculate(' 3/2 ') == 1",
+          "assert calculate('3+5 / 2') == 5",
+          "assert calculate('14-3/2') == 13",
+          "assert calculate('100') == 100"
+        ],
+        "timeout": 15
+      }
+    },
+    {
+      "id": "trapping-rain-water",
+      "category": "hard-algorithms",
+      "grader": "code_exec",
+      "prompt": "Write a Python function trap(height) that, given a list of non-negative integers representing an elevation map where each bar has width 1, computes how much water it can trap after raining. Return only the function in a Python code block.",
+      "expect": {
+        "tests": [
+          "assert trap([0,1,0,2,1,0,1,3,2,1,2,1]) == 6",
+          "assert trap([4,2,0,3,2,5]) == 9",
+          "assert trap([]) == 0",
+          "assert trap([1,2,3]) == 0"
+        ],
+        "timeout": 15
+      }
+    },
+    {
+      "id": "edit-distance",
+      "category": "hard-algorithms",
+      "grader": "code_exec",
+      "prompt": "Write a Python function min_distance(a, b) returning the minimum number of single-character insertions, deletions, or substitutions needed to convert string a into string b (Levenshtein distance). Return only the function in a Python code block.",
+      "expect": {
+        "tests": [
+          "assert min_distance('horse', 'ros') == 3",
+          "assert min_distance('intention', 'execution') == 5",
+          "assert min_distance('', 'abc') == 3",
+          "assert min_distance('abc', 'abc') == 0"
+        ],
+        "timeout": 15
+      }
+    }
+  ]
+}

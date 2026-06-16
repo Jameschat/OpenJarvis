@@ -13,12 +13,17 @@ fully unit-tested with an injected ``run_task``. The real model call lives in
 from __future__ import annotations
 
 import json
+import re
+import subprocess
+import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
 from openjarvis.tools import qwen_quality_loop
+
+_EXEC_NO_WINDOW = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
 
 
 @dataclass
@@ -93,9 +98,50 @@ def grade_quality(output: str, case: EvalCase) -> dict[str, Any]:
     }
 
 
+def _extract_code(output: str) -> str:
+    """Pull code out of a model answer: prefer fenced blocks, else the raw text."""
+    blocks = re.findall(r"```(?:[A-Za-z0-9_+-]*)\n(.*?)```", output or "", re.S)
+    if blocks:
+        return "\n\n".join(b.strip() for b in blocks)
+    return (output or "").strip()
+
+
+def grade_code_exec(output: str, case: EvalCase) -> dict[str, Any]:
+    """Execution-based grader: extract the model's code and run it against hidden
+    asserts in an isolated subprocess with a timeout. Passes only if every assert
+    holds. This is what separates *quality* (correct edge-case handling) from
+    "looks plausible". NOTE: it executes model-produced code, so it's meant for
+    benchmarking a trusted local coder lane against this repo's own cases.
+    expect: {tests: [assert ...], setup?: str, timeout?: int}."""
+    code = _extract_code(output)
+    if not code:
+        return {"passed": False, "detail": "no code in output"}
+    setup = str(case.expect.get("setup", ""))
+    tests = "\n".join(str(t) for t in case.expect.get("tests", []))
+    script = f"{code}\n\n{setup}\n{tests}\nprint('EVAL_OK')\n"
+    timeout = int(case.expect.get("timeout", 10))
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-I", "-c", script],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            creationflags=_EXEC_NO_WINDOW,
+        )
+    except subprocess.TimeoutExpired:
+        return {"passed": False, "detail": f"timeout >{timeout}s"}
+    except Exception as exc:  # noqa: BLE001 - a failing exec is a failed case
+        return {"passed": False, "detail": f"exec error: {exc}"}
+    if proc.returncode == 0 and "EVAL_OK" in proc.stdout:
+        return {"passed": True, "detail": "ok"}
+    err = (proc.stderr or proc.stdout or "tests failed").strip().splitlines()
+    return {"passed": False, "detail": (err[-1] if err else "tests failed")[:160]}
+
+
 GRADERS: dict[str, Callable[[str, EvalCase], dict[str, Any]]] = {
     "contains": grade_contains,
     "quality": grade_quality,
+    "code_exec": grade_code_exec,
 }
 
 

@@ -1,0 +1,109 @@
+{
+  "cases": [
+    {
+      "id": "closure-late-binding",
+      "category": "gotcha",
+      "prompt": "Python: funcs = [lambda: i for i in range(3)]; print([f() for f in funcs]). What is the exact printed output?",
+      "grader": "contains",
+      "expect": { "contains": ["[2, 2, 2]"], "not_contains": ["[0, 1, 2]"] }
+    },
+    {
+      "id": "mutable-default-arg",
+      "category": "gotcha",
+      "prompt": "Python: def f(x, acc=[]): acc.append(x); return acc. You call f(1), then call f(2). What does the SECOND call return? Give the exact list.",
+      "grader": "contains",
+      "expect": { "contains": ["[1, 2]"] }
+    },
+    {
+      "id": "bool-of-string",
+      "category": "gotcha",
+      "prompt": "In Python, what does bool('False') evaluate to? Answer with one word: True or False.",
+      "grader": "contains",
+      "expect": { "contains": ["true"], "not_contains": ["false"] }
+    },
+    {
+      "id": "floor-division-negative",
+      "category": "numeric",
+      "prompt": "In Python 3, what is -7 // 2 ? Reply with just the number.",
+      "grader": "contains",
+      "expect": { "contains": ["-4"], "not_contains": ["-3"] }
+    },
+    {
+      "id": "pow-right-assoc",
+      "category": "numeric",
+      "prompt": "In Python, what is 2 ** 3 ** 2 ? Reply with just the number.",
+      "grader": "contains",
+      "expect": { "contains": ["512"], "not_contains": ["64"] }
+    },
+    {
+      "id": "bitwise-or",
+      "category": "numeric",
+      "prompt": "In Python, what is 0b1010 | 0b0110 in decimal? Reply with just the number.",
+      "grader": "contains",
+      "expect": { "contains": ["14"] }
+    },
+    {
+      "id": "slice-reverse-step",
+      "category": "trace",
+      "prompt": "In Python, what does 'abcdef'[::-2] produce? Reply with just the resulting string.",
+      "grader": "contains",
+      "expect": { "contains": ["fdb"] }
+    },
+    {
+      "id": "range-negative-step",
+      "category": "trace",
+      "prompt": "In Python, what does list(range(10, 0, -3)) produce? Give the exact list.",
+      "grader": "contains",
+      "expect": { "contains": ["[10, 7, 4, 1]"] }
+    },
+    {
+      "id": "recursion-fib",
+      "category": "trace",
+      "prompt": "Given def f(n): return 1 if n <= 1 else f(n-1) + f(n-2). What is f(10)? Reply with just the number.",
+      "grader": "contains",
+      "expect": { "contains": ["89"] }
+    },
+    {
+      "id": "list-aliasing",
+      "category": "trace",
+      "prompt": "Python: a = [1, 2, 3]; b = a; b.append(4); print(len(a)). What number is printed?",
+      "grader": "contains",
+      "expect": { "contains": ["4"] }
+    },
+    {
+      "id": "regex-findall",
+      "category": "regex",
+      "prompt": "Python: import re; re.findall(r'\\d+', 'a12b3c456'). Give the exact returned list.",
+      "grader": "contains",
+      "expect": { "contains": ["['12', '3', '456']"] }
+    },
+    {
+      "id": "float-equality",
+      "category": "numeric",
+      "prompt": "In Python, does 0.1 + 0.2 == 0.3 evaluate to True or False? Answer with one word.",
+      "grader": "contains",
+      "expect": { "contains": ["false"], "not_contains": ["true"] }
+    },
+    {
+      "id": "sorted-reverse-dup",
+      "category": "trace",
+      "prompt": "In Python, what does sorted([3, 1, 2, 1], reverse=True) return? Give the exact list.",
+      "grader": "contains",
+      "expect": { "contains": ["[3, 2, 1, 1]"] }
+    },
+    {
+      "id": "debug-buggy-max",
+      "category": "debug",
+      "prompt": "This Python function is meant to return the maximum of a list: def mx(xs):\\n    m = 0\\n    for x in xs:\\n        if x > m:\\n            m = x\\n    return m. With this exact (buggy) code, what does mx([-5, -3, -9]) return? Reply with just the number.",
+      "grader": "contains",
+      "expect": { "contains": ["0"] }
+    },
+    {
+      "id": "index-error-type",
+      "category": "exception",
+      "prompt": "In Python, evaluating [1, 2, 3][3] raises an exception. Name the exact exception type.",
+      "grader": "contains",
+      "expect": { "contains": ["indexerror"] }
+    }
+  ]
+}
