@@ -83,6 +83,20 @@ _DEFAULT_STATUS: dict[str, Any] = {
             "verdict": "use-for-planning-review",
             "notes": "Second PC GPU worker via LiteLLM; tested from main PC with jarvis-remote-ok.",
         },
+        {
+            "id": "qwen3-coder-30b-a3b",
+            "label": "Qwen3-Coder 30B-A3B",
+            "alias": "qwen3-coder-30b-a3b-local",
+            "port": 8088,
+            "role": "benchmark",
+            "context_tokens": 98304,
+            "benchmark": {
+                "short_tok_s": 100.0,
+                "long_completion_tok_s": 54.7,
+            },
+            "verdict": "promote-candidate",
+            "notes": "MoE coder; benchmarked 2026-06-15: 6/6 eval, 96K ctx @ ~22GB VRAM, ~100-160 t/s short / ~55 t/s at 89K depth. Opt-in lane via scripts/start-qwen3-coder-30b-a3b-wsl.ps1 (+ configs/litellm.qwen3-coder-30b-a3b.yaml); not in live routing because 24GB can't co-load it with the 27B.",
+        },
     ],
 }
 
