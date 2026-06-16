@@ -286,15 +286,21 @@ export function StudioPage() {
     }
   };
 
-  const changeProfile = async (profile: 'fast' | 'quality' | 'remote') => {
+  const changeProfile = async (profile: 'fast' | 'quality' | 'remote' | 'coder') => {
     if (profile === 'remote' && !remoteProfileOnline) {
       toast.error('Remote unavailable', { description: 'The remote Qwen worker is offline, so Studio will stay on the local profile.' });
       return;
     }
     try {
-      await setStudioQwenProfile(profile);
+      const res = await setStudioQwenProfile(profile);
       await refresh();
-      toast.success(`Qwen profile set to ${profile}`);
+      if (res && (res as { switching?: boolean }).switching) {
+        toast.success('Swapping local lane', {
+          description: `Stopping the active lane to free VRAM and loading ${profile === 'coder' ? 'Qwen Coder 30B' : profile} (~1 min). Local chat pauses until it is ready.`,
+        });
+      } else {
+        toast.success(`Qwen profile set to ${profile}`);
+      }
     } catch (error: any) {
       toast.error('Could not change Qwen profile', { description: error?.message || String(error) });
     }

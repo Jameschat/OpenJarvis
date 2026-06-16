@@ -21,7 +21,7 @@ interface StudioComposerProps {
   onChange: (value: string) => void;
   onSend: () => void;
   onCancel: () => void;
-  onProfileChange: (profile: 'fast' | 'quality' | 'remote') => void;
+  onProfileChange: (profile: 'fast' | 'quality' | 'remote' | 'coder') => void;
   onToggleSkill: (skillId: string) => void;
   onToggleContext: () => void;
   onContextDraftChange: (value: string) => void;
@@ -61,7 +61,7 @@ export function StudioComposer({
 
   const handleProfileSelect = (event: ChangeEvent<HTMLSelectElement>) => {
     const next = event.target.value;
-    if (next === 'fast' || next === 'quality' || next === 'remote') {
+    if (next === 'fast' || next === 'quality' || next === 'remote' || next === 'coder') {
       onProfileChange(next);
     }
   };
@@ -147,6 +147,7 @@ export function StudioComposer({
             onChange={handleProfileSelect}
           >
             <option value="fast">Qwen 27B Fast</option>
+            <option value="coder">Qwen Coder 30B (swaps lane)</option>
             <option value="quality">Qwen 27B Quality</option>
             <option value="remote" disabled={!remoteProfileOnline}>
               {remoteProfileOnline ? 'Remote 35B-A3B' : 'Remote 35B-A3B offline'}

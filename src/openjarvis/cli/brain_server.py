@@ -1347,7 +1347,7 @@ def _load_studio_qwen_profile() -> str:
             profile = str(data.get("active") or "").strip().lower()
         except Exception:
             profile = ""
-    if profile not in {"fast", "quality", "remote"}:
+    if profile not in {"fast", "quality", "remote", "coder"}:
         profile = "fast"
     os.environ["OPENJARVIS_QWEN_PROFILE"] = profile
     return profile
@@ -1387,6 +1387,14 @@ def _studio_qwen_profile() -> Dict[str, Any]:
             "summary": "Remote GPU Qwen 35B-A3B TurboQuant worker, 128K context deep-work lane",
             "context_tokens": 128000,
             "thinking": "complex tasks only",
+        },
+        "coder": {
+            "id": "coder",
+            "label": "Qwen Coder 30B",
+            "model": "qwen3.6-27b-local",
+            "base_url": "http://127.0.0.1:8084/v1",
+            "summary": "Qwen3-Coder 30B-A3B MoE on the local 8084 lane (96K ctx). Selecting it stops the active lane to free VRAM, then loads the 30B (~1 min).",
+            "context_tokens": 98304,
         },
     }
     return {"active": profile, "profiles": profiles}
@@ -2162,10 +2170,10 @@ class _Handler(SimpleHTTPRequestHandler):
         try:
             data = self._read_json_body()
             profile = str(data.get("profile") or "").strip().lower()
-            if profile not in {"fast", "quality", "remote"}:
+            if profile not in {"fast", "quality", "remote", "coder"}:
                 return self._json_response(
                     400,
-                    {"error": "profile must be fast, quality, or remote"},
+                    {"error": "profile must be fast, quality, remote, or coder"},
                 )
             _save_studio_qwen_profile(profile)
             self._json_response(200, _studio_qwen_profile())

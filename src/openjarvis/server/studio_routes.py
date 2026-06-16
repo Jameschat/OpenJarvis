@@ -30,8 +30,14 @@ async def studio_state(
 ) -> dict[str, Any]:
     try:
         from openjarvis.cli.brain_server import _studio_state
+        from openjarvis.tools.runtime_supervisor import build_runtime_supervisor_status
 
-        return _studio_state(project_id, chat_id)
+        state = _studio_state(project_id, chat_id)
+        state["runtime_supervisor"] = build_runtime_supervisor_status(
+            runtime_health=state.get("runtime_health"),
+            qwen_runtime=state.get("qwen_runtime"),
+        )
+        return state
     except Exception as exc:
         raise _internal_error("/studio/state", exc) from exc
 
@@ -43,6 +49,8 @@ async def studio_runtime_health() -> dict[str, Any]:
             check_runtime_health,
             mark_runtime_service_ready,
         )
+        from openjarvis.tools.qwen_runtime_status import load_qwen_runtime_status
+        from openjarvis.tools.runtime_supervisor import build_runtime_supervisor_status
 
         health = check_runtime_health()
         mark_runtime_service_ready(
@@ -50,7 +58,13 @@ async def studio_runtime_health() -> dict[str, Any]:
             "jarvis_backend",
             detail="runtime health request succeeded",
         )
-        return health
+        return {
+            **health,
+            "runtime_supervisor": build_runtime_supervisor_status(
+                runtime_health=health,
+                qwen_runtime=load_qwen_runtime_status(),
+            ),
+        }
     except Exception as exc:
         raise _internal_error("/studio/runtime-health", exc) from exc
 
@@ -245,6 +259,33 @@ async def studio_qwen_profile_get() -> dict[str, Any]:
         raise _internal_error("/studio/qwen-profile get", exc) from exc
 
 
+def _maybe_switch_local_lane(prior: str, new: str) -> bool:
+    """fast<->coder share the single local 8084 GPU lane (24GB can't co-load).
+    On that transition, fire-and-forget the swap script: it stops the active lane
+    (frees VRAM) and loads the target model. Best-effort, Windows-only, detached
+    so the HTTP request returns immediately while the ~1min swap runs."""
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    lane_of = {"fast": "fast", "coder": "coder"}
+    target = lane_of.get(new)
+    if not target or target == lane_of.get(prior) or sys.platform != "win32":
+        return False
+    script = Path(__file__).resolve().parents[3] / "scripts" / "switch-qwen-lane.ps1"
+    if not script.exists():
+        return False
+    try:
+        subprocess.Popen(
+            ["powershell.exe", "-ExecutionPolicy", "Bypass", "-File", str(script), "-Target", target],
+            creationflags=subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS,
+            cwd=str(script.parent.parent),
+        )
+        return True
+    except Exception:
+        return False
+
+
 @studio_router.post("/qwen-profile")
 async def studio_qwen_profile_set(request: Request) -> dict[str, Any]:
     try:
@@ -252,10 +293,17 @@ async def studio_qwen_profile_set(request: Request) -> dict[str, Any]:
 
         data = await request.json()
         profile = str(data.get("profile") or "").strip().lower()
-        if profile not in {"fast", "quality", "remote"}:
-            raise HTTPException(status_code=400, detail={"error": "profile must be fast, quality, or remote"})
+        if profile not in {"fast", "quality", "remote", "coder"}:
+            raise HTTPException(status_code=400, detail={"error": "profile must be fast, quality, remote, or coder"})
+        try:
+            prior = str(_studio_qwen_profile().get("active") or "")
+        except Exception:
+            prior = ""
         _save_studio_qwen_profile(profile)
-        return _studio_qwen_profile()
+        switching = _maybe_switch_local_lane(prior, profile)
+        result = _studio_qwen_profile()
+        result["switching"] = switching
+        return result
     except HTTPException:
         raise
     except Exception as exc:
