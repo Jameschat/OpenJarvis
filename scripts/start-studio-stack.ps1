@@ -101,19 +101,43 @@ try {
             Write-Host "[qwen] WSL MTP lane healthy on 8084"
             Stop-NativeQwenFallback
         } else {
-            Write-Warning "[qwen] WSL lane not healthy yet; trying native BeeLlama fallback (8082, plain decode - short prompts only)"
-            $beellamaScript = Join-Path $RepoRoot "scripts\start-qwen-beellama-dflash-service.ps1"
-            if (Test-Path $beellamaScript) {
-                try {
-                    & powershell.exe -ExecutionPolicy Bypass -File $beellamaScript -ContextTokens 16384 -WaitSeconds 420
-                } catch {
-                    Write-Warning "[qwen] BeeLlama fallback launcher errored ($($_.Exception.Message))"
-                }
+            # Guard the BeeLlama (~6GB Windows-native) fallback. It has repeatedly
+            # STARVED the GPU and blocked the incoming lane during swaps / while the
+            # card was committed (a game, or a 21GB lane mid-load). Two skips:
+            #   1. Swap in progress: switch-qwen-lane.ps1 writes dist/.lane-swap-in-progress
+            #      (treated stale after 10 min). 8084 being momentarily down mid-swap is
+            #      expected - do NOT spawn a competing 6GB lane.
+            #   2. VRAM already committed: if <8GB free, something big is resident
+            #      (game / lane loading); adding 6GB would OOM. Skip and let it converge.
+            $skipReason = $null
+            $swapLock = Join-Path $RepoRoot "dist\.lane-swap-in-progress"
+            if (Test-Path $swapLock) {
+                $age = (Get-Date) - (Get-Item $swapLock).LastWriteTime
+                if ($age.TotalMinutes -lt 10) { $skipReason = "a lane swap is in progress" }
+                else { Remove-Item $swapLock -Force -ErrorAction SilentlyContinue }
             }
-            if (Test-Http "http://127.0.0.1:8082/health" -TimeoutSec 5) {
-                Write-Host "[qwen] BeeLlama fallback healthy on 8082 (LiteLLM falls through to it when 8084 is down)"
+            if (-not $skipReason) {
+                $freeMiB = 0
+                try { $freeMiB = [int](((& nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits 2>$null) -join '') -replace '[^0-9]','') } catch {}
+                if ($freeMiB -gt 0 -and $freeMiB -lt 8000) { $skipReason = "only ${freeMiB}MiB VRAM free (card committed)" }
+            }
+            if ($skipReason) {
+                Write-Warning "[qwen] skipping BeeLlama fallback: $skipReason; chat falls through to Ollama/remote, lane converges next watchdog cycle"
             } else {
-                Write-Warning "[qwen] no local Qwen lane up yet; continuing to LiteLLM/backend (chat falls back to Ollama, lane converges next watchdog cycle)"
+                Write-Warning "[qwen] WSL lane not healthy yet; trying native BeeLlama fallback (8082, plain decode - short prompts only)"
+                $beellamaScript = Join-Path $RepoRoot "scripts\start-qwen-beellama-dflash-service.ps1"
+                if (Test-Path $beellamaScript) {
+                    try {
+                        & powershell.exe -ExecutionPolicy Bypass -File $beellamaScript -ContextTokens 16384 -WaitSeconds 420
+                    } catch {
+                        Write-Warning "[qwen] BeeLlama fallback launcher errored ($($_.Exception.Message))"
+                    }
+                }
+                if (Test-Http "http://127.0.0.1:8082/health" -TimeoutSec 5) {
+                    Write-Host "[qwen] BeeLlama fallback healthy on 8082 (LiteLLM falls through to it when 8084 is down)"
+                } else {
+                    Write-Warning "[qwen] no local Qwen lane up yet; continuing to LiteLLM/backend (chat falls back to Ollama, lane converges next watchdog cycle)"
+                }
             }
         }
     }

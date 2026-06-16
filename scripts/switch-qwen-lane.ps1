@@ -19,6 +19,14 @@ New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 $log = Join-Path $logDir "switch-qwen-lane.log"
 function Note($m) { "$([DateTime]::Now.ToString('s')) [$Target] $m" | Tee-Object -FilePath $log -Append | Out-Null }
 
+# Swap lock: start-studio-stack.ps1 checks for this and SKIPS the Windows-native
+# BeeLlama fallback while it exists, so a mid-swap "8084 momentarily down" never
+# triggers a 6GB BeeLlama spawn that starves the GPU and blocks the incoming lane.
+# Removed in finally{} below; the stack also treats a lock older than 10 min as stale.
+$swapLock = Join-Path $logDir ".lane-swap-in-progress"
+Set-Content -Path $swapLock -Value "$Target $([DateTime]::Now.ToString('s'))" -Encoding ascii
+function Clear-SwapLock { Remove-Item -Path $swapLock -Force -ErrorAction SilentlyContinue }
+
 Note "switch requested -> $Target on port $Port"
 
 # 1. Free VRAM: stop the local WSL llama-server (the active lane). Remote worker
@@ -48,21 +56,35 @@ for ($i = 0; $i -lt 25; $i++) {
     Start-Sleep -Seconds 3
 }
 
-# 2. Start the target model on the local port.
+# 2. Start the target model on the local port — NON-BLOCKING.
+#    Do NOT pipe the start script's output here: the detached llama-server inherits
+#    that output handle, so the pipe never closes and this script blocks until the
+#    caller's subprocess timeout kills it BEFORE the lock is cleared (orphaned lock).
+#    Instead launch detached (output -> a log file) and poll health ourselves below.
+$startLog = Join-Path $logDir "switch-target-start.log"
 if ($Target -eq "coder") {
     # 64K (not the standalone 96K): leaves ~3-4GB headroom so an in-place swap
     # (where the old lane's VRAM may not be 100% reclaimed) loads reliably.
     $script = Join-Path $RepoRoot "scripts\start-qwen3-coder-30b-a3b-wsl.ps1"
-    & powershell.exe -ExecutionPolicy Bypass -File $script -Port $Port -ContextTokens 65536 -WaitSeconds $WaitSeconds 2>&1 | ForEach-Object { Note $_ }
+    $startArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $script, "-Port", $Port, "-ContextTokens", 65536, "-WaitSeconds", $WaitSeconds)
 } else {
     $script = Join-Path $RepoRoot "scripts\start-qwen-mtp-froggeric-wsl.ps1"
-    & powershell.exe -ExecutionPolicy Bypass -File $script -Port $Port -WaitSeconds $WaitSeconds 2>&1 | ForEach-Object { Note $_ }
+    $startArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $script, "-Port", $Port, "-WaitSeconds", $WaitSeconds)
 }
+Start-Process -FilePath "powershell.exe" -ArgumentList $startArgs -WindowStyle Hidden `
+    -RedirectStandardOutput $startLog -RedirectStandardError "$startLog.err" | Out-Null
+Note "target start launched ($Target); polling health on $Port"
 
-# 3. Verify health.
-try {
-    $h = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/health" -TimeoutSec 5
-    if ($h.status -eq "ok") { Note "lane healthy on $Port"; exit 0 }
-} catch {}
-Note "WARNING: lane not healthy on $Port after switch"
+# 3. Poll health; clear lock + exit as soon as the lane is up (don't wait on the
+#    start script's process — it brings the WSL lane + Windows bridge up itself).
+$tries = [Math]::Max(20, [int]($WaitSeconds / 3))
+for ($i = 0; $i -lt $tries; $i++) {
+    try {
+        $h = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/health" -TimeoutSec 3
+        if ($h.status -eq "ok") { Note "lane healthy on $Port after $($i*3)s"; Clear-SwapLock; exit 0 }
+    } catch {}
+    Start-Sleep -Seconds 3
+}
+Note "WARNING: lane not healthy on $Port after switch ($WaitSeconds s)"
+Clear-SwapLock
 exit 1
