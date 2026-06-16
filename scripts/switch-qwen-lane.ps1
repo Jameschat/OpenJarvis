@@ -28,10 +28,32 @@ Start-Sleep -Seconds 4
 $still = & wsl.exe -d JarvisUbuntu -- bash -lc "ps -eo args | grep llama-server | grep -v grep | wc -l" 2>$null
 Note "local llama-servers after stop: $still"
 
+# 1b. Also free the WINDOWS side of the port: the previous lane left a
+#     WSL->Windows port-proxy (qwen-wsl-port-proxy.py) holding 127.0.0.1:$Port.
+#     pkill only stops the WSL lane, so without this the target start script
+#     sees "Windows port occupied" and aborts.
+Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue | ForEach-Object {
+    Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue
+    Note "freed Windows port $Port (pid $($_.OwningProcess))"
+}
+Start-Sleep -Seconds 2
+
+# 1c. CRITICAL on a 24GB card: both lanes (~21-22GB) nearly fill VRAM, and CUDA
+#     teardown of the old lane takes several seconds. Starting the target before
+#     the VRAM actually reclaims races into OOM / a slot-init hang. Wait for it.
+for ($i = 0; $i -lt 25; $i++) {
+    $used = (& wsl.exe -d JarvisUbuntu -- bash -lc "nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits" 2>$null) -join ''
+    $used = ($used -replace '[^0-9]', '')
+    if ($used -and [int]$used -lt 3500) { Note "VRAM drained to $used MiB after $($i*3)s"; break }
+    Start-Sleep -Seconds 3
+}
+
 # 2. Start the target model on the local port.
 if ($Target -eq "coder") {
+    # 64K (not the standalone 96K): leaves ~3-4GB headroom so an in-place swap
+    # (where the old lane's VRAM may not be 100% reclaimed) loads reliably.
     $script = Join-Path $RepoRoot "scripts\start-qwen3-coder-30b-a3b-wsl.ps1"
-    & powershell.exe -ExecutionPolicy Bypass -File $script -Port $Port -ContextTokens 98304 -WaitSeconds $WaitSeconds 2>&1 | ForEach-Object { Note $_ }
+    & powershell.exe -ExecutionPolicy Bypass -File $script -Port $Port -ContextTokens 65536 -WaitSeconds $WaitSeconds 2>&1 | ForEach-Object { Note $_ }
 } else {
     $script = Join-Path $RepoRoot "scripts\start-qwen-mtp-froggeric-wsl.ps1"
     & powershell.exe -ExecutionPolicy Bypass -File $script -Port $Port -WaitSeconds $WaitSeconds 2>&1 | ForEach-Object { Note $_ }

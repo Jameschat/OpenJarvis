@@ -1393,8 +1393,8 @@ def _studio_qwen_profile() -> Dict[str, Any]:
             "label": "Qwen Coder 30B",
             "model": "qwen3.6-27b-local",
             "base_url": "http://127.0.0.1:8084/v1",
-            "summary": "Qwen3-Coder 30B-A3B MoE on the local 8084 lane (96K ctx). Selecting it stops the active lane to free VRAM, then loads the 30B (~1 min).",
-            "context_tokens": 98304,
+            "summary": "Qwen3-Coder 30B-A3B MoE on the local 8084 lane (64K ctx, swap headroom). Selecting it stops the active lane to free VRAM, then loads the 30B (~1 min).",
+            "context_tokens": 65536,
         },
     }
     return {"active": profile, "profiles": profiles}

@@ -272,14 +272,25 @@ def _maybe_switch_local_lane(prior: str, new: str) -> bool:
     target = lane_of.get(new)
     if not target or target == lane_of.get(prior) or sys.platform != "win32":
         return False
-    script = Path(__file__).resolve().parents[3] / "scripts" / "switch-qwen-lane.ps1"
+    repo = Path(__file__).resolve().parents[3]
+    script = repo / "scripts" / "switch-qwen-lane.ps1"
     if not script.exists():
         return False
     try:
+        log_path = repo / "dist" / "switch-qwen-lane-launch.log"
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        out = open(log_path, "a", encoding="utf-8")  # noqa: SIM115 - child inherits the handle
+        # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP is the reliable fire-and-forget
+        # combo on Windows; redirecting stdio (not the earlier CREATE_NO_WINDOW combo,
+        # which silently failed to run) so the launch is verifiable in the log.
         subprocess.Popen(
-            ["powershell.exe", "-ExecutionPolicy", "Bypass", "-File", str(script), "-Target", target],
-            creationflags=subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS,
-            cwd=str(script.parent.parent),
+            ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script), "-Target", target],
+            creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
+            stdin=subprocess.DEVNULL,
+            stdout=out,
+            stderr=subprocess.STDOUT,
+            cwd=str(repo),
+            close_fds=True,
         )
         return True
     except Exception:
