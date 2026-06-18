@@ -23,6 +23,20 @@ from openjarvis.core.types import Message, Role, ToolCall, ToolResult
 from openjarvis.engine._stubs import InferenceEngine
 from openjarvis.tools._stubs import BaseTool
 
+# System prompt for function-calling mode when the agent has tools. Local models
+# tend to *describe* an action instead of calling the tool unless nudged; this
+# makes them act. Also steers multi-step work through todo_write so the plan
+# checklist populates.
+_TOOL_USE_SYSTEM_PROMPT = (
+    "You are Jarvis, a capable AI assistant running locally with real tools. "
+    "When the user asks you to read, edit, create, or run files or code, or to "
+    "look something up, USE the appropriate tool by calling it directly "
+    "(e.g. file_read, file_edit, file_write, shell_exec, web_search) — do not "
+    "merely describe what you would do. For multi-step work, call todo_write "
+    "first to lay out the plan, then carry it out, updating the todo as you go. "
+    "When the work is done, give a short, clear final answer."
+)
+
 
 @AgentRegistry.register("orchestrator")
 class OrchestratorAgent(ToolUsingAgent):
@@ -213,8 +227,12 @@ class OrchestratorAgent(ToolUsingAgent):
     ) -> AgentResult:
         self._emit_turn_start(input)
 
-        # Build initial messages
-        messages = self._build_messages(input, context)
+        # Build initial messages. When tools are available and the caller didn't
+        # set an explicit system prompt, nudge the model to actually CALL tools.
+        sys_prompt = self._system_prompt
+        if not sys_prompt and self._tools:
+            sys_prompt = _TOOL_USE_SYSTEM_PROMPT
+        messages = self._build_messages(input, context, system_prompt=sys_prompt)
 
         # Get OpenAI-format tool definitions
         openai_tools = self._executor.get_openai_tools() if self._tools else []

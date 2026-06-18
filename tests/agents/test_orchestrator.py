@@ -74,6 +74,42 @@ def _make_engine_no_tools(content: str = "Final answer.") -> MagicMock:
     return engine
 
 
+def _first_system_texts(engine: MagicMock) -> list[str]:
+    """Extract system-message texts from the first engine.generate call."""
+    call = engine.generate.call_args
+    msgs = call.args[0] if call.args else call.kwargs.get("messages", [])
+    return [m.content for m in msgs if m.role == Role.SYSTEM]
+
+
+def test_function_calling_injects_tool_use_system_prompt_when_tools_present():
+    engine = _make_engine_no_tools("done")
+    agent = OrchestratorAgent(engine, "test-model", tools=[_CalculatorStub()])
+    agent.run("what is 2+2")
+    systems = _first_system_texts(engine)
+    assert any(
+        "tool" in s.lower() and "call" in s.lower() for s in systems
+    ), f"expected a tool-use nudge in system prompt, got: {systems}"
+
+
+def test_explicit_system_prompt_overrides_the_tool_use_nudge():
+    engine = _make_engine_no_tools("done")
+    agent = OrchestratorAgent(
+        engine, "test-model", tools=[_CalculatorStub()], system_prompt="CUSTOM PROMPT"
+    )
+    agent.run("hi")
+    systems = _first_system_texts(engine)
+    assert "CUSTOM PROMPT" in systems
+    assert not any("file_edit" in s for s in systems)
+
+
+def test_no_tools_means_no_tool_use_nudge():
+    engine = _make_engine_no_tools("hi")
+    agent = OrchestratorAgent(engine, "test-model")  # no tools
+    agent.run("hi")
+    systems = _first_system_texts(engine)
+    assert not any("file_edit" in (s or "") for s in systems)
+
+
 def _make_engine_with_tool_call(
     tool_name: str = "calculator",
     arguments: str = '{"expression":"2+2"}',
