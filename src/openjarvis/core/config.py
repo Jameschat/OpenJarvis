@@ -865,6 +865,7 @@ class AgentConfig:
     default_agent: str = "simple"
     max_turns: int = 10
     tools: str = ""  # comma-separated tool names
+    workspace_dir: str = ""  # if set, file tools are restricted to this directory
     objective: str = ""  # concise purpose for routing/learning/docs
     system_prompt: str = ""  # inline system prompt (takes precedence if set)
     system_prompt_path: str = ""  # path to system prompt file (.txt, .md)
