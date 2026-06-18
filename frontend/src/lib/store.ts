@@ -109,6 +109,9 @@ const INITIAL_STREAM: StreamState = {
   activeToolCalls: [],
   content: '',
   tokens: 0,
+  thinking: '',
+  activity: [],
+  plan: [],
 };
 
 interface AppState {
