@@ -7,6 +7,7 @@ import { MicButton } from './MicButton';
 import { useSpeech } from '../../hooks/useSpeech';
 import type { ChatMessage, ToolCallInfo, TokenUsage, MessageTelemetry } from '../../types';
 import { initAccumulator, reduceStreamEvent } from '../../lib/streamReducer';
+import { parseSlashCommand, SLASH_HELP, type SlashCommand } from '../../lib/slashCommands';
 
 export function InputArea() {
   const defaultLocalModel = 'qwen3.6-27b-local';
@@ -25,6 +26,7 @@ export function InputArea() {
   const maxTokens = useAppStore((s) => s.settings.maxTokens);
   const temperature = useAppStore((s) => s.settings.temperature);
   const createConversation = useAppStore((s) => s.createConversation);
+  const setSelectedModel = useAppStore((s) => s.setSelectedModel);
   const addMessage = useAppStore((s) => s.addMessage);
   const updateLastAssistant = useAppStore((s) => s.updateLastAssistant);
   const setStreamState = useAppStore((s) => s.setStreamState);
@@ -87,9 +89,37 @@ export function InputArea() {
     resetStream();
   }, [resetStream]);
 
+  const handleSlash = useCallback((slash: SlashCommand) => {
+    if (slash.cmd === 'clear') {
+      createConversation(activeModel);
+      return;
+    }
+    if (slash.cmd === 'model') {
+      if (slash.arg) setSelectedModel(sanitizeModelId(slash.arg));
+      return;
+    }
+    // help — render the command list as a local assistant message
+    let convId = activeId;
+    if (!convId) convId = createConversation(activeModel);
+    const helpText = ['**Slash commands**', ...SLASH_HELP.map((c) => `- \`${c.name}\` — ${c.desc}`)].join('\n');
+    addMessage(convId, {
+      id: generateId(),
+      role: 'assistant',
+      content: helpText,
+      timestamp: Date.now(),
+    });
+  }, [activeId, activeModel, createConversation, setSelectedModel, addMessage]);
+
   const sendMessage = useCallback(async () => {
     const content = input.trim();
     if (!content || streamState.isStreaming) return;
+
+    const slash = parseSlashCommand(content);
+    if (slash) {
+      setInput('');
+      handleSlash(slash);
+      return;
+    }
 
     setInput('');
 
@@ -307,6 +337,7 @@ export function InputArea() {
     updateLastAssistant,
     setStreamState,
     resetStream,
+    handleSlash,
   ]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
