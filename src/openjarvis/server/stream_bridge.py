@@ -150,24 +150,36 @@ class AgentStreamBridge:
         try:
             import os as _os
 
-            from openjarvis.learning.routing.complexity import score_complexity
-            from openjarvis.learning.routing.escalation import choose_initial_model
+            # Hard kill-switch (default OFF). Escalation to a cloud brain on a
+            # streaming chat is risky: an ABORTED request leaves the agent thread
+            # running (Python can't cancel threads), and if the cloud call hangs
+            # — stale/invalid key, network — those threads pile up and exhaust the
+            # to_thread pool, wedging the WHOLE backend (every endpoint hangs).
+            # Only escalate when explicitly enabled, regardless of inherited keys.
+            _esc_on = _os.environ.get("OPENJARVIS_ESCALATION", "0").strip().lower() in (
+                "1",
+                "true",
+                "on",
+            )
+            if _esc_on:
+                from openjarvis.learning.routing.complexity import score_complexity
+                from openjarvis.learning.routing.escalation import choose_initial_model
 
-            _input = self._request.messages[-1].content if self._request.messages else ""
-            _tier = score_complexity(_input or "").tier
-            _pref = _os.environ.get("OPENJARVIS_ESCALATION_PREFERENCE", "balanced")
-            _cloud = bool(
-                _os.environ.get("OPENAI_API_KEY")
-                or _os.environ.get("ANTHROPIC_API_KEY")
-                or _os.environ.get("GEMINI_API_KEY")
-                or _os.environ.get("GOOGLE_API_KEY")
-            )
-            _model, _from, _reason = choose_initial_model(
-                self._model, _tier, _pref, cloud_available=_cloud, remote_available=False
-            )
-            if _from and _model != self._model:
-                self._model = _model
-                _esc = {"from": _from, "to": _model, "reason": _reason}
+                _input = self._request.messages[-1].content if self._request.messages else ""
+                _tier = score_complexity(_input or "").tier
+                _pref = _os.environ.get("OPENJARVIS_ESCALATION_PREFERENCE", "balanced")
+                _cloud = bool(
+                    _os.environ.get("OPENAI_API_KEY")
+                    or _os.environ.get("ANTHROPIC_API_KEY")
+                    or _os.environ.get("GEMINI_API_KEY")
+                    or _os.environ.get("GOOGLE_API_KEY")
+                )
+                _model, _from, _reason = choose_initial_model(
+                    self._model, _tier, _pref, cloud_available=_cloud, remote_available=False
+                )
+                if _from and _model != self._model:
+                    self._model = _model
+                    _esc = {"from": _from, "to": _model, "reason": _reason}
         except Exception:
             _esc = None
 
