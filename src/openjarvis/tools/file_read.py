@@ -112,7 +112,9 @@ class FileReadTool(BaseTool):
 
             _rust = get_rust_module()
             text = _rust.FileReadTool().execute(str(path))
-        except ImportError:
+        except (ImportError, AttributeError):
+            # ImportError: no rust bridge. AttributeError: a stale rust module
+            # lacking FileReadTool. Either way, fall back to pure Python.
             try:
                 text = path.read_text(encoding="utf-8")
             except UnicodeDecodeError:

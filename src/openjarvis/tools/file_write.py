@@ -157,7 +157,9 @@ class FileWriteTool(BaseTool):
 
                 _rust = get_rust_module()
                 _rust.FileWriteTool().execute(str(path), content)
-            except ImportError:
+            except (ImportError, AttributeError):
+                # ImportError: no rust bridge. AttributeError: a stale rust module
+                # lacking FileWriteTool. Either way, fall back to pure Python.
                 try:
                     path.write_text(content, encoding="utf-8")
                 except OSError as exc:
