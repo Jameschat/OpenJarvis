@@ -186,9 +186,7 @@ def serve(
 
                 # Load tools for agents that support them
                 if getattr(agent_cls, "accepts_tools", False):
-                    import openjarvis.tools  # noqa: F401  # trigger registration
-                    from openjarvis.core.registry import ToolRegistry
-                    from openjarvis.tools._stubs import BaseTool
+                    from openjarvis.agents.tool_loader import build_agent_tools
 
                     _DEFAULT_TOOLS = {"think", "calculator", "web_search"}
                     configured = config.agent.tools
@@ -206,17 +204,9 @@ def serve(
                     else:
                         allowed = _DEFAULT_TOOLS
 
-                    tools = []
-                    for name in ToolRegistry.keys():
-                        if name not in allowed:
-                            continue
-                        tool_cls = ToolRegistry.get(name)
-                        if isinstance(tool_cls, type) and issubclass(
-                            tool_cls, BaseTool
-                        ):
-                            tools.append(tool_cls())
-                        elif isinstance(tool_cls, BaseTool):
-                            tools.append(tool_cls)
+                    tools = build_agent_tools(
+                        allowed, getattr(config.agent, "workspace_dir", "")
+                    )
                     if tools:
                         agent_kwargs["tools"] = tools
 
