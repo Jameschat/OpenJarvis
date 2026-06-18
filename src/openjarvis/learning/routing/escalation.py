@@ -54,6 +54,46 @@ def next_target(current: str) -> Optional[str]:
     return LADDER[i + 1] if i + 1 < len(LADDER) else None
 
 
+_TARGET_MODELS = {
+    "remote": "qwen3.6-35b-a3b-remote",
+    "cloud": "gpt-4o",
+}
+
+
+def choose_initial_model(
+    requested: str,
+    tier: str,
+    preference: str,
+    *,
+    cloud_available: bool = False,
+    remote_available: bool = False,
+) -> tuple:
+    """Pick the model to run a turn on, upfront (no rerun — safe for tool turns).
+
+    Returns ``(model, escalated_from, reason)``. ``escalated_from`` is None when
+    we stay on the requested local model. Only escalates to a target that is
+    actually available; otherwise stays local (never routes to a down lane).
+    """
+    target = initial_target(tier, preference)
+    if target in ("local_fast", "local_coder"):
+        return (requested, None, None)
+
+    reason = f"complexity={tier}, preference={preference}"
+    if target == "remote":
+        if remote_available:
+            return (_TARGET_MODELS["remote"], requested, reason)
+        if cloud_available:
+            return (_TARGET_MODELS["cloud"], requested, reason + " (remote unavailable)")
+        return (requested, None, None)
+
+    # target == "cloud"
+    if cloud_available:
+        return (_TARGET_MODELS["cloud"], requested, reason)
+    if remote_available:
+        return (_TARGET_MODELS["remote"], requested, reason + " (cloud unavailable)")
+    return (requested, None, None)
+
+
 def resolve_brain(model: str) -> dict:
     """Map a model id to a UI 'brain' descriptor {brain, lane, model} for the
     routing/brain-pill display. Pure; no I/O."""

@@ -1,10 +1,56 @@
 from openjarvis.learning.routing.escalation import (
     LADDER,
+    choose_initial_model,
     initial_target,
     next_target,
     resolve_brain,
     should_escalate,
 )
+
+
+def test_choose_model_stays_local_for_local_preference():
+    for tier in ("trivial", "very_complex"):
+        assert choose_initial_model("qwen3.6-27b-local", tier, "local", cloud_available=True) == (
+            "qwen3.6-27b-local",
+            None,
+            None,
+        )
+
+
+def test_choose_model_escalates_very_complex_to_cloud_when_available():
+    model, frm, reason = choose_initial_model(
+        "qwen3.6-27b-local", "very_complex", "balanced", cloud_available=True
+    )
+    assert model == "gpt-4o"
+    assert frm == "qwen3.6-27b-local"
+    assert "complexity=very_complex" in reason
+
+
+def test_choose_model_stays_local_when_no_stronger_target_available():
+    assert choose_initial_model(
+        "qwen3.6-27b-local", "very_complex", "balanced",
+        cloud_available=False, remote_available=False,
+    ) == ("qwen3.6-27b-local", None, None)
+
+
+def test_choose_model_prefers_remote_then_falls_back_to_cloud():
+    # best + complex -> target remote; remote up -> remote
+    m, _, _ = choose_initial_model("qwen3.6-27b-local", "complex", "best", remote_available=True)
+    assert m == "qwen3.6-35b-a3b-remote"
+    # remote down, cloud up -> cloud
+    m2, _, r2 = choose_initial_model(
+        "qwen3.6-27b-local", "complex", "best", remote_available=False, cloud_available=True
+    )
+    assert m2 == "gpt-4o"
+    assert "remote unavailable" in r2
+
+
+def test_choose_model_no_escalation_for_moderate_balanced():
+    assert choose_initial_model("qwen3.6-27b-local", "moderate", "balanced", cloud_available=True) == (
+        "qwen3.6-27b-local",
+        None,
+        None,
+    )
 
 
 def test_resolve_brain_maps_models_to_descriptors():

@@ -142,7 +142,36 @@ class AgentStreamBridge:
         """Async generator that yields SSE-formatted strings."""
         self._subscribe_all()
 
-        # Kick off agent.run() in a background thread
+        # Upfront escalation (safe — decided BEFORE the agent runs, so no rerun
+        # and no double tool side effects). Pick the model by complexity. Fully
+        # guarded: any failure falls back to the requested model and never breaks
+        # chat. Only escalates to an AVAILABLE stronger target.
+        _esc = None
+        try:
+            import os as _os
+
+            from openjarvis.learning.routing.complexity import score_complexity
+            from openjarvis.learning.routing.escalation import choose_initial_model
+
+            _input = self._request.messages[-1].content if self._request.messages else ""
+            _tier = score_complexity(_input or "").tier
+            _pref = _os.environ.get("OPENJARVIS_ESCALATION_PREFERENCE", "balanced")
+            _cloud = bool(
+                _os.environ.get("OPENAI_API_KEY")
+                or _os.environ.get("ANTHROPIC_API_KEY")
+                or _os.environ.get("GEMINI_API_KEY")
+                or _os.environ.get("GOOGLE_API_KEY")
+            )
+            _model, _from, _reason = choose_initial_model(
+                self._model, _tier, _pref, cloud_available=_cloud, remote_available=False
+            )
+            if _from and _model != self._model:
+                self._model = _model
+                _esc = {"from": _from, "to": _model, "reason": _reason}
+        except Exception:
+            _esc = None
+
+        # Kick off agent.run() in a background thread (uses the chosen model)
         loop = asyncio.get_event_loop()
         agent_task = asyncio.ensure_future(asyncio.to_thread(self._run_agent))
 
@@ -164,9 +193,11 @@ class AgentStreamBridge:
             )
             yield f"data: {first_chunk.model_dump_json()}\n\n"
 
-            # Announce which brain is answering (drives the header brain pill).
+            # Escalation note (if we upgraded the model) + which brain answers.
             from openjarvis.learning.routing.escalation import resolve_brain
 
+            if _esc:
+                yield self._format_named_event("escalation", _esc)
             _brain = resolve_brain(self._model)
             yield self._format_named_event(
                 "routing",

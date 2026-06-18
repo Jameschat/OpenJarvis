@@ -64,6 +64,15 @@ def serve(
 
     config = load_config()
 
+    # Export the escalation preference so the streaming bridge (which has no
+    # config handle) can read it for upfront complexity-based escalation.
+    import os as _os
+
+    _os.environ.setdefault(
+        "OPENJARVIS_ESCALATION_PREFERENCE",
+        getattr(config.agent, "escalation_preference", "balanced") or "balanced",
+    )
+
     # Resolve host/port from CLI args or config
     bind_host = host or config.server.host
     bind_port = port or config.server.port
