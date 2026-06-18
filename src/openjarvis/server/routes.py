@@ -170,6 +170,15 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
         # bridge runs agent.run() synchronously and word-splits the result,
         # so it can't stream tokens in real-time).  For plain chat, stream
         # directly from the engine for true token-by-token output.
+        #
+        # NOTE: routing UI chat (no request tools) to the agent path requires
+        # the engine to serve the local qwen alias WITH tools. Today the
+        # backend engine resolves to CloudEngine (config.engine.default=ollama
+        # is unhealthy → discovery falls back to cloud), which 404s on
+        # qwen3.6-27b-local. Re-enable agent-by-default only after the engine
+        # fix (LiteLLMEngine → :4000 proxy with provider-prefixed routing +
+        # proxy-backed list_models, config.engine.default=litellm). See
+        # docs/superpowers/specs + STATE.md (2026-06-18 agent-path engine gap).
         if agent is not None and bus is not None and request_body.tools:
             return await _handle_agent_stream(agent, bus, model, request_body)
         return await _handle_stream(engine, model, request_body, complexity_info)
