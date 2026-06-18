@@ -96,10 +96,16 @@ export function reduceStreamEvent(
   if (name === 'tool_call_start') {
     const d = parse(ev.data);
     if (d && d.tool) {
+      // The live ToolExecutor emits `arguments` as a parsed object; the UI
+      // renders it as a string, so normalize here (string passes through).
+      const argStr =
+        typeof d.arguments === 'string'
+          ? d.arguments
+          : JSON.stringify(d.arguments ?? '');
       const tc: ToolCallInfo = {
         id: nextId(),
         tool: d.tool,
-        arguments: d.arguments || '',
+        arguments: argStr,
         status: 'running',
       };
       acc.toolCalls.push(tc);

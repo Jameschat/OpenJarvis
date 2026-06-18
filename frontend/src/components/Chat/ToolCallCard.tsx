@@ -35,7 +35,12 @@ export function ToolCallCard({ toolCall }: Props) {
   const [expanded, setExpanded] = useState(false);
   const config = statusConfig[toolCall.status];
   const StatusIcon = config.icon;
-  const preview = previewArgs(toolCall.arguments);
+  // Defensive: some event sources send `arguments` as an object, not a string.
+  const argsStr =
+    typeof toolCall.arguments === 'string'
+      ? toolCall.arguments
+      : JSON.stringify(toolCall.arguments ?? '');
+  const preview = previewArgs(argsStr);
 
   return (
     <div
@@ -95,7 +100,7 @@ export function ToolCallCard({ toolCall }: Props) {
           className="px-2.5 pb-2 pt-0.5"
           style={{ borderTop: '1px solid var(--color-border-subtle, var(--color-border))' }}
         >
-          {toolCall.arguments && (
+          {argsStr && (
             <div className="mt-1.5">
               <div
                 style={{
@@ -120,7 +125,7 @@ export function ToolCallCard({ toolCall }: Props) {
                   wordBreak: 'break-all',
                 }}
               >
-                {formatJson(toolCall.arguments)}
+                {formatJson(argsStr)}
               </pre>
             </div>
           )}

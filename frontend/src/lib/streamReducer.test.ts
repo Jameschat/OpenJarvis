@@ -40,6 +40,15 @@ describe('reduceStreamEvent', () => {
     expect(acc.toolCalls[0].result).toBe('ok');
   });
 
+  it('stringifies object tool_call_start arguments (live ToolExecutor sends objects)', () => {
+    let acc = initAccumulator();
+    acc = reduceStreamEvent(acc, { event: 'tool_call_start', data: JSON.stringify({ tool: 'file_edit', arguments: { path: 'a.py', old_string: 'x', new_string: 'y' } }) }, ctx);
+    expect(typeof acc.toolCalls[0].arguments).toBe('string');
+    expect(acc.toolCalls[0].arguments).toContain('a.py');
+    const a = acc.activity.find((x) => x.kind === 'tool');
+    expect(a && a.kind === 'tool' && typeof a.arguments).toBe('string');
+  });
+
   it('creates a file_edit activity from tool_call_end diff metadata', () => {
     let acc = initAccumulator();
     acc = reduceStreamEvent(acc, { event: 'tool_call_start', data: JSON.stringify({ tool: 'file_edit', arguments: '{}' }) }, ctx);
