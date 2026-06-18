@@ -166,20 +166,16 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
 
     if request_body.stream:
         bus = getattr(request.app.state, "bus", None)
-        # Use the agent stream bridge only when tools are present (the
-        # bridge runs agent.run() synchronously and word-splits the result,
-        # so it can't stream tokens in real-time).  For plain chat, stream
-        # directly from the engine for true token-by-token output.
-        #
-        # NOTE: routing UI chat (no request tools) to the agent path requires
-        # the engine to serve the local qwen alias WITH tools. Today the
-        # backend engine resolves to CloudEngine (config.engine.default=ollama
-        # is unhealthy → discovery falls back to cloud), which 404s on
-        # qwen3.6-27b-local. Re-enable agent-by-default only after the engine
-        # fix (LiteLLMEngine → :4000 proxy with provider-prefixed routing +
-        # proxy-backed list_models, config.engine.default=litellm). See
-        # docs/superpowers/specs + STATE.md (2026-06-18 agent-path engine gap).
-        if agent is not None and bus is not None and request_body.tools:
+        # Route to the agent stream bridge when the request carries tools OR the
+        # configured agent has its own tools — so the UI (which sends no tools
+        # array) still gets the agentic loop: file_edit, todo_write, web_search,
+        # etc. The bridge streams real tokens via engine.stream_full after the
+        # tool loop. Requires the engine to serve the model WITH tools — the
+        # backend default engine is now litellm_proxy (:4000), which serves the
+        # qwen aliases with tool-calling. Plain chat (no agent / no-tool agent)
+        # streams directly for true token-by-token output.
+        agent_has_tools = bool(getattr(agent, "_tools", None))
+        if agent is not None and bus is not None and (request_body.tools or agent_has_tools):
             return await _handle_agent_stream(agent, bus, model, request_body)
         return await _handle_stream(engine, model, request_body, complexity_info)
 
