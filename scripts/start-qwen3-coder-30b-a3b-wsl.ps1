@@ -184,9 +184,6 @@ exec $Server \
   --cache-type-v $CacheTypeV \
   --jinja \
   --reasoning off \
-  --no-cache-prompt \
-  --cache-ram 0 \
-  --no-warmup \
   --no-mmap \
   --temp 0.7 \
   --top-k 20 \
