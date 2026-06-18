@@ -34,6 +34,30 @@ _FUNCTION_BLOCK_RE = re.compile(r"<function=([^>\s]+)\s*>(.*?)</function>", re.D
 _PARAMETER_RE = re.compile(r"<parameter=([^>\s]+)\s*>(.*?)</parameter>", re.DOTALL)
 
 
+def _tools_as_text_instruction(tools: List[Dict[str, Any]]) -> str:
+    """Render OpenAI tool schemas as a plain-text instruction telling the model
+    to emit the Qwen <function=...> format. Used as a fallback when the server's
+    native structured tool-calling fails (it can't JSON-parse large content like
+    an HTML file). The XML format needs no JSON escaping, so big content is safe."""
+    lines = [
+        "You can call tools. To call a tool, reply with ONLY this exact format "
+        "(no prose, no code fences):",
+        "<function=TOOL_NAME>",
+        "<parameter=PARAM_NAME>VALUE</parameter>",
+        "</function>",
+        "",
+        "Available tools:",
+    ]
+    for t in tools:
+        fn = t.get("function", t) if isinstance(t, dict) else {}
+        name = fn.get("name", "")
+        desc = (fn.get("description") or "").strip()
+        params = (fn.get("parameters") or {}).get("properties") or {}
+        plist = ", ".join(params.keys())
+        lines.append(f"- {name}({plist}): {desc}")
+    return "\n".join(lines)
+
+
 def parse_text_tool_calls(content: str) -> List[Dict[str, str]] | None:
     """Parse Qwen/Hermes ``<function=...>`` text tool calls into the structured
     form the agent loop expects. Returns None when no such block is present."""
@@ -97,9 +121,24 @@ class _OpenAICompatibleEngine(InferenceEngine):
         try:
             url = f"{self._api_prefix}/chat/completions"
             resp = self._client.post(url, json=payload)
-            if resp.status_code == 400 and "tools" in payload:
+            # Native structured tool-calling can fail two ways on a llama.cpp
+            # lane: the server rejects the tools payload (400), or — worse — it
+            # accepts it but can't JSON-parse the model's tool-call arguments
+            # when they contain large/complex content like an HTML file (500
+            # "Failed to parse tool call arguments"). Either way, fall back to
+            # text-mode tools: drop the structured `tools` field, inject a
+            # plain-text instruction describing the tools + the Qwen
+            # <function=...> format, and let parse_text_tool_calls() recover the
+            # call. That format needs no JSON escaping, so big content is safe.
+            tools_payload = payload.get("tools")
+            if tools_payload and resp.status_code in (400, 500):
                 payload.pop("tools", None)
                 payload.pop("tool_choice", None)
+                msgs = list(payload.get("messages") or [])
+                msgs.append(
+                    {"role": "system", "content": _tools_as_text_instruction(tools_payload)}
+                )
+                payload["messages"] = msgs
                 resp = self._client.post(url, json=payload)
             resp.raise_for_status()
         except (httpx.ConnectError, httpx.TimeoutException) as exc:
