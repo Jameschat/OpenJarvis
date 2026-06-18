@@ -25,4 +25,28 @@ for _key, (_cls_name, _default_host, _api_prefix) in _ENGINES.items():
     EngineRegistry.register(_key)(_cls)
     globals()[_cls_name] = _cls
 
-__all__ = [name for name, _, _ in _ENGINES.values()]
+
+# Cloud model prefixes the local proxy may also advertise (via its fallback
+# chain) but that should still be served by CloudEngine, not the proxy.
+_CLOUD_PREFIXES = ("gpt-", "o1-", "o3-", "o4-", "chatgpt-", "claude-", "gemini-", "MiniMax-")
+
+
+@EngineRegistry.register("litellm_proxy")
+class LiteLLMProxyEngine(_OpenAICompatibleEngine):
+    """The local LiteLLM proxy (:4000), which serves the qwen local aliases WITH
+    tool calling (verified). Use this as the default engine so the agent/tool
+    loop reaches the local model. ``list_models`` excludes cloud-prefixed entries
+    so a ``MultiEngine`` wrap still routes those to ``CloudEngine``.
+    """
+
+    engine_id = "litellm_proxy"
+    _default_host = "http://localhost:4000"
+    _api_prefix = "/v1"
+
+    def list_models(self):
+        return [m for m in super().list_models() if not m.startswith(_CLOUD_PREFIXES)]
+
+
+globals()["LiteLLMProxyEngine"] = LiteLLMProxyEngine
+
+__all__ = [name for name, _, _ in _ENGINES.values()] + ["LiteLLMProxyEngine"]
