@@ -34,8 +34,30 @@ _TOOL_USE_SYSTEM_PROMPT = (
     "(e.g. file_read, file_edit, file_write, shell_exec, web_search) — do not "
     "merely describe what you would do. For multi-step work, call todo_write "
     "first to lay out the plan, then carry it out, updating the todo as you go. "
+    "\n\n"
+    "Your workspace is E:/Claude. Projects you have worked on live under it "
+    "(e.g. E:/Claude/westhill-hotel). The Obsidian vault at E:/Claude/Obsidian "
+    "holds persistent notes about prior work. Before telling the user you don't "
+    "know about something they reference, LOOK FOR IT: list/read files in the "
+    "workspace (file_read), search the vault, and search memory "
+    "(memory_search/knowledge_search). Only say you can't find it after you have "
+    "actually checked. "
     "When the work is done, give a short, clear final answer."
 )
+
+# Cap tool output fed back into the model. A large result (e.g. a big directory
+# listing) can overflow a small-context lane (the 27B MTP lane is 16K) and crash
+# it mid-turn. Truncate so the agentic loop stays stable.
+_MAX_TOOL_RESULT_CHARS = 6000
+
+
+def _cap_tool_content(content: str) -> str:
+    if not content:
+        return content or ""
+    if len(content) <= _MAX_TOOL_RESULT_CHARS:
+        return content
+    head = content[:_MAX_TOOL_RESULT_CHARS]
+    return f"{head}\n[... truncated {len(content) - _MAX_TOOL_RESULT_CHARS} chars ...]"
 
 
 @AgentRegistry.register("orchestrator")
@@ -159,7 +181,7 @@ class OrchestratorAgent(ToolUsingAgent):
                 tool_result = self._executor.execute(tool_call)
                 all_tool_results.append(tool_result)
 
-                observation = f"Observation: {tool_result.content}"
+                observation = f"Observation: {_cap_tool_content(tool_result.content)}"
                 messages.append(Message(role=Role.USER, content=observation))
                 continue
 
@@ -331,7 +353,7 @@ class OrchestratorAgent(ToolUsingAgent):
                     messages.append(
                         Message(
                             role=Role.TOOL,
-                            content=tool_result.content,
+                            content=_cap_tool_content(tool_result.content),
                             tool_call_id=tc.id,
                             name=tc.name,
                         )
@@ -355,7 +377,7 @@ class OrchestratorAgent(ToolUsingAgent):
                             messages.append(
                                 Message(
                                     role=Role.TOOL,
-                                    content=tool_result.content,
+                                    content=_cap_tool_content(tool_result.content),
                                     tool_call_id=tc.id,
                                     name=tc.name,
                                 )
@@ -369,7 +391,7 @@ class OrchestratorAgent(ToolUsingAgent):
                     messages.append(
                         Message(
                             role=Role.TOOL,
-                            content=tool_result.content,
+                            content=_cap_tool_content(tool_result.content),
                             tool_call_id=tc.id,
                             name=tc.name,
                         )
