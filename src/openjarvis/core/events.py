@@ -77,6 +77,14 @@ class EventType(str, Enum):
     OPTIMIZE_TRIAL_END = "optimize_trial_end"
     OPTIMIZE_RUN_END = "optimize_run_end"
     FEEDBACK_RECEIVED = "feedback_received"
+    # Claude Code-grade chat — streamed UI events
+    PLAN_UPDATE = "plan_update"
+    THINKING_DELTA = "thinking_delta"
+    FILE_EDIT = "file_edit"
+    ESCALATION = "escalation"
+    ROUTING = "routing"
+    CITATION = "citation"
+    VERIFICATION = "verification"
 
 
 @dataclass(slots=True)
