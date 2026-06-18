@@ -51,6 +51,15 @@ describe('reduceStreamEvent', () => {
     expect(edit && edit.kind === 'file_edit' && edit.editId).toBe('e9');
   });
 
+  it('updates the plan from a tool result carrying an items array', () => {
+    let acc = initAccumulator();
+    acc = reduceStreamEvent(acc, { event: 'tool_call_end', data: JSON.stringify({ tool: 'todo_write', success: true, latency: 1, result: '2 tasks', metadata: { items: [{ title: 'A', status: 'completed' }, { title: 'B', status: 'in_progress' }] } }) }, ctx);
+    expect(acc.plan).toHaveLength(2);
+    expect(acc.plan[0].status).toBe('completed');
+    expect(acc.plan[0].id).toBeTruthy();
+    expect(acc.activity.some((a) => a.kind === 'plan')).toBe(true);
+  });
+
   it('sets phase on agent_turn_start and inference_start', () => {
     let acc = initAccumulator();
     acc = reduceStreamEvent(acc, { event: 'agent_turn_start', data: '{}' }, ctx);

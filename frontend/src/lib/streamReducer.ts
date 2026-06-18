@@ -144,6 +144,16 @@ export function reduceStreamEvent(
           removed: md.removed || 0,
         });
       }
+      // Any tool whose result carries an items array (e.g. todo_write) updates
+      // the live plan checklist.
+      if (md && Array.isArray(md.items)) {
+        acc.plan = md.items.map((it: any) => ({
+          id: it.id || planId(String(it.title || '')),
+          title: String(it.title || ''),
+          status: it.status === 'in_progress' || it.status === 'completed' ? it.status : 'pending',
+        }));
+        acc.activity.push({ kind: 'plan', items: acc.plan });
+      }
       acc.phase = 'Generating...';
     }
     return acc;
