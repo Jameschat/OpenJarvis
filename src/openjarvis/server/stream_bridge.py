@@ -23,15 +23,7 @@ from openjarvis.server.models import (
     StreamChoice,
     UsageInfo,
 )
-
-# EventTypes we subscribe to and their corresponding SSE event names
-_EVENT_MAP = {
-    EventType.AGENT_TURN_START: "agent_turn_start",
-    EventType.INFERENCE_START: "inference_start",
-    EventType.INFERENCE_END: "inference_end",
-    EventType.TOOL_CALL_START: "tool_call_start",
-    EventType.TOOL_CALL_END: "tool_call_end",
-}
+from openjarvis.server.stream_events import EVENT_SSE_NAMES
 
 # Sentinel signalling that the agent thread has finished
 _DONE = object()
@@ -98,7 +90,7 @@ class AgentStreamBridge:
 
     def _subscribe_all(self) -> None:
         """Subscribe to all relevant EventBus event types."""
-        for et in _EVENT_MAP:
+        for et in EVENT_SSE_NAMES:
             self._bus.subscribe(et, self._make_callback(et))
 
     def _unsubscribe_all(self) -> None:
@@ -180,7 +172,7 @@ class AgentStreamBridge:
                     break
 
                 if isinstance(item, Event):
-                    sse_name = _EVENT_MAP.get(item.event_type)
+                    sse_name = EVENT_SSE_NAMES.get(item.event_type)
                     if sse_name:
                         yield self._format_named_event(sse_name, item.data)
 
