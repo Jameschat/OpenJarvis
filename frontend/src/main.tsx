@@ -30,6 +30,42 @@ function applyTheme() {
 
 applyTheme();
 
+// Last-resort visibility: if anything fails OUTSIDE React (uncaught error,
+// unhandled promise, chunk-load failure), the window would otherwise go blank
+// white. Paint the actual error onto #root so it is diagnosable in the packaged
+// desktop app (which has no devtools).
+function paintFatal(label: string, detail: string) {
+  try {
+    const root = document.getElementById('root');
+    if (!root) return;
+    root.innerHTML =
+      '<div style="padding:20px;font:12px/1.5 ui-monospace,Consolas,monospace;' +
+      'color:#ffb4b4;background:#141416;height:100vh;overflow:auto;white-space:pre-wrap">' +
+      '<strong>JARVIS UI ERROR — ' +
+      label.replace(/[<&]/g, '_') +
+      '</strong>\n\n' +
+      String(detail).replace(/</g, '&lt;') +
+      '</div>';
+  } catch {
+    /* nothing more we can do */
+  }
+}
+
+window.addEventListener('error', (e) => {
+  const err = (e as ErrorEvent).error;
+  // Resource (script/style) load failures have no .error; report the target src.
+  const target = e.target as { src?: string; href?: string } | null;
+  const detail = err
+    ? err.stack || err.message
+    : 'Failed to load resource: ' + (target?.src || target?.href || (e as ErrorEvent).message || 'unknown');
+  paintFatal('uncaught error', detail);
+});
+
+window.addEventListener('unhandledrejection', (e) => {
+  const r = (e as PromiseRejectionEvent).reason;
+  paintFatal('unhandled rejection', (r && (r.stack || r.message)) || String(r));
+});
+
 function redirectTauriToStudio() {
   if (
     typeof window !== 'undefined' &&
@@ -46,13 +82,17 @@ redirectTauriToStudio();
 // This ensures JARVIS_PORT is defined in one place (the Rust backend).
 // In non-Tauri environments this is a no-op.
 initApiBase().finally(() => {
-  createRoot(document.getElementById('root')!).render(
-    <StrictMode>
-      <ErrorBoundary>
-        <BrowserRouter>
-          <App />
-        </BrowserRouter>
-      </ErrorBoundary>
-    </StrictMode>,
-  );
+  try {
+    createRoot(document.getElementById('root')!).render(
+      <StrictMode>
+        <ErrorBoundary>
+          <BrowserRouter>
+            <App />
+          </BrowserRouter>
+        </ErrorBoundary>
+      </StrictMode>,
+    );
+  } catch (err) {
+    paintFatal('render failed', (err instanceof Error && (err.stack || err.message)) || String(err));
+  }
 });
