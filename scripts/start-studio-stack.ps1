@@ -169,8 +169,12 @@ if (Test-Http "http://127.0.0.1:7710/studio/ping") {
     Write-Host "[backend] already healthy on 7710"
 } else {
     $jarvis = Join-Path $RepoRoot ".venv\Scripts\jarvis.exe"
+    # orchestrator (not "simple"): the tool-using agent. "simple" has
+    # accepts_tools=False, so it never loads the file_edit/todo_write/etc tools
+    # and the chat never runs the agentic loop. orchestrator honours
+    # config.agent.tools (+ workspace_dir scoping) so build/code/diff/plan work.
     Start-Process -FilePath $jarvis `
-        -ArgumentList "serve", "--port", "7710", "--model", "qwen3.6-27b-local", "--agent", "simple" `
+        -ArgumentList "serve", "--port", "7710", "--model", "qwen3.6-27b-local", "--agent", "orchestrator" `
         -WorkingDirectory $RepoRoot -WindowStyle Hidden `
         -RedirectStandardOutput (Join-Path $logDir "jarvis-serve-7710.log") `
         -RedirectStandardError (Join-Path $logDir "jarvis-serve-7710.err.log")
