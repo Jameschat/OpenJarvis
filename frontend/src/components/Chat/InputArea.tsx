@@ -6,6 +6,7 @@ import { fetchSavings, getBase, sanitizeModelId } from '../../lib/api';
 import { MicButton } from './MicButton';
 import { useSpeech } from '../../hooks/useSpeech';
 import type { ChatMessage, ToolCallInfo, TokenUsage, MessageTelemetry } from '../../types';
+import { initAccumulator, reduceStreamEvent } from '../../lib/streamReducer';
 
 export function InputArea() {
   const defaultLocalModel = 'qwen3.6-27b-local';
@@ -130,11 +131,10 @@ export function InputArea() {
     const controller = new AbortController();
     abortRef.current = controller;
 
-    let accumulatedContent = '';
+    let acc = initAccumulator();
     let usage: TokenUsage | undefined;
     let complexity: { score: number; tier: string; suggested_max_tokens: number } | undefined;
     let serverTelemetry: Partial<MessageTelemetry> | undefined;
-    const toolCalls: ToolCallInfo[] = [];
     let lastFlush = 0;
     let ttftMs: number | undefined;
 
@@ -145,6 +145,9 @@ export function InputArea() {
       activeToolCalls: [],
       content: '',
       tokens: 0,
+      thinking: '',
+      activity: [],
+      plan: [],
     });
     useAppStore.getState().addLogEntry({
       timestamp: Date.now(),
@@ -153,113 +156,79 @@ export function InputArea() {
       message: `Request: "${content.slice(0, 80)}${content.length > 80 ? '...' : ''}" → ${activeModel}`,
     });
 
+    // Named events flush immediately (tool/plan/edit/etc. feel responsive);
+    // content chunks throttle to ~12/s so long replies don't freeze the thread.
+    const NAMED_FLUSH = new Set([
+      'tool_call_start', 'tool_call_end', 'plan', 'file_edit',
+      'escalation', 'routing', 'verification', 'inference_start', 'agent_turn_start',
+    ]);
+
     try {
       for await (const sseEvent of streamChat(
         { model: activeModel, messages: apiMessages, stream: true, temperature, max_tokens: maxTokens },
         controller.signal,
       )) {
-        const eventName = sseEvent.event;
+        const before = acc.toolCalls.length;
+        acc = reduceStreamEvent(acc, sseEvent, { startTime, now: Date.now() });
+        usage = acc.usage ?? usage;
+        complexity = acc.complexity ?? complexity;
+        serverTelemetry = acc.telemetry ?? serverTelemetry;
+        ttftMs = acc.ttftMs ?? ttftMs;
 
-        if (eventName === 'agent_turn_start') {
-          setStreamState({ phase: 'Agent thinking...' });
-        } else if (eventName === 'inference_start') {
-          setStreamState({ phase: 'Generating...' });
+        if (sseEvent.event === 'tool_call_start' && acc.toolCalls.length > before) {
+          const tc = acc.toolCalls[acc.toolCalls.length - 1];
+          useAppStore.getState().addLogEntry({
+            timestamp: Date.now(), level: 'info', category: 'tool',
+            message: `Calling ${tc.tool}(${tc.arguments || ''})`,
+          });
+        }
+        if (sseEvent.event === 'inference_start') {
           useAppStore.getState().addLogEntry({
             timestamp: Date.now(), level: 'info', category: 'chat',
             message: `Generating with ${activeModel}...`,
           });
-        } else if (eventName === 'tool_call_start') {
-          try {
-            const data = JSON.parse(sseEvent.data);
-            const tc: ToolCallInfo = {
-              id: generateId(),
-              tool: data.tool,
-              arguments: data.arguments || '',
-              status: 'running',
-            };
-            toolCalls.push(tc);
-            setStreamState({
-              phase: `Calling ${data.tool}...`,
-              activeToolCalls: [...toolCalls],
-            });
-            updateLastAssistant(convId, accumulatedContent, [...toolCalls]);
-            useAppStore.getState().addLogEntry({
-              timestamp: Date.now(), level: 'info', category: 'tool',
-              message: `Calling ${data.tool}(${data.arguments || ''})`,
-            });
-          } catch {}
-        } else if (eventName === 'tool_call_end') {
-          try {
-            const data = JSON.parse(sseEvent.data);
-            const tc = toolCalls.find(
-              (t) => t.tool === data.tool && t.status === 'running',
-            );
-            if (tc) {
-              tc.status = data.success ? 'success' : 'error';
-              tc.latency = data.latency;
-              tc.result = data.result;
-            }
-            setStreamState({
-              phase: 'Generating...',
-              activeToolCalls: [...toolCalls],
-            });
-            updateLastAssistant(convId, accumulatedContent, [...toolCalls]);
-          } catch {}
-        } else {
-          try {
-            const data = JSON.parse(sseEvent.data);
-            const delta = data.choices?.[0]?.delta;
-            if (data.usage) usage = data.usage;
-            if (data.complexity) complexity = data.complexity;
-            if (data.telemetry) serverTelemetry = data.telemetry;
-            if (delta?.content) {
-              if (!ttftMs) ttftMs = Date.now() - startTime;
-              accumulatedContent += delta.content;
-              // Throttle ALL UI updates to ~12/s. Updating the store on every
-              // token (~80/s) re-rendered the thread + indicator each token and
-              // froze the main thread on long replies. Both the live store
-              // (content/tokens for the working indicator) and the rendered
-              // message now refresh together on the 80ms tick.
-              const now = Date.now();
-              if (now - lastFlush >= 80) {
-                // elapsedMs is updated HERE (not only via the setInterval):
-                // the SSE `for await` loop floods the microtask queue while
-                // streaming, starving the macrotask timer so the clock froze
-                // mid-generation. Updating it in the flush keeps it ticking.
-                setStreamState({
-                  content: accumulatedContent,
-                  phase: '',
-                  tokens: Math.ceil(accumulatedContent.length / 4),
-                  elapsedMs: now - startTime,
-                });
-                updateLastAssistant(
-                  convId,
-                  accumulatedContent,
-                  toolCalls.length > 0 ? [...toolCalls] : undefined,
-                );
-                lastFlush = now;
-              }
-            }
-            if (data.choices?.[0]?.finish_reason === 'stop') break;
-          } catch {}
         }
+
+        const now = Date.now();
+        const isNamed = !!sseEvent.event && NAMED_FLUSH.has(sseEvent.event);
+        if (isNamed || now - lastFlush >= 80) {
+          setStreamState({
+            content: acc.content,
+            phase: acc.phase,
+            tokens: acc.tokens,
+            elapsedMs: now - startTime,
+            activeToolCalls: [...acc.toolCalls],
+            thinking: acc.thinking,
+            activity: [...acc.activity],
+            plan: [...acc.plan],
+            routing: acc.routing,
+          });
+          updateLastAssistant(
+            convId,
+            acc.content,
+            acc.toolCalls.length > 0 ? [...acc.toolCalls] : undefined,
+          );
+          lastFlush = now;
+        }
+
+        if (acc.done) break;
       }
     } catch (err: any) {
       if (err.name === 'AbortError') {
         // User cancelled or model switch — keep whatever was accumulated
-        if (!accumulatedContent) accumulatedContent = '(Generation stopped)';
+        if (!acc.content) acc.content = '(Generation stopped)';
       } else {
         const errMsg = err?.message || String(err);
-        accumulatedContent =
-          accumulatedContent || `Error: ${errMsg}`;
+        acc.content =
+          acc.content || `Error: ${errMsg}`;
         useAppStore.getState().addLogEntry({
           timestamp: Date.now(), level: 'error', category: 'chat',
           message: `Stream error: ${errMsg}`,
         });
       }
     } finally {
-      if (!accumulatedContent) {
-        accumulatedContent = 'No response was generated. Please try again.';
+      if (!acc.content) {
+        acc.content = 'No response was generated. Please try again.';
       }
       const totalMs = Date.now() - startTime;
       const _CLOUD_PREFIXES = ['gpt-', 'o1-', 'o3-', 'o4-', 'claude-', 'gemini-', 'openrouter/', 'MiniMax-', 'chatgpt-'];
@@ -300,11 +269,13 @@ export function InputArea() {
 
       updateLastAssistant(
         convId,
-        accumulatedContent,
-        toolCalls.length > 0 ? toolCalls : undefined,
+        acc.content,
+        acc.toolCalls.length > 0 ? acc.toolCalls : undefined,
         usage,
         telemetry,
         audioMeta,
+        acc.activity.length > 0 ? acc.activity : undefined,
+        acc.plan.length > 0 ? acc.plan : undefined,
       );
       if (timerRef.current) {
         clearInterval(timerRef.current);
@@ -313,7 +284,7 @@ export function InputArea() {
       resetStream();
       useAppStore.getState().addLogEntry({
         timestamp: Date.now(), level: 'info', category: 'chat',
-        message: `Response: ${accumulatedContent.length} chars`,
+        message: `Response: ${acc.content.length} chars`,
       });
       abortRef.current = null;
 
