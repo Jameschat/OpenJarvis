@@ -10,12 +10,9 @@ import { AudioPlayer } from './AudioPlayer';
 import { ToolCallCard } from './ToolCallCard';
 import { XRayFooter } from './XRayFooter';
 import type { ChatMessage } from '../../types';
-
-function stripThinkTags(text: string): string {
-  let cleaned = text.replace(/<think>[\s\S]*?<\/think>\s*/gi, '');
-  cleaned = cleaned.replace(/^[\s\S]*?<\/think>\s*/i, '');
-  return cleaned.trim();
-}
+import { splitThinking } from '../../lib/thinking';
+import { ThinkingBlock } from './ThinkingBlock';
+import { PlanChecklist } from './PlanChecklist';
 
 interface Props {
   message: ChatMessage;
@@ -128,10 +125,18 @@ function MessageBubbleImpl({ message, streaming = false }: Props) {
     );
   }
 
-  const cleanContent = useMemo(() => stripThinkTags(message.content), [message.content]);
+  const { thinking, visible } = useMemo(() => splitThinking(message.content), [message.content]);
+  // While streaming, the answer hasn't started until visible content appears.
+  const thinkingActive = streaming && !visible;
 
   return (
     <div className="group mb-6">
+      {/* Plan checklist */}
+      {message.plan && message.plan.length > 0 && <PlanChecklist items={message.plan} />}
+
+      {/* Reasoning trace */}
+      {thinking && <ThinkingBlock thinking={thinking} active={thinkingActive} />}
+
       {/* Tool calls */}
       {message.toolCalls && message.toolCalls.length > 0 && (
         <div className="mb-3 flex flex-col gap-2">
@@ -145,13 +150,13 @@ function MessageBubbleImpl({ message, streaming = false }: Props) {
       {message.audio?.url && <AudioPlayer src={message.audio.url} />}
 
       {/* Assistant message — plain text while streaming, full markdown once done */}
-      {cleanContent && (
+      {visible && (
         streaming ? (
           <div
             className="text-sm leading-relaxed"
             style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: 'var(--color-text)' }}
           >
-            {cleanContent}
+            {visible}
           </div>
         ) : (
           <div className="prose max-w-none">
@@ -162,7 +167,7 @@ function MessageBubbleImpl({ message, streaming = false }: Props) {
                 pre: CodeBlockPre,
               }}
             >
-              {cleanContent}
+              {visible}
             </ReactMarkdown>
           </div>
         )
@@ -170,7 +175,7 @@ function MessageBubbleImpl({ message, streaming = false }: Props) {
 
       {/* Footer: copy + x-ray */}
       <div className="flex items-center gap-2 mt-1.5">
-        <CopyMessageButton content={cleanContent} />
+        <CopyMessageButton content={visible} />
       </div>
       <XRayFooter usage={message.usage} telemetry={message.telemetry} />
     </div>
