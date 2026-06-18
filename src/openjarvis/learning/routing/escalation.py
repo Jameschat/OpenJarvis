@@ -54,4 +54,23 @@ def next_target(current: str) -> Optional[str]:
     return LADDER[i + 1] if i + 1 < len(LADDER) else None
 
 
-__all__ = ["LADDER", "initial_target", "should_escalate", "next_target"]
+def resolve_brain(model: str) -> dict:
+    """Map a model id to a UI 'brain' descriptor {brain, lane, model} for the
+    routing/brain-pill display. Pure; no I/O."""
+    m = (model or "").lower()
+    if m.startswith(("gpt-", "o1-", "o3-", "o4-", "chatgpt-")):
+        return {"brain": "cloud", "lane": "openai", "model": model}
+    if m.startswith("claude-"):
+        return {"brain": "cloud", "lane": "anthropic", "model": model}
+    if m.startswith("gemini-"):
+        return {"brain": "cloud", "lane": "gemini", "model": model}
+    if "remote" in m or "35b" in m:
+        return {"brain": "remote", "lane": "35B", "model": model}
+    if "coder" in m or "30b" in m:
+        return {"brain": "local", "lane": "30B", "model": model}
+    if "27b" in m or "qwen" in m:
+        return {"brain": "local", "lane": "27B", "model": model}
+    return {"brain": "local", "lane": "", "model": model}
+
+
+__all__ = ["LADDER", "initial_target", "should_escalate", "next_target", "resolve_brain"]

@@ -2,8 +2,17 @@ from openjarvis.learning.routing.escalation import (
     LADDER,
     initial_target,
     next_target,
+    resolve_brain,
     should_escalate,
 )
+
+
+def test_resolve_brain_maps_models_to_descriptors():
+    assert resolve_brain("qwen3.6-27b-local") == {"brain": "local", "lane": "27B", "model": "qwen3.6-27b-local"}
+    assert resolve_brain("qwen3.6-35b-a3b-remote")["brain"] == "remote"
+    assert resolve_brain("gpt-4o") == {"brain": "cloud", "lane": "openai", "model": "gpt-4o"}
+    assert resolve_brain("claude-opus-4")["lane"] == "anthropic"
+    assert resolve_brain("")["brain"] == "local"
 
 
 def test_local_preference_always_starts_local():

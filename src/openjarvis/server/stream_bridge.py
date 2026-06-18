@@ -164,6 +164,20 @@ class AgentStreamBridge:
             )
             yield f"data: {first_chunk.model_dump_json()}\n\n"
 
+            # Announce which brain is answering (drives the header brain pill).
+            from openjarvis.learning.routing.escalation import resolve_brain
+
+            _brain = resolve_brain(self._model)
+            yield self._format_named_event(
+                "routing",
+                {
+                    "brain": _brain["brain"],
+                    "model": _brain["model"],
+                    "lane": _brain["lane"],
+                    "health": "ok",
+                },
+            )
+
             # Drain queue until the agent finishes
             while True:
                 item = await self._queue.get()
