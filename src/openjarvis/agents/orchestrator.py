@@ -47,6 +47,9 @@ _TOOL_USE_SYSTEM_PROMPT = (
     "workspace (file_read), search the vault, and search memory "
     "(memory_search/knowledge_search). Only say you can't find it after you have "
     "actually checked. "
+    "When building or changing a website/web app, preview it: call preview_start "
+    "on the project folder to get a URL, then browser_navigate to it and "
+    "browser_screenshot to see the result, and iterate. "
     "When the work is done, give a short, clear final answer."
 )
 

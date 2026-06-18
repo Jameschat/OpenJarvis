@@ -73,6 +73,19 @@ def serve(
         getattr(config.agent, "escalation_preference", "balanced") or "balanced",
     )
 
+    # Load cloud API keys from ~/.openjarvis/cloud-keys.env into the process env
+    # so the CloudEngine (litellm SDK) can authenticate AND the escalation bridge
+    # can detect cloud availability. Without this, dropping a key in the file
+    # didn't reach the agent/engine path. setdefault: never override a real env.
+    try:
+        from openjarvis.server.cloud_router import _load_keys
+
+        for _k, _v in _load_keys().items():
+            if _v:
+                _os.environ.setdefault(_k, _v)
+    except Exception:
+        pass
+
     # Resolve host/port from CLI args or config
     bind_host = host or config.server.host
     bind_port = port or config.server.port

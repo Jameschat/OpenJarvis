@@ -11,7 +11,7 @@ from typing import Iterable, List
 
 from openjarvis.tools._stubs import BaseTool
 
-_FILE_TOOLS = {"file_read", "file_edit", "file_write"}
+_FILE_TOOLS = {"file_read", "file_edit", "file_write", "preview_start"}
 
 
 def build_agent_tools(allowed: Iterable[str], workspace_dir: str = "") -> List[BaseTool]:
