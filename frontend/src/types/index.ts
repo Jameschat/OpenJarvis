@@ -33,6 +33,48 @@ export interface ToolCallEndEvent {
   latency: number;
 }
 
+export interface PlanEvent {
+  items: Array<{ id?: string; title: string; status: 'pending' | 'in_progress' | 'completed' }>;
+}
+
+export interface ThinkingDeltaEvent {
+  text: string;
+}
+
+export interface FileEditEvent {
+  edit_id: string;
+  path: string;
+  diff: string;
+  added: number;
+  removed: number;
+}
+
+export interface EscalationEvent {
+  from: string;
+  to: string;
+  reason: string;
+  score?: number;
+}
+
+export interface RoutingEvent {
+  brain: string;
+  model: string;
+  lane?: string;
+  health?: string;
+}
+
+export interface CitationEvent {
+  ref: string;
+  url: string;
+  title?: string;
+}
+
+export interface VerificationEvent {
+  cmd: string;
+  passed: boolean;
+  output?: string;
+}
+
 // --- Chat Types ---
 
 export interface ToolCallInfo {
@@ -43,6 +85,29 @@ export interface ToolCallInfo {
   result?: string;
   latency?: number;
 }
+
+export interface PlanItem {
+  id: string;
+  title: string;
+  status: 'pending' | 'in_progress' | 'completed';
+}
+
+export interface RoutingInfo {
+  brain: string;
+  model: string;
+  lane?: string;
+  health?: string;
+}
+
+export type ActivityItem =
+  | { kind: 'tool'; id: string; tool: string; arguments: string; status: 'running' | 'success' | 'error'; result?: string; latency?: number }
+  | { kind: 'thinking'; text: string }
+  | { kind: 'plan'; items: PlanItem[] }
+  | { kind: 'file_edit'; editId: string; path: string; diff: string; added: number; removed: number }
+  | { kind: 'escalation'; from: string; to: string; reason: string; score?: number }
+  | { kind: 'routing'; brain: string; model: string; lane?: string; health?: string }
+  | { kind: 'citation'; ref: string; url: string; title?: string }
+  | { kind: 'verification'; cmd: string; passed: boolean; output?: string };
 
 export interface TokenUsage {
   prompt_tokens: number;
@@ -72,6 +137,8 @@ export interface ChatMessage {
   content: string;
   timestamp: number;
   toolCalls?: ToolCallInfo[];
+  activity?: ActivityItem[];
+  plan?: PlanItem[];
   usage?: TokenUsage;
   telemetry?: MessageTelemetry;
   audio?: { url: string };
@@ -101,6 +168,10 @@ export interface StreamState {
   activeToolCalls: ToolCallInfo[];
   content: string;
   tokens: number; // live (approx) output-token count while generating
+  thinking: string; // live reasoning text (Phase 3 renders it)
+  activity: ActivityItem[]; // live ordered timeline for the streaming message
+  plan: PlanItem[]; // live todo list
+  routing?: RoutingInfo; // which brain is answering (Phase 4 renders it)
 }
 
 // --- API Types ---
