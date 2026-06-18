@@ -39,7 +39,9 @@ def is_sensitive_file(path: Union[str, Path]) -> bool:
 
         _rust = get_rust_module()
         return _rust.is_sensitive_file(str(path))
-    except ImportError:
+    except (ImportError, AttributeError):
+        # ImportError: no rust bridge. AttributeError: a stale rust module that
+        # lacks this symbol. Either way, fall back to the pure-Python check.
         return _is_sensitive_file_py(str(path))
 
 
