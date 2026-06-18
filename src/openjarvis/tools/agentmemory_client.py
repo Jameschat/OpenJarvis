@@ -20,8 +20,15 @@ log = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-_BASE = os.environ.get("AGENTMEMORY_URL", "http://localhost:7730")
+# Default to 127.0.0.1 (not "localhost"): on Windows "localhost" resolves to ::1
+# first, and a connection to a DOWN service waits out the IPv6 attempt before
+# falling back to IPv4 — turning a fast "connection refused" into a multi-second
+# stall. That stall was the bulk of the 6s /studio/state latency.
+_BASE = os.environ.get("AGENTMEMORY_URL", "http://127.0.0.1:7730")
 _TIMEOUT = 3.0
+# Liveness probes must fail fast — they run inside the frequently-polled
+# /studio/state path. A real local sidecar answers in <50ms.
+_HEALTH_TIMEOUT = 0.8
 
 _PATH_HEALTH   = "/agentmemory/livez"
 _PATH_SEARCH   = "/agentmemory/search"
@@ -50,10 +57,10 @@ class Hit:
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-def _get(path: str) -> dict:
+def _get(path: str, timeout: float | None = None) -> dict:
     url = f"{_BASE}{path}"
     try:
-        with urllib.request.urlopen(url, timeout=_TIMEOUT) as resp:
+        with urllib.request.urlopen(url, timeout=timeout or _TIMEOUT) as resp:
             return json.loads(resp.read())
     except json.JSONDecodeError as exc:
         raise AgentMemoryUnavailable(f"invalid JSON from sidecar: {exc}") from exc
@@ -97,7 +104,7 @@ def _extract_snippet(result: dict) -> str:
 def health() -> bool:
     """Return True if the agentmemory server is reachable and healthy."""
     try:
-        data = _get(_PATH_HEALTH)
+        data = _get(_PATH_HEALTH, timeout=_HEALTH_TIMEOUT)
         return data.get("status") == "ok" or data.get("ok") is True
     except AgentMemoryUnavailable:
         return False

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import time
 from pathlib import Path
 from typing import Any
 
@@ -23,21 +25,58 @@ async def studio_ping() -> dict[str, Any]:
     return {"ok": True, "service": "jarvis_studio"}
 
 
+# ---------------------------------------------------------------------------
+# /studio/state caching
+#
+# _studio_state() does several seconds of blocking I/O (plugin health probes,
+# lane/runtime checks). The desktop frontend polls this endpoint every ~1.5s.
+# Running it inline on the event loop blocked the loop for ~6s per call, and the
+# polls piled up and exhausted the browser's per-host connection pool — so the
+# chat POST could not get a socket and failed with "Failed to fetch".
+#
+# Fix: never run the sync work on the event loop (use a thread), serve a short
+# TTL cache so rapid polls are instant, and coalesce concurrent misses behind a
+# single lock so at most ONE recompute runs at a time.
+# ---------------------------------------------------------------------------
+_STATE_TTL_S = 4.0
+_state_cache: dict[tuple[str | None, str | None], tuple[float, dict[str, Any]]] = {}
+_state_lock = asyncio.Lock()
+
+
+def _compute_studio_state(project_id: str | None, chat_id: str | None) -> dict[str, Any]:
+    """Blocking studio-state build. MUST be called via a thread, never inline."""
+    from openjarvis.cli.brain_server import _studio_state
+    from openjarvis.tools.runtime_supervisor import build_runtime_supervisor_status
+
+    state = _studio_state(project_id, chat_id)
+    state["runtime_supervisor"] = build_runtime_supervisor_status(
+        runtime_health=state.get("runtime_health"),
+        qwen_runtime=state.get("qwen_runtime"),
+    )
+    return state
+
+
 @studio_router.get("/state")
 async def studio_state(
     project_id: str | None = Query(default=None),
     chat_id: str | None = Query(default=None),
 ) -> dict[str, Any]:
+    key = (project_id, chat_id)
+    now = time.monotonic()
+    cached = _state_cache.get(key)
+    if cached is not None and (now - cached[0]) < _STATE_TTL_S:
+        return cached[1]
     try:
-        from openjarvis.cli.brain_server import _studio_state
-        from openjarvis.tools.runtime_supervisor import build_runtime_supervisor_status
-
-        state = _studio_state(project_id, chat_id)
-        state["runtime_supervisor"] = build_runtime_supervisor_status(
-            runtime_health=state.get("runtime_health"),
-            qwen_runtime=state.get("qwen_runtime"),
-        )
-        return state
+        # Coalesce concurrent misses: the first waiter computes, the rest get the
+        # fresh cache when they acquire the lock.
+        async with _state_lock:
+            now = time.monotonic()
+            cached = _state_cache.get(key)
+            if cached is not None and (now - cached[0]) < _STATE_TTL_S:
+                return cached[1]
+            state = await asyncio.to_thread(_compute_studio_state, project_id, chat_id)
+            _state_cache[key] = (time.monotonic(), state)
+            return state
     except Exception as exc:
         raise _internal_error("/studio/state", exc) from exc
 
