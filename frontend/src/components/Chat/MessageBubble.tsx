@@ -202,6 +202,49 @@ function MessageBubbleImpl({ message, streaming = false }: Props) {
         )
       )}
 
+      {/* Source citations */}
+      {(() => {
+        const cites = (message.activity || []).filter(
+          (a): a is Extract<typeof a, { kind: 'citation' }> => a.kind === 'citation',
+        );
+        if (cites.length === 0) return null;
+        const seen = new Set<string>();
+        const unique = cites.filter((c) => (seen.has(c.url) ? false : (seen.add(c.url), true)));
+        return (
+          <div className="flex flex-wrap items-center gap-1.5 mt-2">
+            <span className="text-[10px] uppercase tracking-wide" style={{ color: 'var(--color-text-tertiary)' }}>
+              Sources
+            </span>
+            {unique.map((c, i) => {
+              let host = c.url;
+              try {
+                host = new URL(c.url).hostname.replace(/^www\./, '');
+              } catch {
+                /* keep raw */
+              }
+              return (
+                <a
+                  key={c.url || i}
+                  href={c.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title={c.title || c.url}
+                  className="text-[11px] px-1.5 py-0.5 rounded"
+                  style={{
+                    background: 'var(--color-bg-secondary)',
+                    border: '1px solid var(--color-border-subtle)',
+                    color: 'var(--color-text-secondary)',
+                    textDecoration: 'none',
+                  }}
+                >
+                  {i + 1}. {host}
+                </a>
+              );
+            })}
+          </div>
+        );
+      })()}
+
       {/* Footer: copy + x-ray */}
       <div className="flex items-center gap-2 mt-1.5">
         <CopyMessageButton content={visible} />

@@ -60,6 +60,15 @@ describe('reduceStreamEvent', () => {
     expect(edit && edit.kind === 'file_edit' && edit.editId).toBe('e9');
   });
 
+  it('creates citation activities from a tool result carrying sources', () => {
+    let acc = initAccumulator();
+    acc = reduceStreamEvent(acc, { event: 'tool_call_end', data: JSON.stringify({ tool: 'web_search', success: true, latency: 9, result: '...', metadata: { engine: 'duckduckgo', sources: [{ url: 'https://a.com', title: 'A' }, { url: 'https://b.com', title: 'B' }] } }) }, ctx);
+    const cites = acc.activity.filter((a) => a.kind === 'citation');
+    expect(cites).toHaveLength(2);
+    expect(cites[0].kind === 'citation' && cites[0].url).toBe('https://a.com');
+    expect(cites[1].kind === 'citation' && cites[1].title).toBe('B');
+  });
+
   it('updates the plan from a tool result carrying an items array', () => {
     let acc = initAccumulator();
     acc = reduceStreamEvent(acc, { event: 'tool_call_end', data: JSON.stringify({ tool: 'todo_write', success: true, latency: 1, result: '2 tasks', metadata: { items: [{ title: 'A', status: 'completed' }, { title: 'B', status: 'in_progress' }] } }) }, ctx);

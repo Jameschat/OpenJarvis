@@ -115,8 +115,8 @@ class WebSearchTool(BaseTool):
             text = text[:max_chars] + "\n\n[Content truncated]"
         return text
 
-    def _duckduckgo_search(self, query: str, max_results: int) -> str:
-        """Search using DuckDuckGo as fallback."""
+    def _duckduckgo_search(self, query: str, max_results: int):
+        """Search using DuckDuckGo as fallback. Returns (formatted, sources)."""
         from ddgs import DDGS
 
         ddgs = DDGS()
@@ -126,7 +126,12 @@ class WebSearchTool(BaseTool):
             f"{r.get('href', '')}\n{r.get('body', '')}"
             for r in results
         )
-        return formatted
+        sources = [
+            {"url": r.get("href", ""), "title": r.get("title", "")}
+            for r in results
+            if r.get("href")
+        ]
+        return formatted, sources
 
     def execute(self, **params: Any) -> ToolResult:
         query = params.get("query", "")
@@ -168,11 +173,16 @@ class WebSearchTool(BaseTool):
                 f"{r.get('url', '')}\n{r.get('content', '')}"
                 for r in results
             )
+            sources = [
+                {"url": r.get("url", ""), "title": r.get("title", "")}
+                for r in results
+                if r.get("url")
+            ]
             return ToolResult(
                 tool_name="web_search",
                 content=formatted or "No results found.",
                 success=True,
-                metadata={"num_results": len(results), "engine": "tavily"},
+                metadata={"num_results": len(results), "engine": "tavily", "sources": sources},
             )
         except Exception as exc:
             logger.debug(
@@ -180,12 +190,12 @@ class WebSearchTool(BaseTool):
             )
 
         try:
-            formatted = self._duckduckgo_search(query, max_results)
+            formatted, sources = self._duckduckgo_search(query, max_results)
             return ToolResult(
                 tool_name="web_search",
                 content=formatted or "No results found.",
                 success=True,
-                metadata={"engine": "duckduckgo"},
+                metadata={"engine": "duckduckgo", "sources": sources},
             )
         except ImportError:
             return ToolResult(

@@ -150,6 +150,15 @@ export function reduceStreamEvent(
           removed: md.removed || 0,
         });
       }
+      // Any tool whose result carries sources (e.g. web_search) becomes
+      // citation chips.
+      if (md && Array.isArray(md.sources)) {
+        for (const s of md.sources) {
+          if (s && s.url) {
+            acc.activity.push({ kind: 'citation', ref: s.title || s.url, url: s.url, title: s.title });
+          }
+        }
+      }
       // Any tool whose result carries an items array (e.g. todo_write) updates
       // the live plan checklist.
       if (md && Array.isArray(md.items)) {
