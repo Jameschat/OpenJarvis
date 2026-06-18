@@ -147,6 +147,25 @@ function MessageBubbleImpl({ message, streaming = false }: Props) {
           ) : null,
         )}
 
+      {/* Escalations */}
+      {message.activity
+        ?.filter((a) => a.kind === 'escalation')
+        .map((a, i) =>
+          a.kind === 'escalation' ? (
+            <div
+              key={i}
+              className="mb-2 flex items-center gap-1.5 text-xs"
+              style={{ color: 'var(--color-text-tertiary)' }}
+            >
+              <span style={{ color: 'var(--color-accent)' }}>⤴</span>
+              <span>
+                Escalated {a.from ? `from ${a.from} ` : ''}to <strong>{a.to}</strong>
+                {a.reason ? ` — ${a.reason}` : ''}
+              </span>
+            </div>
+          ) : null,
+        )}
+
       {/* Tool calls */}
       {message.toolCalls && message.toolCalls.length > 0 && (
         <div className="mb-3 flex flex-col gap-2">
