@@ -94,10 +94,12 @@ litellm_settings:
   fallbacks:
     - gpt-5.4-mini: ["gpt-4o-mini", "qwen3.6-27b-local"]
     - gpt-4o-mini: ["qwen3.6-27b-local"]
-    - qwen3.6-27b-quality: ["qwen3.6-27b-local", "qwen3.6-27b-beellama", "qwen3.6-27b-ollama"]
-    - qwen3.6-35b-a3b-remote: ["qwen3.6-27b-local", "qwen3.6-27b-beellama", "qwen3.6-27b-ollama"]
-    - qwen3.6-27b-local: ["qwen3.6-27b-beellama", "qwen3.6-27b-ollama"]
-    - qwen3.6-27b-beellama: ["qwen3.6-27b-ollama"]
+    # The local chat model does NOT fall back to ollama: ollama cold-loads and
+    # crawls (1 word / ~20s), which felt worse than a clean error. If the local
+    # lane is down, fail fast (visible) instead of degrading to slow ollama.
+    - qwen3.6-27b-quality: ["qwen3.6-27b-local"]
+    - qwen3.6-35b-a3b-remote: ["qwen3.6-27b-local"]
+    - qwen3.6-27b-local: []
     # gpt-4o has no fallback — vision can't be replaced by qwen3 text-only.
 
   # Retry handling — LiteLLM will retry within the same tier before falling
