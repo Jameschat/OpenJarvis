@@ -429,19 +429,21 @@ async fn start_qwen_fast_lane(
         return true;
     }
 
+    // Use the 30B-Coder lane (plain MoE, 64K ctx): the 27B-MTP froggeric lane
+    // segfaults in its speculative sampler under agentic load. Coder is stable.
     let script = root
         .join("scripts")
-        .join("start-qwen-mtp-froggeric-wsl.ps1");
+        .join("start-qwen3-coder-30b-a3b-wsl.ps1");
     if !script.exists() {
         let mut s = status.lock().await;
-        s.detail = format!("Qwen fast lane script missing: {}", script.display());
+        s.detail = format!("Qwen lane script missing: {}", script.display());
         return false;
     }
 
     {
         let mut s = status.lock().await;
-        s.phase = "qwen-fast-lane".into();
-        s.detail = "Starting Qwen 3.6 27B fast lane...".into();
+        s.phase = "qwen-lane".into();
+        s.detail = "Starting Qwen3-Coder 30B lane (stable, 64K)...".into();
     }
 
     let mut cmd = tokio::process::Command::new("powershell.exe");
@@ -450,6 +452,10 @@ async fn start_qwen_fast_lane(
         "Bypass",
         "-File",
         &script.display().to_string(),
+        "-Port",
+        &QWEN_FAST_LANE_PORT.to_string(),
+        "-ContextTokens",
+        "65536",
     ])
     .stdout(std::process::Stdio::null())
     .stderr(std::process::Stdio::null())
@@ -588,12 +594,14 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
     // Try the bundled sidecar first, fall back to system ollama
     let ollama_child = {
         let ollama_bin = resolve_bin("ollama");
-        let sidecar = tokio::process::Command::new(&ollama_bin)
+        let mut ollama_cmd = tokio::process::Command::new(&ollama_bin);
+        ollama_cmd
             .arg("serve")
             .env("OLLAMA_HOST", format!("127.0.0.1:{}", OLLAMA_PORT))
             .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .spawn();
+            .stderr(std::process::Stdio::null());
+        hide_command_window(&mut ollama_cmd);
+        let sidecar = ollama_cmd.spawn();
         match sidecar {
             Ok(child) => Some(child),
             Err(_) => None,
@@ -798,6 +806,7 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
     }
     let mut sync_cmd = tokio::process::Command::new(&uv_bin);
     configure_uv_command(&mut sync_cmd);
+    hide_command_window(&mut sync_cmd);
     let _ = sync_cmd
         .args([
             "sync",
@@ -865,12 +874,15 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
         &JARVIS_PORT.to_string(),
         "--model",
         startup_model,
+        // orchestrator (tool-using), not "simple": "simple" has accepts_tools=False,
+        // so the chat could never run the agentic loop (file_edit/diffs/preview/etc).
         "--agent",
-        "simple",
+        "orchestrator",
     ])
     .stdout(std::process::Stdio::null())
     .stderr(std::process::Stdio::piped())
     .current_dir(root);
+    hide_command_window(&mut cmd);
 
     // Inject cloud API keys from ~/.openjarvis/cloud-keys.env
     for (key, value) in read_cloud_keys() {
