@@ -38,6 +38,55 @@ const OPTIN_EMAIL_KEY = 'openjarvis-email';
 const OPTIN_ANONID_KEY = 'openjarvis-anon-id';
 const OPTIN_SEEN_KEY = 'openjarvis-optin-seen';
 const DEFAULT_LOCAL_MODEL = 'qwen3.6-27b-local';
+const COMPOSER_KEY = 'openjarvis-composer';
+
+// Composer controls (unified from Studio): pure helpers live in ./composer so
+// they're testable without instantiating this store. Re-exported for callers.
+import {
+  COMPOSER_SKILLS,
+  PROFILE_MODEL,
+  buildComposerSystemMessage,
+  type ComposerProfile,
+  type PermissionMode,
+} from './composer';
+export {
+  COMPOSER_SKILLS,
+  PROFILE_MODEL,
+  buildComposerSystemMessage,
+  type ComposerProfile,
+  type PermissionMode,
+  type SkillOption,
+} from './composer';
+
+interface ComposerPersist {
+  composerProfile: ComposerProfile;
+  selectedSkills: string[];
+  permissionMode: PermissionMode;
+}
+
+function loadComposer(): ComposerPersist {
+  const fallback: ComposerPersist = { composerProfile: 'coder', selectedSkills: [], permissionMode: 'default' };
+  try {
+    const raw = localStorage.getItem(COMPOSER_KEY);
+    if (!raw) return fallback;
+    const parsed = JSON.parse(raw) as Partial<ComposerPersist>;
+    return {
+      composerProfile: parsed.composerProfile ?? fallback.composerProfile,
+      selectedSkills: Array.isArray(parsed.selectedSkills) ? parsed.selectedSkills : [],
+      permissionMode: parsed.permissionMode ?? fallback.permissionMode,
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+function saveComposer(p: ComposerPersist): void {
+  try {
+    localStorage.setItem(COMPOSER_KEY, JSON.stringify(p));
+  } catch {
+    // ignore quota / unavailable storage
+  }
+}
 
 interface ConversationStore {
   version: 1;
@@ -133,6 +182,14 @@ interface AppState {
   // Settings
   settings: Settings;
 
+  // Composer controls (unified from Studio): profile/lane, skills, permission
+  // mode, and pinned context. These steer the agentic chat run via a synthesized
+  // system message (skills + permissions + context) and the selected lane/model.
+  composerProfile: ComposerProfile;
+  selectedSkills: string[];
+  permissionMode: PermissionMode;
+  contextItems: string[];
+
   // Command palette
   commandPaletteOpen: boolean;
 
@@ -180,6 +237,14 @@ interface AppState {
 
   // Actions: settings
   updateSettings: (partial: Partial<Settings>) => void;
+
+  // Actions: composer controls
+  setComposerProfile: (profile: ComposerProfile) => void;
+  toggleSkill: (skillId: string) => void;
+  setPermissionMode: (mode: PermissionMode) => void;
+  addContextItem: (text: string) => void;
+  removeContextItem: (index: number) => void;
+  clearContextItems: () => void;
 
   // Actions: UI
   setCommandPaletteOpen: (open: boolean) => void;
@@ -244,6 +309,11 @@ export const useAppStore = create<AppState>((set, get) => {
     savings: null,
 
     settings: loadSettings(),
+
+    composerProfile: loadComposer().composerProfile,
+    selectedSkills: loadComposer().selectedSkills,
+    permissionMode: loadComposer().permissionMode,
+    contextItems: [],
 
     commandPaletteOpen: false,
     sidebarOpen: true,
@@ -437,6 +507,36 @@ export const useAppStore = create<AppState>((set, get) => {
       saveSettings(updated);
       set({ settings: updated });
     },
+
+    // ── Composer controls ───────────────────────────────────────────
+
+    setComposerProfile: (profile: ComposerProfile) => {
+      set({ composerProfile: profile, selectedModel: PROFILE_MODEL[profile] });
+      const s = get();
+      saveComposer({ composerProfile: profile, selectedSkills: s.selectedSkills, permissionMode: s.permissionMode });
+    },
+    toggleSkill: (skillId: string) => {
+      const current = get().selectedSkills;
+      const next = current.includes(skillId)
+        ? current.filter((id) => id !== skillId)
+        : [...current, skillId];
+      set({ selectedSkills: next });
+      const s = get();
+      saveComposer({ composerProfile: s.composerProfile, selectedSkills: next, permissionMode: s.permissionMode });
+    },
+    setPermissionMode: (mode: PermissionMode) => {
+      set({ permissionMode: mode });
+      const s = get();
+      saveComposer({ composerProfile: s.composerProfile, selectedSkills: s.selectedSkills, permissionMode: mode });
+    },
+    addContextItem: (text: string) => {
+      const trimmed = text.trim();
+      if (!trimmed) return;
+      set((s) => ({ contextItems: [...s.contextItems, trimmed] }));
+    },
+    removeContextItem: (index: number) =>
+      set((s) => ({ contextItems: s.contextItems.filter((_, i) => i !== index) })),
+    clearContextItems: () => set({ contextItems: [] }),
 
     // ── UI ──────────────────────────────────────────────────────────
 

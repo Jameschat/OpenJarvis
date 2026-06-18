@@ -8,6 +8,8 @@ import { useSpeech } from '../../hooks/useSpeech';
 import type { ChatMessage, ToolCallInfo, TokenUsage, MessageTelemetry } from '../../types';
 import { initAccumulator, reduceStreamEvent } from '../../lib/streamReducer';
 import { parseSlashCommand, SLASH_HELP, type SlashCommand } from '../../lib/slashCommands';
+import { ComposerControls } from './ComposerControls';
+import { buildComposerSystemMessage } from '../../lib/store';
 
 export function InputArea() {
   const defaultLocalModel = 'qwen3.6-27b-local';
@@ -32,6 +34,10 @@ export function InputArea() {
   const setStreamState = useAppStore((s) => s.setStreamState);
   const resetStream = useAppStore((s) => s.resetStream);
   const modelLoading = useAppStore((s) => s.modelLoading);
+  const selectedSkills = useAppStore((s) => s.selectedSkills);
+  const permissionMode = useAppStore((s) => s.permissionMode);
+  const contextItems = useAppStore((s) => s.contextItems);
+  const clearContextItems = useAppStore((s) => s.clearContextItems);
 
   const { state: speechState, available: speechAvailable, startRecording, stopRecording } = useSpeech();
 
@@ -136,12 +142,20 @@ export function InputArea() {
     };
     addMessage(convId, userMsg);
 
-    // Build API messages before adding assistant placeholder
+    // Build API messages before adding assistant placeholder. Composer controls
+    // (skills + permission mode + pinned context) are carried as a leading
+    // system message — the honest equivalent of Studio's run fields on the
+    // plain /v1/chat/completions path. Context is one-shot: cleared after send.
     const currentMessages = useAppStore.getState().messages;
-    const apiMessages = currentMessages.map((m) => ({
-      role: m.role,
+    const apiMessages: Array<{ role: string; content: string }> = currentMessages.map((m) => ({
+      role: m.role as string,
       content: m.content,
     }));
+    const systemPreamble = buildComposerSystemMessage(selectedSkills, permissionMode, contextItems);
+    if (systemPreamble) {
+      apiMessages.unshift({ role: 'system', content: systemPreamble });
+    }
+    if (contextItems.length) clearContextItems();
 
     const assistantMsg: ChatMessage = {
       id: generateId(),
@@ -338,6 +352,10 @@ export function InputArea() {
     setStreamState,
     resetStream,
     handleSlash,
+    selectedSkills,
+    permissionMode,
+    contextItems,
+    clearContextItems,
   ]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -400,6 +418,7 @@ export function InputArea() {
           </div>
         )}
       </div>
+      <ComposerControls />
       <div className="flex items-center justify-center mt-2 text-[11px]" style={{ color: 'var(--color-text-tertiary)' }}>
         <span>
           <kbd className="font-mono">Enter</kbd> to send &middot;{' '}
