@@ -72,11 +72,9 @@ model_list:
       api_base: http://192.168.1.191:4000/v1
       api_key: sk-noop
 
-  # Local fallback if the OpenAI-compatible local lanes are unavailable.
-  - model_name: qwen3.6-27b-ollama
-    litellm_params:
-      model: ollama_chat/qwen3.6:27b
-      api_base: http://localhost:11434
+  # (ollama route removed — Jarvis routes through the local Qwen lane only.
+  # ollama cold-loads and crawls at ~1 word/20s, worse than a clean error, so it
+  # is no longer a fallback target anywhere.)
 
   # Also expose gpt-4o (used by financial_researcher, chart_analyst) so
   # those callsites can route through the proxy too once OPENAI_BASE_URL

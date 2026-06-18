@@ -44,13 +44,9 @@ _SERVICES = [
         "required": False,
         "action": "Optional fallback lane: scripts\\start-qwen-beellama-dflash-service.ps1.",
     },
-    {
-        "id": "ollama",
-        "label": "Ollama Fallback",
-        "url": "http://127.0.0.1:11434/api/tags",
-        "required": False,
-        "action": "Start Ollama if local fallback is needed.",
-    },
+    # Ollama intentionally removed: Jarvis routes through LiteLLM → the local Qwen
+    # lane only. Probing a service we never use just added latency and surfaced a
+    # confusing "ollama" status in the UI.
 ]
 
 

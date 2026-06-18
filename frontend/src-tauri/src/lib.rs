@@ -598,9 +598,13 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
         s.phase = "probe".into();
         s.detail = "Checking for a running Jarvis stack...".into();
     }
+    // /health calls engine.health(), which does a LIVE upstream probe and can
+    // take several seconds — a 2s window often missed a perfectly healthy stack
+    // and fell through to a needless rebuild (cold start + duplicate backends).
+    // Give it a 12s window so we reliably adopt a running stack.
     if wait_for_url(
         &format!("http://127.0.0.1:{}/health", JARVIS_PORT),
-        Duration::from_secs(2),
+        Duration::from_secs(12),
     )
     .await
     {
@@ -621,70 +625,17 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
     }
     clear_stale_runtime_ports().await;
 
-    // Phase 1: Start Ollama
+    // Ollama is intentionally NOT started. Jarvis routes 100% through the
+    // LiteLLM proxy (:4000) → local Qwen lane (:8084). Ollama was only ever a
+    // slow last-resort fallback (~1 word/20s), and starting it caused real harm:
+    // a failed `ollama serve` used to abort the WHOLE boot, and a running ollama
+    // got probed on every /studio/state poll and mislabelled in the UI. Removing
+    // it makes startup faster and the lane routing unambiguous.
     {
         let mut s = status.lock().await;
-        s.phase = "ollama".into();
-        s.detail = "Starting inference engine...".into();
-    }
-
-    // Try the bundled sidecar first, fall back to system ollama
-    let ollama_child = {
-        let ollama_bin = resolve_bin("ollama");
-        let mut ollama_cmd = tokio::process::Command::new(&ollama_bin);
-        ollama_cmd
-            .arg("serve")
-            .env("OLLAMA_HOST", format!("127.0.0.1:{}", OLLAMA_PORT))
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null());
-        hide_command_window(&mut ollama_cmd);
-        let sidecar = ollama_cmd.spawn();
-        match sidecar {
-            Ok(child) => Some(child),
-            Err(_) => None,
-        }
-    };
-
-    if let Some(child) = ollama_child {
-        backend.lock().await.ollama = Some(ChildHandle { child });
-    }
-
-    let ollama_url = format!("http://127.0.0.1:{}/api/tags", OLLAMA_PORT);
-    let ollama_ok = wait_for_url(&ollama_url, Duration::from_secs(30)).await;
-
-    if !ollama_ok {
-        let mut s = status.lock().await;
-        s.error = Some("Could not start Ollama. Install it from https://ollama.com".into());
-        return;
-    }
-
-    {
-        let mut s = status.lock().await;
-        s.ollama_ready = true;
-        s.detail = "Inference engine ready.".into();
-    }
-
-    // Phase 2: confirm the Ollama fallback model without blocking startup.
-    // Studio's primary route is the LiteLLM/OpenAI-compatible Qwen lane; the
-    // desktop app should not pull or switch models while it is opening.
-    {
-        let mut s = status.lock().await;
-        s.phase = "model".into();
-        s.detail = format!("Checking fallback model {}...", STARTUP_OLLAMA_MODEL);
-    }
-
-    if !ollama_has_model(STARTUP_OLLAMA_MODEL).await {
-        let mut s = status.lock().await;
-        s.detail = format!(
-            "{} is not installed in Ollama; Studio will use the Qwen fast lane/LiteLLM route.",
-            STARTUP_OLLAMA_MODEL
-        );
-    }
-
-    {
-        let mut s = status.lock().await;
+        s.ollama_ready = true; // not used; keep the UI's "ready" gate satisfied
         s.model_ready = true;
-        s.detail = "Model route ready.".into();
+        s.detail = "Using LiteLLM → Qwen lane (ollama disabled).".into();
     }
 
     // Phase 3: Start jarvis serve
