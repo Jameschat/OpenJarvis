@@ -13,6 +13,7 @@ import type { ChatMessage } from '../../types';
 import { splitThinking } from '../../lib/thinking';
 import { ThinkingBlock } from './ThinkingBlock';
 import { PlanChecklist } from './PlanChecklist';
+import { DiffBlock } from './DiffBlock';
 
 interface Props {
   message: ChatMessage;
@@ -136,6 +137,15 @@ function MessageBubbleImpl({ message, streaming = false }: Props) {
 
       {/* Reasoning trace */}
       {thinking && <ThinkingBlock thinking={thinking} active={thinkingActive} />}
+
+      {/* File edits (diffs) */}
+      {message.activity
+        ?.filter((a) => a.kind === 'file_edit')
+        .map((a, i) =>
+          a.kind === 'file_edit' ? (
+            <DiffBlock key={a.editId || i} path={a.path} diff={a.diff} added={a.added} removed={a.removed} />
+          ) : null,
+        )}
 
       {/* Tool calls */}
       {message.toolCalls && message.toolCalls.length > 0 && (

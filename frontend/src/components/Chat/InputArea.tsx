@@ -207,6 +207,11 @@ export function InputArea() {
             convId,
             acc.content,
             acc.toolCalls.length > 0 ? [...acc.toolCalls] : undefined,
+            undefined,
+            undefined,
+            undefined,
+            acc.activity.length > 0 ? [...acc.activity] : undefined,
+            acc.plan.length > 0 ? [...acc.plan] : undefined,
           );
           lastFlush = now;
         }
