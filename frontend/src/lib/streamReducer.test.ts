@@ -40,6 +40,17 @@ describe('reduceStreamEvent', () => {
     expect(acc.toolCalls[0].result).toBe('ok');
   });
 
+  it('creates a file_edit activity from tool_call_end diff metadata', () => {
+    let acc = initAccumulator();
+    acc = reduceStreamEvent(acc, { event: 'tool_call_start', data: JSON.stringify({ tool: 'file_edit', arguments: '{}' }) }, ctx);
+    acc = reduceStreamEvent(acc, { event: 'tool_call_end', data: JSON.stringify({ tool: 'file_edit', success: true, latency: 5, result: 'Edited a.py (+1 -1)', metadata: { path: '/x/a.py', diff: '--- a\n+++ b\n-return 1\n+return 2', added: 1, removed: 1, edit_id: 'e9' } }) }, ctx);
+    const edit = acc.activity.find((a) => a.kind === 'file_edit');
+    expect(edit).toBeTruthy();
+    expect(edit && edit.kind === 'file_edit' && edit.path).toBe('/x/a.py');
+    expect(edit && edit.kind === 'file_edit' && edit.added).toBe(1);
+    expect(edit && edit.kind === 'file_edit' && edit.editId).toBe('e9');
+  });
+
   it('sets phase on agent_turn_start and inference_start', () => {
     let acc = initAccumulator();
     acc = reduceStreamEvent(acc, { event: 'agent_turn_start', data: '{}' }, ctx);

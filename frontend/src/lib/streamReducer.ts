@@ -131,6 +131,19 @@ export function reduceStreamEvent(
           a.result = tc.result;
         }
       }
+      // Any tool whose result carries a unified diff (e.g. file_edit) becomes a
+      // file_edit activity so the chat renders it as an inline diff.
+      const md = d.metadata;
+      if (md && md.diff && md.path) {
+        acc.activity.push({
+          kind: 'file_edit',
+          editId: md.edit_id || nextId(),
+          path: md.path,
+          diff: md.diff,
+          added: md.added || 0,
+          removed: md.removed || 0,
+        });
+      }
       acc.phase = 'Generating...';
     }
     return acc;
