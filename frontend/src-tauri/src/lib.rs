@@ -212,6 +212,11 @@ struct BackendManager {
     jarvis: Option<ChildHandle>,
     litellm: Option<ChildHandle>,
     qwen_fast_lane: Option<ChildHandle>,
+    // True when this launch ADOPTED an already-running stack instead of
+    // spawning it (the reuse fast-path). We must not tear down a stack we
+    // didn't start — closing the app should leave the operator's manual
+    // `start-studio-stack.ps1` (or a prior app instance) running.
+    adopted: bool,
 }
 
 impl BackendManager {
@@ -232,7 +237,12 @@ impl BackendManager {
             h.kill().await;
         }
         self.ollama = None;
-        clear_stale_runtime_ports().await;
+        // Only port-kill stacks we own. An adopted stack stays up so the next
+        // launch reuses it (no kill→uv-sync→relaunch churn) and so a manual
+        // operator stack survives the app closing.
+        if !self.adopted {
+            clear_stale_runtime_ports().await;
+        }
     }
 }
 
@@ -577,6 +587,33 @@ async fn pull_model(model: &str) -> Result<(), String> {
 // ---------------------------------------------------------------------------
 
 async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
+    // Reuse fast-path: if a healthy Jarvis backend is already listening, ADOPT
+    // it instead of tearing it down and rebuilding. The old behaviour killed
+    // the server on our port every launch, then re-ran `uv sync` (~70s) and
+    // relaunched — slow cold starts and process churn even when nothing was
+    // wrong, and it fought the operator's manual stack / the watchdog. We now
+    // only rebuild when the stack is genuinely absent or unhealthy.
+    {
+        let mut s = status.lock().await;
+        s.phase = "probe".into();
+        s.detail = "Checking for a running Jarvis stack...".into();
+    }
+    if wait_for_url(
+        &format!("http://127.0.0.1:{}/health", JARVIS_PORT),
+        Duration::from_secs(2),
+    )
+    .await
+    {
+        backend.lock().await.adopted = true;
+        let mut s = status.lock().await;
+        s.ollama_ready = true;
+        s.model_ready = true;
+        s.server_ready = true;
+        s.phase = "ready".into();
+        s.detail = "Reused the running Jarvis stack.".into();
+        return;
+    }
+
     {
         let mut s = status.lock().await;
         s.phase = "cleanup".into();
@@ -799,35 +836,51 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
 
     let root = project_root.as_ref().unwrap();
 
-    // Install dependencies automatically (handles fresh clones)
-    {
+    // Install dependencies automatically (handles fresh clones). Skip when the
+    // venv already has the jarvis entry point: `uv sync` costs ~70s on every
+    // launch but only does work on a fresh clone or a deps change. Normal
+    // launches reuse the existing venv. Set OPENJARVIS_FORCE_SYNC=1 to override
+    // (e.g. after manually pulling new deps).
+    #[cfg(target_os = "windows")]
+    let jarvis_entry = root.join(".venv").join("Scripts").join("jarvis.exe");
+    #[cfg(not(target_os = "windows"))]
+    let jarvis_entry = root.join(".venv").join("bin").join("jarvis");
+    let force_sync = std::env::var("OPENJARVIS_FORCE_SYNC")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
+    if force_sync || !jarvis_entry.exists() {
+        {
+            let mut s = status.lock().await;
+            s.detail = "Installing dependencies...".into();
+        }
+        let mut sync_cmd = tokio::process::Command::new(&uv_bin);
+        configure_uv_command(&mut sync_cmd);
+        hide_command_window(&mut sync_cmd);
+        let _ = sync_cmd
+            .args([
+                "sync",
+                // --inexact: do NOT remove packages outside the lock. Without it,
+                // every app launch stripped pip from the venv (the recurring
+                // "pip vanished" failure, root-caused 2026-06-13).
+                "--inexact",
+                "--extra",
+                "server",
+                "--extra",
+                "inference-litellm",
+                "--extra",
+                "inference-cloud",
+                "--extra",
+                "inference-google",
+            ])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .current_dir(root)
+            .status()
+            .await;
+    } else {
         let mut s = status.lock().await;
-        s.detail = "Installing dependencies...".into();
+        s.detail = "Dependencies present — skipping sync.".into();
     }
-    let mut sync_cmd = tokio::process::Command::new(&uv_bin);
-    configure_uv_command(&mut sync_cmd);
-    hide_command_window(&mut sync_cmd);
-    let _ = sync_cmd
-        .args([
-            "sync",
-            // --inexact: do NOT remove packages outside the lock. Without it,
-            // every app launch stripped pip from the venv (the recurring
-            // "pip vanished" failure, root-caused 2026-06-13).
-            "--inexact",
-            "--extra",
-            "server",
-            "--extra",
-            "inference-litellm",
-            "--extra",
-            "inference-cloud",
-            "--extra",
-            "inference-google",
-        ])
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .current_dir(root)
-        .status()
-        .await;
 
     // Warm the local Qwen lane in the background. Jarvis must come online even
     // if WSL port forwarding or model load is slow, otherwise Studio appears
