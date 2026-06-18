@@ -938,8 +938,25 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
     hide_command_window(&mut cmd);
 
     // Inject cloud API keys from ~/.openjarvis/cloud-keys.env
-    for (key, value) in read_cloud_keys() {
+    let cloud_keys = read_cloud_keys();
+    let has_cloud_keys = !cloud_keys.is_empty();
+    for (key, value) in cloud_keys {
         cmd.env(&key, &value);
+    }
+    // Escalation safety: cloud escalation on a streaming chat can wedge the WHOLE
+    // backend — an aborted request leaves the agent thread running (Python can't
+    // cancel threads), and if the cloud call hangs (stale/inherited OPENAI_API_KEY)
+    // those threads exhaust the pool and every endpoint locks up. Force escalation
+    // OFF unless the operator has explicitly configured a cloud-keys.env. This also
+    // overrides any stale OPENJARVIS_ESCALATION=1 inherited from the global env.
+    cmd.env("OPENJARVIS_ESCALATION", if has_cloud_keys { "1" } else { "0" });
+    // Don't let an inherited global cloud key silently re-enable cloud paths when
+    // the operator hasn't opted in via cloud-keys.env.
+    if !has_cloud_keys {
+        cmd.env("OPENAI_API_KEY", "");
+        cmd.env("ANTHROPIC_API_KEY", "");
+        cmd.env("GEMINI_API_KEY", "");
+        cmd.env("GOOGLE_API_KEY", "");
     }
     let jarvis_child = cmd.spawn();
 
