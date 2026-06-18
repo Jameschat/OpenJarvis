@@ -71,21 +71,30 @@ def probe_qwen_lane(base_url: str = _QWEN_LANE_URL) -> dict[str, Any]:
 
 
 def restart_qwen_lane() -> None:
-    """Kill the WSL llama-server and relaunch via the canonical lane script.
-    Cheap since the ext4 model move (~10s to healthy)."""
+    """Kill the WSL llama-server and relaunch the STABLE coder lane.
+    Cheap since the ext4 model move (~10s to healthy).
+
+    Uses the 30B-Coder lane (plain MoE, 64K), NOT the 27B-MTP froggeric lane:
+    the MTP speculative sampler segfaults under agentic load, and the watchdog
+    relaunching it as MTP kept reverting the coder lane and destabilising the
+    stack. pkill -9 because a gentle pkill can't clear a hung llama-server.
+    """
     subprocess.run(
-        ["wsl", "-d", "JarvisUbuntu", "--", "pkill", "-f", "llama-server"],
+        ["wsl", "-d", "JarvisUbuntu", "--", "pkill", "-9", "-f", "llama-server"],
         capture_output=True,
         text=True,
         timeout=30,
         creationflags=_NO_WINDOW,
     )
-    script = Path(__file__).resolve().parents[3] / "scripts" / "start-qwen-mtp-froggeric-wsl.ps1"
+    script = Path(__file__).resolve().parents[3] / "scripts" / "start-qwen3-coder-30b-a3b-wsl.ps1"
     result = subprocess.run(
-        ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script)],
+        [
+            "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script),
+            "-Port", "8084", "-ContextTokens", "65536",
+        ],
         capture_output=True,
         text=True,
-        timeout=180,
+        timeout=300,
         creationflags=_NO_WINDOW,
     )
     if result.returncode != 0:
