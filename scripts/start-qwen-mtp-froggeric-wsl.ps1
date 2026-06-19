@@ -162,6 +162,14 @@ if (-not (Test-WslFile -Path $modelToUse)) {
     }
 }
 
+# NOTE (2026-06-19): two hard-won flags below.
+#  * --jinja (no --chat-template-file): the froggeric template emitted no stop
+#    token (model ran to max_tokens on every reply) and gave 0% MTP draft accept.
+#    The model's built-in template fixes both.
+#  * --ctx-checkpoints 0 / --checkpoint-every-n-tokens -1 / --no-context-shift:
+#    the MTP speculative CUDA kernel hits "illegal memory access" (hard crash)
+#    when a context checkpoint is created at long context (~8K tokens, i.e. the
+#    agentic prompt + history). Disabling checkpoints keeps the lane alive.
 $bashCommand = @"
 set -euo pipefail
 exec $Server \
@@ -180,6 +188,9 @@ exec $Server \
   --cache-type-v $CacheTypeV \
   --spec-type mtp \
   --spec-draft-n-max $DraftMax \
+  --ctx-checkpoints 0 \
+  --checkpoint-every-n-tokens -1 \
+  --no-context-shift \
   --jinja \
   --reasoning off \
   --no-mmap \
