@@ -19,6 +19,21 @@ export const PROFILE_MODEL: Record<ComposerProfile, string> = {
   remote: 'qwen3.6-35b-a3b-remote',
 };
 
+// Human-friendly lane labels (the LiteLLM model alias is shared between coder
+// and fast, so the alias alone can't tell them apart in the UI).
+export const PROFILE_LABELS: Record<ComposerProfile, string> = {
+  coder: 'Qwen Coder 30B (local)',
+  fast: 'Qwen 27B Fast (MTP)',
+  remote: 'Remote 35B-A3B',
+};
+
+// Engine class for a given profile — drives the telemetry footer label so it
+// reflects reality (local llama.cpp lane via LiteLLM / remote worker / cloud),
+// never the old hardcoded "ollama".
+export function engineForProfile(profile: ComposerProfile): string {
+  return profile === 'remote' ? 'remote' : 'local';
+}
+
 // Local profiles share the :8084 GPU lane and need a swap when switched between.
 export const LOCAL_SWAP_PROFILES: ComposerProfile[] = ['coder', 'fast'];
 

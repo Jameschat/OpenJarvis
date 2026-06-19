@@ -2,14 +2,8 @@ import { useState } from 'react';
 import { Paperclip, ChevronDown, ShieldCheck, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAppStore } from '../../lib/store';
-import { COMPOSER_SKILLS, LOCAL_SWAP_PROFILES, type ComposerProfile, type PermissionMode } from '../../lib/store';
+import { COMPOSER_SKILLS, LOCAL_SWAP_PROFILES, PROFILE_LABELS, type ComposerProfile, type PermissionMode } from '../../lib/store';
 import { setStudioQwenProfile } from '../../lib/studio-api';
-
-const PROFILE_LABELS: Record<ComposerProfile, string> = {
-  coder: 'Qwen Coder 30B (local)',
-  fast: 'Qwen 27B Fast (MTP)',
-  remote: 'Remote 35B-A3B',
-};
 
 const PERMISSION_LABELS: Record<PermissionMode, string> = {
   default: 'Default permissions',

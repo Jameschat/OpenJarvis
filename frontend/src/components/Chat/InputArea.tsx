@@ -9,7 +9,7 @@ import type { ChatMessage, ToolCallInfo, TokenUsage, MessageTelemetry } from '..
 import { initAccumulator, reduceStreamEvent } from '../../lib/streamReducer';
 import { parseSlashCommand, SLASH_HELP, type SlashCommand } from '../../lib/slashCommands';
 import { ComposerControls } from './ComposerControls';
-import { buildComposerSystemMessage } from '../../lib/store';
+import { buildComposerSystemMessage, PROFILE_LABELS, engineForProfile } from '../../lib/store';
 
 export function InputArea() {
   const defaultLocalModel = 'qwen3.6-27b-local';
@@ -38,6 +38,7 @@ export function InputArea() {
   const permissionMode = useAppStore((s) => s.permissionMode);
   const contextItems = useAppStore((s) => s.contextItems);
   const clearContextItems = useAppStore((s) => s.clearContextItems);
+  const composerProfile = useAppStore((s) => s.composerProfile);
 
   const { state: speechState, available: speechAvailable, startRecording, stopRecording } = useSpeech();
 
@@ -280,11 +281,17 @@ export function InputArea() {
         acc.content = 'No response was generated. Please try again.';
       }
       const totalMs = Date.now() - startTime;
+      // Engine + model labels for the telemetry footer. The local lanes (coder
+      // /fast) share the LiteLLM alias 'qwen3.6-27b-local', so the alias alone
+      // can't say which is loaded — use the active profile for a true label and
+      // never fall back to the stale "ollama" string (ollama was removed).
       const _CLOUD_PREFIXES = ['gpt-', 'o1-', 'o3-', 'o4-', 'claude-', 'gemini-', 'openrouter/', 'MiniMax-', 'chatgpt-'];
-      const engineLabel = _CLOUD_PREFIXES.some(p => activeModel.startsWith(p)) ? 'cloud' : 'ollama';
+      const isCloud = _CLOUD_PREFIXES.some(p => activeModel.startsWith(p));
+      const engineLabel = isCloud ? 'cloud' : engineForProfile(composerProfile);
+      const modelLabel = isCloud ? activeModel : PROFILE_LABELS[composerProfile];
       const telemetry: MessageTelemetry = {
         engine: serverTelemetry?.engine ?? engineLabel,
-        model_id: activeModel,
+        model_id: modelLabel,
         total_ms: totalMs,
         ttft_ms: ttftMs,
         // Prefer the real llama.cpp decode speed; fall back to the client-side
@@ -356,6 +363,7 @@ export function InputArea() {
     permissionMode,
     contextItems,
     clearContextItems,
+    composerProfile,
   ]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {

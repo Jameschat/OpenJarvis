@@ -53,8 +53,10 @@ import {
 export {
   COMPOSER_SKILLS,
   PROFILE_MODEL,
+  PROFILE_LABELS,
   LOCAL_SWAP_PROFILES,
   buildComposerSystemMessage,
+  engineForProfile,
   type ComposerProfile,
   type PermissionMode,
   type SkillOption,

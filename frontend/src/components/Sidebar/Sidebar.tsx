@@ -21,7 +21,7 @@ import {
   SquareTerminal,
 } from 'lucide-react';
 import { ConversationList } from './ConversationList';
-import { useAppStore } from '../../lib/store';
+import { useAppStore, PROFILE_LABELS, PROFILE_MODEL } from '../../lib/store';
 
 export function Sidebar() {
   const navigate = useNavigate();
@@ -32,6 +32,13 @@ export function Sidebar() {
   const toggleSidebar = useAppStore((s) => s.toggleSidebar);
   const createConversation = useAppStore((s) => s.createConversation);
   const selectedModel = useAppStore((s) => s.selectedModel);
+  const composerProfile = useAppStore((s) => s.composerProfile);
+  // The local lanes share one LiteLLM alias, so show the friendly profile label
+  // (e.g. "Qwen Coder 30B") when the selected model matches the active profile.
+  const modelDisplay =
+    selectedModel && selectedModel === PROFILE_MODEL[composerProfile]
+      ? PROFILE_LABELS[composerProfile]
+      : selectedModel;
   const serverInfo = useAppStore((s) => s.serverInfo);
   const setCommandPaletteOpen = useAppStore((s) => s.setCommandPaletteOpen);
   const modelLoading = useAppStore((s) => s.modelLoading);
@@ -156,7 +163,7 @@ export function Sidebar() {
             )}
             <div className="flex-1 min-w-0">
               <span className="truncate block text-left" style={{ color: 'var(--color-text)' }}>
-                {selectedModel || serverInfo?.model || 'Select model'}
+                {modelDisplay || serverInfo?.model || 'Select model'}
               </span>
               {modelLoading && (
                 <span className="text-[10px] block text-left" style={{ color: 'var(--color-accent)' }}>
