@@ -2,13 +2,12 @@ import { useState } from 'react';
 import { Paperclip, ChevronDown, ShieldCheck, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAppStore } from '../../lib/store';
-import { COMPOSER_SKILLS, type ComposerProfile, type PermissionMode } from '../../lib/store';
+import { COMPOSER_SKILLS, LOCAL_SWAP_PROFILES, type ComposerProfile, type PermissionMode } from '../../lib/store';
 import { setStudioQwenProfile } from '../../lib/studio-api';
 
 const PROFILE_LABELS: Record<ComposerProfile, string> = {
   coder: 'Qwen Coder 30B (local)',
-  fast: 'Qwen 27B Fast',
-  quality: 'Qwen 27B Quality',
+  fast: 'Qwen 27B Fast (MTP)',
   remote: 'Remote 35B-A3B',
 };
 
@@ -17,10 +16,6 @@ const PERMISSION_LABELS: Record<PermissionMode, string> = {
   readonly: 'Read-only',
   auto: 'Full auto',
 };
-
-// Profiles that require a local-lane swap (free VRAM + load the target lane).
-// 'fast' stays on the already-loaded lane, so no swap call is made.
-const SWAP_PROFILES: ComposerProfile[] = ['coder', 'quality', 'remote'];
 
 const pillStyle: React.CSSProperties = {
   background: 'var(--color-bg-tertiary)',
@@ -47,23 +42,35 @@ export function ComposerControls() {
   const [skillsOpen, setSkillsOpen] = useState(false);
   const [permOpen, setPermOpen] = useState(false);
   const [contextDraft, setContextDraft] = useState('');
+  // True while a local lane swap is in flight. Disables the profile selector so
+  // a rapid second selection can't race two swaps over the single GPU lane.
+  const [swapping, setSwapping] = useState(false);
 
+  // coder and fast share the single :8084 GPU lane, so switching between them
+  // triggers a real lane swap on the backend (free VRAM + load target, ~1 min).
+  // Remote routes off-box, so it needs no swap. setComposerProfile sets the
+  // model id; the swap (when needed) loads the matching lane behind that alias.
   const handleProfile = async (next: ComposerProfile) => {
+    const prev = composerProfile;
     setComposerProfile(next);
-    if (!SWAP_PROFILES.includes(next)) return;
-    // Real local-lane swap: stop the active lane to free VRAM and load the
-    // target. Maps to the same backend endpoint Studio uses.
+    const swap = LOCAL_SWAP_PROFILES.includes(next) && LOCAL_SWAP_PROFILES.includes(prev) && next !== prev;
+    if (!swap) return;
+    setSwapping(true);
+    // The lane takes ~1 min to free VRAM + load; keep the selector locked that long.
+    window.setTimeout(() => setSwapping(false), 70000);
     try {
-      const res = await setStudioQwenProfile(next);
+      const res = await setStudioQwenProfile(next as 'fast' | 'coder');
       if (res && (res as { switching?: boolean }).switching) {
         toast.success('Swapping local lane', {
-          description: `Loading ${PROFILE_LABELS[next]} (~1 min). Local chat pauses until it is ready.`,
+          description: `Freeing VRAM and loading ${PROFILE_LABELS[next]} (~1 min). Local chat pauses until it is ready.`,
         });
       } else {
         toast.success(`Profile set to ${PROFILE_LABELS[next]}`);
+        setSwapping(false);
       }
     } catch (error: any) {
-      toast.error('Could not switch profile', { description: error?.message || String(error) });
+      setSwapping(false);
+      toast.error('Could not switch lane', { description: error?.message || String(error) });
     }
   };
 
@@ -210,17 +217,22 @@ export function ComposerControls() {
         </div>
 
         {/* Profile / lane */}
-        <label className="flex items-center gap-1 rounded-full px-2 py-0.5 ml-auto" style={pillStyle} title="Model profile / local lane">
+        <label
+          className="flex items-center gap-1 rounded-full px-2 py-0.5 ml-auto"
+          style={pillStyle}
+          title={swapping ? 'Swapping local GPU lane — please wait' : 'Model profile / local lane'}
+        >
+          {swapping && <span className="text-xs" style={{ color: 'var(--color-accent)' }}>⟳</span>}
           <select
             aria-label="Model profile"
             value={composerProfile}
+            disabled={swapping}
             onChange={(e) => handleProfile(e.target.value as ComposerProfile)}
-            className="bg-transparent outline-none cursor-pointer text-xs py-0.5"
+            className="bg-transparent outline-none cursor-pointer text-xs py-0.5 disabled:opacity-50 disabled:cursor-wait"
             style={{ color: 'var(--color-text-secondary)' }}
           >
-            <option value="coder">{PROFILE_LABELS.coder}</option>
+            <option value="coder">{swapping ? 'Swapping…' : PROFILE_LABELS.coder}</option>
             <option value="fast">{PROFILE_LABELS.fast}</option>
-            <option value="quality">{PROFILE_LABELS.quality}</option>
             <option value="remote">{PROFILE_LABELS.remote}</option>
           </select>
         </label>

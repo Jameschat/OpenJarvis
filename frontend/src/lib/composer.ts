@@ -2,18 +2,29 @@
 // they're testable without instantiating the zustand store (which touches
 // localStorage at import). The store re-exports these.
 
-export type ComposerProfile = 'coder' | 'fast' | 'quality' | 'remote';
+// Profiles backed by a real, working lane:
+//   coder  -> local 30B-Coder lane on :8084 (MoE, ~78 tok/s, 64K) — stable + agentic
+//   fast   -> local 27B-MTP lane on :8084 (speculative, 32K)      — Qwen3.6-27B base
+//   remote -> 35B-A3B on the LAN worker (via LiteLLM)             — most capable
+// coder and fast share the single 24GB GPU lane on :8084, so switching between
+// them triggers a real lane swap (free VRAM + load target, ~1 min). Both serve
+// the `qwen3.6-27b-local` alias, so LiteLLM routing follows transparently.
+// 'quality' dropped (no quality model file exists).
+export type ComposerProfile = 'coder' | 'fast' | 'remote';
 export type PermissionMode = 'default' | 'readonly' | 'auto';
 
-// A profile maps to the LiteLLM model alias the chat run should request. The
-// 'coder' profile also triggers a real local-lane swap (free VRAM + load the
-// 30B coder lane) via the Studio qwen-profile endpoint.
 export const PROFILE_MODEL: Record<ComposerProfile, string> = {
   coder: 'qwen3.6-27b-local',
   fast: 'qwen3.6-27b-local',
-  quality: 'qwen3.6-27b-quality',
   remote: 'qwen3.6-35b-a3b-remote',
 };
+
+// Local profiles share the :8084 GPU lane and need a swap when switched between.
+export const LOCAL_SWAP_PROFILES: ComposerProfile[] = ['coder', 'fast'];
+
+export function isComposerProfile(v: unknown): v is ComposerProfile {
+  return v === 'coder' || v === 'fast' || v === 'remote';
+}
 
 export interface SkillOption {
   id: string;

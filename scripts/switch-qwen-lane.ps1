@@ -30,16 +30,32 @@ function Clear-SwapLock { Remove-Item -Path $swapLock -Force -ErrorAction Silent
 Note "switch requested -> $Target on port $Port"
 
 # 1. Free VRAM: stop the local WSL llama-server (the active lane). Remote worker
-#    is a different machine and is untouched.
-& wsl.exe -d JarvisUbuntu -- bash -lc "pkill -f llama-server" 2>$null
+#    is a different machine and is untouched. Use pkill -9: the MTP lane aborts
+#    on a graceful shutdown ("free(): invalid pointer") which can strand its CUDA
+#    allocation, so force-kill it to guarantee the VRAM is released.
+& wsl.exe -d JarvisUbuntu -- bash -lc "pkill -9 -f llama-server" 2>$null
 Start-Sleep -Seconds 4
 $still = & wsl.exe -d JarvisUbuntu -- bash -lc "ps -eo args | grep llama-server | grep -v grep | wc -l" 2>$null
 Note "local llama-servers after stop: $still"
 
-# 1b. Also free the WINDOWS side of the port: the previous lane left a
-#     WSL->Windows port-proxy (qwen-wsl-port-proxy.py) holding 127.0.0.1:$Port.
-#     pkill only stops the WSL lane, so without this the target start script
-#     sees "Windows port occupied" and aborts.
+# 1a. Kill the Windows-native BeeLlama fallback (C:\tmp\beellama-...\llama-server.exe).
+#     It holds ~16GB of VRAM, SURVIVES wsl --shutdown, and is invisible to the WSL
+#     nvidia-smi drain check below — so if it's resident the drain wait never sees
+#     VRAM drop and the incoming lane OOMs. The swap lock prevents NEW BeeLlama
+#     spawns; this clears any already-running one.
+Get-Process llama-server -ErrorAction SilentlyContinue | ForEach-Object {
+    Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue
+    Note "killed Windows-native llama-server/BeeLlama (pid $($_.Id))"
+}
+
+# 1b. Free the WINDOWS side of the port AND clear ALL stale WSL->Windows
+#     port-proxies (qwen-wsl-port-proxy.py). These leak one-per-launch and, left
+#     running, make the target start script see "Windows port occupied" and abort.
+Get-CimInstance Win32_Process -Filter "Name='python.exe'" -ErrorAction SilentlyContinue |
+    Where-Object { $_.CommandLine -match 'qwen-wsl-port-proxy' } | ForEach-Object {
+        Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+        Note "killed stale port-proxy (pid $($_.ProcessId))"
+    }
 Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue | ForEach-Object {
     Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue
     Note "freed Windows port $Port (pid $($_.OwningProcess))"

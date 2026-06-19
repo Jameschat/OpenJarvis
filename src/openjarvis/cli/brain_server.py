@@ -1367,10 +1367,12 @@ def _studio_qwen_profile() -> Dict[str, Any]:
     profiles = {
         "fast": {
             "id": "fast",
-            "label": "Fast",
+            "label": "Qwen 27B Fast (MTP)",
             "model": "qwen3.6-27b-local",
-            "base_url": "http://127.0.0.1:8082/v1",
-            "summary": "Q4_K_M BeeLlama DFlash fast lane",
+            "base_url": "http://127.0.0.1:8084/v1",
+            "summary": "Qwen3.6-27B MTP speculative lane on the local 8084 lane (32K ctx). "
+            "Selecting it stops the active lane to free VRAM, then loads the 27B-MTP (~1 min).",
+            "context_tokens": 32768,
         },
         "quality": {
             "id": "quality",

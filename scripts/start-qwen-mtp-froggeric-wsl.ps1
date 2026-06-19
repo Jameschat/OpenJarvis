@@ -5,7 +5,7 @@ param(
     [string]$FallbackModel = "/mnt/e/Claude/models/Qwen3.6-27B-Q4_K_M-mtp.gguf",
     [string]$ChatTemplate = "/mnt/e/Claude/OpenJarvis/configs/qwen/froggeric-chat-template.jinja",
     [int]$Port = 8084,
-    [int]$ContextTokens = 16384,
+    [int]$ContextTokens = 32768,
     [int]$DraftMax = 3,
     [string]$CacheTypeK = "q4_0",
     [string]$CacheTypeV = "q4_0",
@@ -183,9 +183,6 @@ exec $Server \
   --jinja \
   --chat-template-file $ChatTemplate \
   --reasoning off \
-  --no-cache-prompt \
-  --cache-ram 0 \
-  --no-warmup \
   --no-mmap \
   --temp 0.6 \
   --top-k 20 \

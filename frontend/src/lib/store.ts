@@ -46,12 +46,14 @@ import {
   COMPOSER_SKILLS,
   PROFILE_MODEL,
   buildComposerSystemMessage,
+  isComposerProfile,
   type ComposerProfile,
   type PermissionMode,
 } from './composer';
 export {
   COMPOSER_SKILLS,
   PROFILE_MODEL,
+  LOCAL_SWAP_PROFILES,
   buildComposerSystemMessage,
   type ComposerProfile,
   type PermissionMode,
@@ -71,7 +73,11 @@ function loadComposer(): ComposerPersist {
     if (!raw) return fallback;
     const parsed = JSON.parse(raw) as Partial<ComposerPersist>;
     return {
-      composerProfile: parsed.composerProfile ?? fallback.composerProfile,
+      // Validate the persisted profile: a stale value (e.g. a removed 'quality')
+      // would map to an undefined model id and break chat. Fall back to 'coder'.
+      composerProfile: isComposerProfile(parsed.composerProfile)
+        ? parsed.composerProfile
+        : fallback.composerProfile,
       selectedSkills: Array.isArray(parsed.selectedSkills) ? parsed.selectedSkills : [],
       permissionMode: parsed.permissionMode ?? fallback.permissionMode,
     };
