@@ -311,7 +311,9 @@ def _maybe_switch_local_lane(prior: str, new: str) -> bool:
     import threading
     from pathlib import Path
 
-    lane_of = {"fast": "fast", "coder": "coder"}
+    # Map a profile to the switch-qwen-lane.ps1 -Target. local35/coder/fast share
+    # the single :8084 GPU lane, so switching between any of them swaps the lane.
+    lane_of = {"local35": "q35", "coder": "coder", "fast": "fast"}
     target = lane_of.get(new)
     if not target or target == lane_of.get(prior) or sys.platform != "win32":
         return False
@@ -359,8 +361,8 @@ async def studio_qwen_profile_set(request: Request) -> dict[str, Any]:
 
         data = await request.json()
         profile = str(data.get("profile") or "").strip().lower()
-        if profile not in {"fast", "quality", "remote", "coder"}:
-            raise HTTPException(status_code=400, detail={"error": "profile must be fast, quality, remote, or coder"})
+        if profile not in {"local35", "fast", "quality", "remote", "coder"}:
+            raise HTTPException(status_code=400, detail={"error": "profile must be local35, fast, quality, remote, or coder"})
         try:
             prior = str(_studio_qwen_profile().get("active") or "")
         except Exception:

@@ -42,9 +42,9 @@ describe('buildComposerSystemMessage', () => {
 
 describe('profile/model map', () => {
   it('maps every profile to a model alias', () => {
+    expect(PROFILE_MODEL.local35).toBe('qwen3.6-27b-local'); // shared :8084 alias
     expect(PROFILE_MODEL.coder).toBe('qwen3.6-27b-local');
     expect(PROFILE_MODEL.remote).toBe('qwen3.6-35b-a3b-remote');
-    expect(PROFILE_MODEL.quality).toBe('qwen3.6-27b-quality');
   });
 
   it('ships a non-empty skills catalog with unique ids', () => {

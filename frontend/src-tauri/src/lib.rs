@@ -439,11 +439,12 @@ async fn start_qwen_fast_lane(
         return true;
     }
 
-    // Use the 30B-Coder lane (plain MoE, 64K ctx): the 27B-MTP froggeric lane
-    // segfaults in its speculative sampler under agentic load. Coder is stable.
+    // DEFAULT lane: Qwen3.6-35B-A3B (plain MoE, native 256K). Benchmarked fastest
+    // local decode (~140 tok/s), best reasoner, fits ~21GB at 256K (KV ~1.4GB via
+    // hybrid attention). Coder/27B-MTP remain selectable via the profile swap.
     let script = root
         .join("scripts")
-        .join("start-qwen3-coder-30b-a3b-wsl.ps1");
+        .join("start-qwen3.6-35b-a3b-wsl.ps1");
     if !script.exists() {
         let mut s = status.lock().await;
         s.detail = format!("Qwen lane script missing: {}", script.display());
@@ -453,7 +454,7 @@ async fn start_qwen_fast_lane(
     {
         let mut s = status.lock().await;
         s.phase = "qwen-lane".into();
-        s.detail = "Starting Qwen3-Coder 30B lane (stable, 64K)...".into();
+        s.detail = "Starting Qwen3.6-35B-A3B lane (default, 256K)...".into();
     }
 
     let mut cmd = tokio::process::Command::new("powershell.exe");
@@ -465,7 +466,7 @@ async fn start_qwen_fast_lane(
         "-Port",
         &QWEN_FAST_LANE_PORT.to_string(),
         "-ContextTokens",
-        "65536",
+        "262144",
     ])
     .stdout(std::process::Stdio::null())
     .stderr(std::process::Stdio::null())

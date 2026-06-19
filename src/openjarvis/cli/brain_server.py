@@ -1347,8 +1347,8 @@ def _load_studio_qwen_profile() -> str:
             profile = str(data.get("active") or "").strip().lower()
         except Exception:
             profile = ""
-    if profile not in {"fast", "quality", "remote", "coder"}:
-        profile = "fast"
+    if profile not in {"local35", "fast", "quality", "remote", "coder"}:
+        profile = "local35"
     os.environ["OPENJARVIS_QWEN_PROFILE"] = profile
     return profile
 
@@ -1365,6 +1365,15 @@ def _save_studio_qwen_profile(profile: str) -> None:
 def _studio_qwen_profile() -> Dict[str, Any]:
     profile = _load_studio_qwen_profile()
     profiles = {
+        "local35": {
+            "id": "local35",
+            "label": "Qwen 35B-A3B (local, 256K)",
+            "model": "qwen3.6-27b-local",
+            "base_url": "http://127.0.0.1:8084/v1",
+            "summary": "DEFAULT. Qwen3.6-35B-A3B on the local 8084 lane — ~140 tok/s, native "
+            "256K context (~21GB), best local reasoner. Selecting it swaps the 8084 lane (~1 min).",
+            "context_tokens": 262144,
+        },
         "fast": {
             "id": "fast",
             "label": "Qwen 27B Fast (MTP)",
@@ -2172,7 +2181,7 @@ class _Handler(SimpleHTTPRequestHandler):
         try:
             data = self._read_json_body()
             profile = str(data.get("profile") or "").strip().lower()
-            if profile not in {"fast", "quality", "remote", "coder"}:
+            if profile not in {"local35", "fast", "quality", "remote", "coder"}:
                 return self._json_response(
                     400,
                     {"error": "profile must be fast, quality, remote, or coder"},

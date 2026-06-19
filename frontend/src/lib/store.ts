@@ -45,6 +45,7 @@ const COMPOSER_KEY = 'openjarvis-composer';
 import {
   COMPOSER_SKILLS,
   PROFILE_MODEL,
+  DEFAULT_PROFILE,
   buildComposerSystemMessage,
   isComposerProfile,
   type ComposerProfile,
@@ -55,6 +56,7 @@ export {
   PROFILE_MODEL,
   PROFILE_LABELS,
   LOCAL_SWAP_PROFILES,
+  DEFAULT_PROFILE,
   buildComposerSystemMessage,
   engineForProfile,
   type ComposerProfile,
@@ -69,7 +71,7 @@ interface ComposerPersist {
 }
 
 function loadComposer(): ComposerPersist {
-  const fallback: ComposerPersist = { composerProfile: 'coder', selectedSkills: [], permissionMode: 'default' };
+  const fallback: ComposerPersist = { composerProfile: DEFAULT_PROFILE, selectedSkills: [], permissionMode: 'default' };
   try {
     const raw = localStorage.getItem(COMPOSER_KEY);
     if (!raw) return fallback;

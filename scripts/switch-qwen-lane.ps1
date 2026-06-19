@@ -1,5 +1,5 @@
 param(
-    [Parameter(Mandatory = $true)][ValidateSet("fast", "coder")][string]$Target,
+    [Parameter(Mandatory = $true)][ValidateSet("fast", "coder", "q35")][string]$Target,
     [string]$RepoRoot = "E:\Claude\OpenJarvis",
     [int]$Port = 8084,
     [int]$WaitSeconds = 300
@@ -78,7 +78,11 @@ for ($i = 0; $i -lt 25; $i++) {
 #    caller's subprocess timeout kills it BEFORE the lock is cleared (orphaned lock).
 #    Instead launch detached (output -> a log file) and poll health ourselves below.
 $startLog = Join-Path $logDir "switch-target-start.log"
-if ($Target -eq "coder") {
+if ($Target -eq "q35") {
+    # DEFAULT lane: Qwen3.6-35B-A3B, native 256K (KV only ~1.4GB — fits ~21GB).
+    $script = Join-Path $RepoRoot "scripts\start-qwen3.6-35b-a3b-wsl.ps1"
+    $startArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $script, "-Port", $Port, "-ContextTokens", 262144, "-WaitSeconds", $WaitSeconds)
+} elseif ($Target -eq "coder") {
     # 64K (not the standalone 96K): leaves ~3-4GB headroom so an in-place swap
     # (where the old lane's VRAM may not be 100% reclaimed) loads reliably.
     $script = Join-Path $RepoRoot "scripts\start-qwen3-coder-30b-a3b-wsl.ps1"

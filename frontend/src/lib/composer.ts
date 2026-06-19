@@ -3,29 +3,34 @@
 // localStorage at import). The store re-exports these.
 
 // Profiles backed by a real, working lane:
-//   coder  -> local 30B-Coder lane on :8084 (MoE, ~78 tok/s, 64K) — stable + agentic
-//   fast   -> local 27B-MTP lane on :8084 (speculative, 32K)      — Qwen3.6-27B base
-//   remote -> 35B-A3B on the LAN worker (via LiteLLM)             — most capable
-// coder and fast share the single 24GB GPU lane on :8084, so switching between
-// them triggers a real lane swap (free VRAM + load target, ~1 min). Both serve
-// the `qwen3.6-27b-local` alias, so LiteLLM routing follows transparently.
-// 'quality' dropped (no quality model file exists).
-export type ComposerProfile = 'coder' | 'fast' | 'remote';
+//   local35 -> local 35B-A3B lane on :8084 (~140 tok/s, 256K) — DEFAULT, reasoning champ
+//   coder   -> local 30B-Coder lane on :8084 (MoE, ~78 tok/s, 64K) — coding-specialized
+//   fast    -> local 27B-MTP lane on :8084 (speculative, 32K)     — Qwen3.6-27B base
+//   remote  -> 35B-A3B on the LAN worker (via LiteLLM)            — off-box deep-work
+// local35/coder/fast all share the single 24GB GPU lane on :8084, so switching
+// between them triggers a real lane swap (free VRAM + load target, ~1 min). They
+// serve the `qwen3.6-27b-local` alias, so LiteLLM routing follows transparently.
+export type ComposerProfile = 'local35' | 'coder' | 'fast' | 'remote';
 export type PermissionMode = 'default' | 'readonly' | 'auto';
 
 export const PROFILE_MODEL: Record<ComposerProfile, string> = {
+  local35: 'qwen3.6-27b-local',
   coder: 'qwen3.6-27b-local',
   fast: 'qwen3.6-27b-local',
   remote: 'qwen3.6-35b-a3b-remote',
 };
 
-// Human-friendly lane labels (the LiteLLM model alias is shared between coder
-// and fast, so the alias alone can't tell them apart in the UI).
+// Human-friendly lane labels (the LiteLLM model alias is shared across the local
+// lanes, so the alias alone can't tell them apart in the UI).
 export const PROFILE_LABELS: Record<ComposerProfile, string> = {
+  local35: 'Qwen 35B-A3B (local, 256K)',
   coder: 'Qwen Coder 30B (local)',
   fast: 'Qwen 27B Fast (MTP)',
   remote: 'Remote 35B-A3B',
 };
+
+// The default profile when none is persisted — the 35B-A3B local lane.
+export const DEFAULT_PROFILE: ComposerProfile = 'local35';
 
 // Engine class for a given profile — drives the telemetry footer label so it
 // reflects reality (local llama.cpp lane via LiteLLM / remote worker / cloud),
@@ -35,10 +40,10 @@ export function engineForProfile(profile: ComposerProfile): string {
 }
 
 // Local profiles share the :8084 GPU lane and need a swap when switched between.
-export const LOCAL_SWAP_PROFILES: ComposerProfile[] = ['coder', 'fast'];
+export const LOCAL_SWAP_PROFILES: ComposerProfile[] = ['local35', 'coder', 'fast'];
 
 export function isComposerProfile(v: unknown): v is ComposerProfile {
-  return v === 'coder' || v === 'fast' || v === 'remote';
+  return v === 'local35' || v === 'coder' || v === 'fast' || v === 'remote';
 }
 
 export interface SkillOption {
