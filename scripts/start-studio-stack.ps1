@@ -110,8 +110,15 @@ try {
             #   2. VRAM already committed: if <8GB free, something big is resident
             #      (game / lane loading); adding 6GB would OOM. Skip and let it converge.
             $skipReason = $null
+            # OPT-IN gate (2026-06-19): BeeLlama is OFF by default. It was the
+            # ghost-VRAM culprit (a Windows-native ~16GB llama-server that survives
+            # wsl --shutdown and blocked the 35B/MTP lanes from loading). We route
+            # through the local Qwen lane only; enable this fallback explicitly with
+            # OPENJARVIS_ENABLE_BEELLAMA=1 if you ever actually want it.
+            $beellamaOptIn = ($env:OPENJARVIS_ENABLE_BEELLAMA -in @('1','true','on','True','ON'))
+            if (-not $beellamaOptIn) { $skipReason = "BeeLlama disabled (set OPENJARVIS_ENABLE_BEELLAMA=1 to enable)" }
             $swapLock = Join-Path $RepoRoot "dist\.lane-swap-in-progress"
-            if (Test-Path $swapLock) {
+            if (-not $skipReason -and (Test-Path $swapLock)) {
                 $age = (Get-Date) - (Get-Item $swapLock).LastWriteTime
                 if ($age.TotalMinutes -lt 10) { $skipReason = "a lane swap is in progress" }
                 else { Remove-Item $swapLock -Force -ErrorAction SilentlyContinue }
