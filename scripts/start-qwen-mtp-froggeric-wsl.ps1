@@ -181,7 +181,6 @@ exec $Server \
   --spec-type mtp \
   --spec-draft-n-max $DraftMax \
   --jinja \
-  --chat-template-file $ChatTemplate \
   --reasoning off \
   --no-mmap \
   --temp 0.6 \
