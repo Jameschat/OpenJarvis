@@ -70,6 +70,62 @@ def probe_qwen_lane(base_url: str = _QWEN_LANE_URL) -> dict[str, Any]:
     return {"ok": p.ok, "garbled": garbled, "content": p.content, "error": p.error}
 
 
+_COHERENCE_PROMPT = "Say hello in five words."
+
+
+def coherence_probe_qwen_lane(base_url: str = _QWEN_LANE_URL) -> dict[str, Any]:
+    """Cheap per-cycle coherence probe: a tiny fixed prompt to the lane, checked
+    for the degenerate signature (a long repeated-character run like '333…', empty
+    output, or single-char-dominated). The lane can degrade at runtime into pure
+    garbage for ANY prompt while /health and /v1/models still return 200 — the
+    700-word correctness probe above catches the long-prompt MTP degradation but
+    only runs every ~30 min and is too costly to run each cycle. This one is cheap
+    enough to run EVERY watchdog cycle, so that failure self-heals within one cycle
+    instead of lingering until manual reload. An error (down/busy/timeout) is NOT
+    corruption — a down lane is the health path's job."""
+    import urllib.request
+
+    from openjarvis.tools.lane_promotion import looks_garbled
+
+    body = json.dumps(
+        {
+            "model": "qwen",
+            "messages": [{"role": "user", "content": _COHERENCE_PROMPT}],
+            "max_tokens": 24,
+            "temperature": 0,
+            "chat_template_kwargs": {"enable_thinking": False},
+        }
+    ).encode("utf-8")
+    try:
+        req = urllib.request.Request(
+            base_url.rstrip("/") + "/chat/completions",
+            data=body,
+            headers={"Content-Type": "application/json", "Authorization": "Bearer sk-noop"},
+        )
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        choices = data.get("choices") or []
+        msg = (choices[0].get("message") or {}) if choices else {}
+        content = (msg.get("content") or msg.get("reasoning_content") or "").strip()
+    except Exception as exc:  # down/busy/timeout — not corruption
+        return {"ok": False, "garbled": False, "content": "", "error": str(exc)}
+    garbled = looks_garbled(content)
+    return {
+        "ok": (not garbled) and bool(content),
+        "garbled": garbled,
+        "content": content,
+        "error": None,
+    }
+
+
+def _coherence_enabled() -> bool:
+    return os.environ.get("OPENJARVIS_WATCHDOG_COHERENCE", "1").strip().lower() not in (
+        "0",
+        "false",
+        "off",
+    )
+
+
 def restart_qwen_lane() -> None:
     """Kill the WSL llama-server and relaunch the DEFAULT 35B-A3B lane.
     Cheap from the ext4 model copy (~10s to healthy).
@@ -173,6 +229,7 @@ def run_watchdog(
     report_path: Path | str | None = None,
     dry_run: bool = False,
     probe_lane: Callable[[], dict[str, Any]] | None = None,
+    coherence_probe: Callable[[], dict[str, Any]] | None = None,
     restart_lane: RestartStack | None = None,
     probe_state_path: Path | str | None = None,
     notifier: Callable[..., Any] | None = None,
@@ -237,6 +294,30 @@ def run_watchdog(
                 error = str(exc)
                 _notify(f"✗ Watchdog stack restart FAILED: {error[:140]}", level="error")
 
+    # Cheap coherence probe — runs EVERY cycle (when the stack is otherwise
+    # healthy and we haven't already restarted). Catches the runtime degeneration
+    # where the lane emits repeated-character garbage ('333…') for ANY prompt
+    # while /health stays green; the 30-min long-prompt probe below is too slow
+    # and costly for this. Garbled output here → restart the lane now.
+    coherence: Optional[dict[str, Any]] = None
+    if not unhealthy and not restart_attempted and _coherence_enabled():
+        coherence = (coherence_probe or coherence_probe_qwen_lane)()
+        if coherence.get("garbled"):
+            if dry_run:
+                action = "would_restart_qwen_lane"
+            else:
+                action = "restart_qwen_lane"
+                restart_attempted = True
+                try:
+                    (restart_lane or restart_qwen_lane)()
+                    _notify(
+                        "♻ Qwen lane emitted degenerate output on the coherence probe "
+                        "(HTTP 200 but garbage) — watchdog restarted the lane (~10s)."
+                    )
+                except Exception as exc:  # pragma: no cover - exercised via result shape
+                    error = str(exc)
+                    _notify(f"✗ Watchdog lane restart FAILED: {error[:140]}", level="error")
+
     # Correctness probe (#1d): only when the stack is otherwise healthy —
     # a down/restarting lane is the health path's job, not corruption.
     probe: Optional[dict[str, Any]] = None
@@ -244,7 +325,7 @@ def run_watchdog(
     state_path = (
         Path(probe_state_path) if probe_state_path is not None else default_probe_state_path()
     )
-    if not unhealthy and interval_min > 0 and _probe_due(state_path, interval_min):
+    if not unhealthy and not restart_attempted and interval_min > 0 and _probe_due(state_path, interval_min):
         probe = (probe_lane or probe_qwen_lane)()
         _record_probe(state_path, probe)
         if probe.get("garbled"):
@@ -264,7 +345,9 @@ def run_watchdog(
                     _notify(f"✗ Watchdog lane restart FAILED: {error[:140]}", level="error")
 
     result = {
-        "ok": not unhealthy and not (probe or {}).get("garbled"),
+        "ok": not unhealthy
+        and not (probe or {}).get("garbled")
+        and not (coherence or {}).get("garbled"),
         "action": action,
         "restart_attempted": restart_attempted,
         "required_down": required_down,
@@ -272,6 +355,7 @@ def run_watchdog(
         "checked_at": datetime.now(timezone.utc).isoformat(),
         "error": error,
         "probe": probe,
+        "coherence": coherence,
         "health": health,
     }
 

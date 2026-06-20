@@ -8,6 +8,14 @@ import pytest
 from openjarvis.tools import runtime_watchdog
 
 
+@pytest.fixture(autouse=True)
+def _coherence_off_by_default(monkeypatch):
+    # The cheap coherence probe runs every cycle and would make a real network
+    # call to :8084 in these unit tests. Disable it by default; the dedicated
+    # coherence tests opt back in and inject a fake probe.
+    monkeypatch.setenv("OPENJARVIS_WATCHDOG_COHERENCE", "0")
+
+
 def test_subprocess_calls_suppress_console_window(monkeypatch):
     # The watchdog runs every 5 min via Task Scheduler; each child process
     # (tasklist, wsl, schtasks, powershell) must launch WITHOUT a console or it
@@ -181,6 +189,64 @@ def test_probe_garbled_restarts_qwen_lane(tmp_path, monkeypatch):
     assert result["action"] == "restart_qwen_lane"
     assert lane_calls == ["lane"]
     assert result["probe"]["garbled"] is True
+
+
+def test_coherence_garbled_restarts_qwen_lane(tmp_path, monkeypatch):
+    # The '333…' runtime degeneration: a tiny coherence probe returns garbage even
+    # though /health is green. Every-cycle coherence probe must reload the lane.
+    monkeypatch.setenv("OPENJARVIS_WATCHDOG_COHERENCE", "1")
+    lane_calls: list[str] = []
+    result = runtime_watchdog.run_watchdog(
+        check_health=lambda: HEALTHY,
+        app_running=lambda: True,
+        restart_stack=lambda: None,
+        report_path=tmp_path / "wd.json",
+        coherence_probe=lambda: {
+            "ok": False, "garbled": True, "content": "3" * 24, "error": None,
+        },
+        restart_lane=lambda: lane_calls.append("lane"),
+        probe_state_path=tmp_path / "probe.json",
+    )
+    assert result["action"] == "restart_qwen_lane"
+    assert lane_calls == ["lane"]
+    assert result["coherence"]["garbled"] is True
+
+
+def test_coherence_ok_no_restart(tmp_path, monkeypatch):
+    monkeypatch.setenv("OPENJARVIS_WATCHDOG_COHERENCE", "1")
+    lane_calls: list[str] = []
+    result = runtime_watchdog.run_watchdog(
+        check_health=lambda: HEALTHY,
+        app_running=lambda: True,
+        restart_stack=lambda: None,
+        report_path=tmp_path / "wd.json",
+        coherence_probe=lambda: {
+            "ok": True, "garbled": False, "content": "Hello there, nice to meet you", "error": None,
+        },
+        restart_lane=lambda: lane_calls.append("lane"),
+        probe_lane=lambda: {"ok": True, "garbled": False, "content": "fine", "error": None},
+        probe_state_path=tmp_path / "probe.json",
+    )
+    assert result["action"] == "none"
+    assert lane_calls == []
+    assert result["coherence"]["garbled"] is False
+
+
+def test_coherence_garbled_dry_run_reports_without_restart(tmp_path, monkeypatch):
+    monkeypatch.setenv("OPENJARVIS_WATCHDOG_COHERENCE", "1")
+    lane_calls: list[str] = []
+    result = runtime_watchdog.run_watchdog(
+        check_health=lambda: HEALTHY,
+        app_running=lambda: True,
+        restart_stack=lambda: None,
+        report_path=tmp_path / "wd.json",
+        coherence_probe=lambda: {"ok": False, "garbled": True, "content": "3" * 24, "error": None},
+        restart_lane=lambda: lane_calls.append("lane"),
+        probe_state_path=tmp_path / "probe.json",
+        dry_run=True,
+    )
+    assert result["action"] == "would_restart_qwen_lane"
+    assert lane_calls == []
 
 
 def test_probe_ok_no_restart_and_state_updated(tmp_path, monkeypatch):

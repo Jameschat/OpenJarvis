@@ -41,6 +41,24 @@ function Test-LaneHealth {
     }
 }
 
+function Test-LaneCoherent {
+    param([int]$LocalPort)
+    # A lane can degrade at runtime into emitting a long repeated-character run
+    # ('333…') for ANY prompt while /health still returns 200. Probe a tiny prompt
+    # and reject that signature so we don't ADOPT a degenerate lane. A transient
+    # error (busy/loading) is NOT incoherence -> return true (don't force a reload).
+    try {
+        $body = '{"model":"qwen","messages":[{"role":"user","content":"Say hello in five words."}],"max_tokens":24,"temperature":0,"chat_template_kwargs":{"enable_thinking":false}}'
+        $resp = Invoke-RestMethod -Uri "http://127.0.0.1:$LocalPort/v1/chat/completions" -Method Post -Body $body -ContentType "application/json" -TimeoutSec 20
+        $text = [string]$resp.choices[0].message.content
+        if ([string]::IsNullOrWhiteSpace($text)) { return $false }
+        if ($text -match '(.)\1{11,}') { return $false }
+        return $true
+    } catch {
+        return $true
+    }
+}
+
 function Invoke-WslBashExit {
     param([string]$Command)
     & wsl.exe -d $WslDistro -- bash -lc $Command | Out-Null
@@ -116,6 +134,15 @@ else
 fi
 '@.Replace("__PORT__", [string]$LocalPort)
     [void](Invoke-WslBashExit -Command $cleanup)
+}
+
+# Reject adopting a degenerate-but-healthy lane (HTTP 200 + '333…' garbage): kill
+# it here so the fresh-start path below reloads it. Gated on /health being
+# reachable from Windows first, so the coherence probe can actually reach the lane.
+if ((Test-WslLaneHealth -LocalPort $Port) -and (Test-LaneHealth -LocalPort $Port) -and (-not (Test-LaneCoherent -LocalPort $Port))) {
+    Write-Host "Lane on $Port responds but emits degenerate output - reloading instead of adopting."
+    [void](Invoke-WslBashExit -Command "pkill -9 -f llama-server")
+    Start-Sleep -Seconds 3
 }
 
 if (Test-WslLaneHealth -LocalPort $Port) {
