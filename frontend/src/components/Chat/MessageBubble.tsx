@@ -37,6 +37,44 @@ function getTextContent(node: any): string {
   return '';
 }
 
+// A ```preview <url>``` fence renders as a live, scrollable iframe of a local
+// preview server (the deterministic "show me the <project> site" path). Lets the
+// user review the whole site inside chat. URL is always a local 127.0.0.1 server.
+function PreviewEmbed({ url }: { url: string }) {
+  const [n, setN] = useState(0); // bump to reload the iframe
+  return (
+    <div
+      className="my-3"
+      style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}
+    >
+      <div
+        className="flex items-center justify-between px-3 py-1.5 text-xs"
+        style={{ background: 'var(--color-bg-tertiary)', color: 'var(--color-text-tertiary)' }}
+      >
+        <span className="font-mono truncate">{url}</span>
+        <span className="flex items-center gap-3 shrink-0">
+          <button
+            onClick={() => setN((v) => v + 1)}
+            className="cursor-pointer hover:underline"
+            style={{ color: 'var(--color-text-secondary)' }}
+          >
+            Reload
+          </button>
+          <a href={url} target="_blank" rel="noreferrer" style={{ color: 'var(--color-accent, #4a9eff)' }}>
+            Open ↗
+          </a>
+        </span>
+      </div>
+      <iframe
+        key={n}
+        src={url}
+        title="Live preview"
+        style={{ width: '100%', height: 540, border: 'none', background: '#fff', display: 'block' }}
+      />
+    </div>
+  );
+}
+
 function CodeBlockPre({ children, ...props }: any) {
   const [copied, setCopied] = useState(false);
   const codeElement = Array.isArray(children) ? children[0] : children;
@@ -44,6 +82,13 @@ function CodeBlockPre({ children, ...props }: any) {
   const match = /language-([\w-]+)/.exec(className);
   const lang = match ? match[1] : '';
   const code = getTextContent(codeElement?.props?.children).replace(/\n$/, '');
+
+  if (lang === 'preview') {
+    const url = code.trim().split(/\s+/)[0];
+    if (/^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?\//i.test(url)) {
+      return <PreviewEmbed url={url} />;
+    }
+  }
 
   const handleCopy = () => {
     navigator.clipboard.writeText(code);

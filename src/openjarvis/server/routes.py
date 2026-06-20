@@ -165,6 +165,18 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
             )
 
     if request_body.stream:
+        # Deterministic "show me / open / review the <project> site" → start a
+        # local preview and stream back a live <iframe>, bypassing the agent (the
+        # local model wanders into file reads and burns its turn budget on this).
+        try:
+            from openjarvis.server.chat_preview import build_preview_reply
+
+            _preview = build_preview_reply(query_text_for_complexity)
+        except Exception:
+            _preview = None
+        if _preview is not None:
+            return _handle_preview_stream(_preview["content"], model)
+
         bus = getattr(request.app.state, "bus", None)
         # Route to the agent stream bridge when the request carries tools OR the
         # configured agent has its own tools — so the UI (which sends no tools
@@ -383,6 +395,43 @@ async def _handle_agent_stream(agent, bus, model, req):
     from openjarvis.server.stream_bridge import create_agent_stream
 
     return await create_agent_stream(agent, bus, model, req)
+
+
+def _handle_preview_stream(content: str, model: str):
+    """Stream a fixed, pre-built assistant message (used by the deterministic
+    'show me <project>' preview path). No agent, no model call — just deliver the
+    content (which carries a ```preview <url>``` fence the UI renders as an iframe)."""
+    import json
+
+    chunk_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
+
+    async def generate():
+        first = ChatCompletionChunk(
+            id=chunk_id, model=model,
+            choices=[StreamChoice(delta=DeltaMessage(role="assistant"))],
+        )
+        yield f"data: {first.model_dump_json()}\n\n"
+        _CHUNK = 48
+        for i in range(0, len(content), _CHUNK):
+            ch = ChatCompletionChunk(
+                id=chunk_id, model=model,
+                choices=[StreamChoice(delta=DeltaMessage(content=content[i : i + _CHUNK]))],
+            )
+            yield f"data: {ch.model_dump_json()}\n\n"
+        fin = ChatCompletionChunk(
+            id=chunk_id, model=model,
+            choices=[StreamChoice(delta=DeltaMessage(), finish_reason="stop")],
+        )
+        fin_d = json.loads(fin.model_dump_json())
+        fin_d.setdefault("telemetry", {})["engine"] = "preview"
+        yield f"data: {json.dumps(fin_d)}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
+    )
 
 
 async def _handle_stream(
