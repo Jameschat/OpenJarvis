@@ -129,6 +129,66 @@ def _looks_like_ungrounded_refusal(content: str) -> bool:
     return any(marker in low for marker in _REFUSAL_MARKERS)
 
 
+def _maybe_brain_context() -> str:
+    """A COMPACT vault snapshot (active project names + a few recent notes) to
+    append to the chat system prompt, so the agent knows what's already in the
+    second brain and can pull details on demand via file_read / knowledge_search /
+    memory_search.
+
+    Deliberately NOT the heavy ``agent_runner._build_brain_context`` block: that
+    is an ~11 KB autonomous-agent preamble ("read 00 Session Handoff.md, write via
+    curl…") which, injected into every interactive chat turn, both bloats the
+    prompt and destabilises the model (degenerate output + writing files as text).
+    Keep this small and declarative. Kill-switch: OPENJARVIS_BRAIN_CONTEXT=0.
+    Fully guarded — never raises, never blocks chat."""
+    import os
+
+    if os.environ.get("OPENJARVIS_BRAIN_CONTEXT", "1").strip().lower() in (
+        "0",
+        "false",
+        "off",
+    ):
+        return ""
+    try:
+        from openjarvis.tools import obsidian_brain as ob
+
+        root = ob.BRAIN_ROOT
+        if not root.exists():
+            return ""
+
+        def _recent(folder: str, n: int, dirs: bool) -> list[str]:
+            d = root / folder
+            if not d.exists():
+                return []
+            items = [
+                p
+                for p in d.iterdir()
+                if (p.is_dir() if dirs else p.suffix == ".md")
+                and not p.name.startswith(("_", "."))
+            ]
+            items.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+            return [p.stem if not dirs else p.name for p in items[:n]]
+
+        projects = _recent("Projects", 12, dirs=True)
+        knowledge = _recent("Knowledge", 6, dirs=False)
+        if not (projects or knowledge):
+            return ""
+
+        lines = [
+            "## Your second brain (Obsidian vault)",
+            f"You keep persistent notes at {root}. You can read any of them with "
+            "file_read, and search them with knowledge_search / memory_search. "
+            "Use them before saying you don't know about something the user references.",
+        ]
+        if projects:
+            lines.append("Active projects: " + ", ".join(projects) + ".")
+        if knowledge:
+            lines.append("Recent knowledge notes: " + "; ".join(knowledge) + ".")
+        return "\n".join(lines)
+    except Exception:
+        return ""
+
+
 @AgentRegistry.register("orchestrator")
 class OrchestratorAgent(ToolUsingAgent):
     """Multi-turn agent that routes between tools and the LLM.
@@ -323,6 +383,11 @@ class OrchestratorAgent(ToolUsingAgent):
         sys_prompt = self._system_prompt
         if not sys_prompt and self._tools:
             sys_prompt = _TOOL_USE_SYSTEM_PROMPT
+            # Append the live vault snapshot once per run (not per loop turn) so
+            # the agent reads from the second brain proactively.
+            brain = _maybe_brain_context()
+            if brain:
+                sys_prompt = f"{sys_prompt}\n\n{brain}"
         messages = self._build_messages(input, context, system_prompt=sys_prompt)
 
         # Get OpenAI-format tool definitions

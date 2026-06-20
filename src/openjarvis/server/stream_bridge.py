@@ -313,6 +313,27 @@ class AgentStreamBridge:
                     yield f"data: {chunk.model_dump_json()}\n\n"
                     await asyncio.sleep(0.008)
 
+            # Auto-capture this turn into long-term memory (episodic agentmemory
+            # always; vault Inbox + graphify for salient turns) so chat keeps the
+            # second brain growing. Fire-and-forget: runs on a daemon thread and
+            # is fully guarded, so it can never delay or break the response.
+            try:
+                from openjarvis.server.chat_capture import capture_chat_async
+
+                _user_text = ""
+                for _m in reversed(self._request.messages):
+                    if _m.role == "user" and _m.content:
+                        _user_text = _m.content
+                        break
+                capture_chat_async(
+                    user_text=_user_text,
+                    answer=content,
+                    tool_results=agent_result.tool_results,
+                    model=self._model,
+                )
+            except Exception:
+                pass
+
             # Final chunk: finish_reason + usage
             prompt_tokens = agent_result.metadata.get("prompt_tokens", 0)
             completion_tokens = agent_result.metadata.get(
