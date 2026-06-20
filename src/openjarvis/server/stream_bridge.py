@@ -286,76 +286,32 @@ class AgentStreamBridge:
                     {"results": tool_results_data},
                 )
 
-            # Stream content using real LLM token streaming via
-            # engine.stream_full() when the engine is available.
+            # Stream the agent's ACTUAL answer.
+            #
+            # We deliberately do NOT re-generate from the engine here. The agent
+            # has already done the real work this turn — chosen and called tools,
+            # read their results, and grounded its answer in them. Re-streaming a
+            # fresh generation on only ``self._request.messages`` (the bare user
+            # question, with none of this turn's tool calls/results/system prompt)
+            # produces a brand-new, ungrounded answer that ignores the tools — the
+            # "weather tool succeeds but Jarvis says it has no real-time data" bug.
+            # The displayed prose MUST be the agent's own content. Chunk it for a
+            # progressive streaming feel (no artificial per-word latency).
             content = agent_result.content or ""
-            engine = getattr(self._agent, "_engine", None)
-            used_real_streaming = False
-
-            if engine is not None and hasattr(engine, "stream_full") and content:
-                # Re-stream using the engine for real token delivery.
-                # Build the same messages the agent used for its final turn.
-                try:
-                    from openjarvis.core.types import Message as MsgType
-                    from openjarvis.core.types import Role as RoleType
-
-                    replay_messages = []
-                    for m in self._request.messages:
-                        role = (
-                            RoleType(m.role)
-                            if m.role in {r.value for r in RoleType}
-                            else RoleType.USER
-                        )
-                        replay_messages.append(
-                            MsgType(
-                                role=role,
-                                content=m.content or "",
-                                name=m.name,
-                                tool_call_id=m.tool_call_id,
-                            )
-                        )
-
-                    async for sc in engine.stream_full(
-                        replay_messages,
-                        model=self._model,
-                    ):
-                        if sc.content:
-                            chunk = ChatCompletionChunk(
-                                id=self._chunk_id,
-                                model=self._model,
-                                choices=[
-                                    StreamChoice(
-                                        delta=DeltaMessage(content=sc.content),
-                                    )
-                                ],
-                            )
-                            yield f"data: {chunk.model_dump_json()}\n\n"
-                    used_real_streaming = True
-                except Exception as stream_exc:
-                    import logging as _logging
-
-                    _logger = _logging.getLogger("openjarvis.server")
-                    _logger.warning(
-                        "Real streaming failed, falling back to word replay: %s",
-                        stream_exc,
-                    )
-
-            # Fallback: word-by-word replay if real streaming was not used
-            if not used_real_streaming and content:
-                words = content.split(" ")
-                for i, word in enumerate(words):
-                    token = word if i == 0 else " " + word
+            if content:
+                _CHUNK = 24
+                for _i in range(0, len(content), _CHUNK):
                     chunk = ChatCompletionChunk(
                         id=self._chunk_id,
                         model=self._model,
                         choices=[
                             StreamChoice(
-                                delta=DeltaMessage(content=token),
+                                delta=DeltaMessage(content=content[_i : _i + _CHUNK]),
                             )
                         ],
                     )
                     yield f"data: {chunk.model_dump_json()}\n\n"
-                    await asyncio.sleep(0.012)
+                    await asyncio.sleep(0.008)
 
             # Final chunk: finish_reason + usage
             prompt_tokens = agent_result.metadata.get("prompt_tokens", 0)

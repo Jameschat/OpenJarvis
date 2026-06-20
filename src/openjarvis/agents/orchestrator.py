@@ -50,6 +50,15 @@ _TOOL_USE_SYSTEM_PROMPT = (
     "When building or changing a website/web app, preview it: call preview_start "
     "on the project folder to get a URL, then browser_navigate to it and "
     "browser_screenshot to see the result, and iterate. "
+    "\n\n"
+    "Several of your tools return LIVE, real-time data: weather (current "
+    "conditions + forecast), web_search, crypto (prices), calendar, and the "
+    "home-automation tools. A tool result in this conversation is REAL, "
+    "CURRENT data fetched just now on this machine — treat it as ground truth and "
+    "answer directly from it. NEVER say you 'don't have access to real-time data', "
+    "'can't check the live weather', or tell the user to go look it up on another "
+    "website AFTER a tool has already returned the answer. If the weather tool "
+    "returned a forecast, give the user that forecast. "
     "When the work is done, give a short, clear final answer."
 )
 
@@ -66,6 +75,58 @@ def _cap_tool_content(content: str) -> str:
         return content
     head = content[:_MAX_TOOL_RESULT_CHARS]
     return f"{head}\n[... truncated {len(content) - _MAX_TOOL_RESULT_CHARS} chars ...]"
+
+
+def _format_tool_result(result: "ToolResult") -> str:
+    """Frame the tool result fed back to the model. A successful result is wrapped
+    so a reasoning model treats it as authoritative live data and answers from it,
+    instead of falling back to an 'I have no real-time access' refusal despite the
+    data being right here. Failures pass through capped/plain."""
+    body = _cap_tool_content(result.content or "")
+    if getattr(result, "success", True):
+        return (
+            f"[Real, current result from the `{result.tool_name}` tool, fetched just "
+            f"now on this machine. This IS live data — answer from it directly; do NOT "
+            f"claim you lack access to this information.]\n{body}"
+        )
+    return body
+
+
+def _has_successful_results(results: "list[ToolResult]") -> bool:
+    return any(getattr(r, "success", False) for r in results)
+
+
+# Phrases a local model emits when it deflects instead of using a tool result it
+# already holds. Matched on the post-think final answer to trigger re-synthesis.
+_REFUSAL_MARKERS = (
+    "don't have access",
+    "do not have access",
+    "don't have real-time",
+    "do not have real-time",
+    "can't access real-time",
+    "cannot access real-time",
+    "can't provide real-time",
+    "cannot provide real-time",
+    "i'm unable to access",
+    "i am unable to access",
+    "can't check the live",
+    "cannot check the live",
+    "don't have the ability to",
+    "as an ai",
+    "i recommend checking",
+    "please check a reliable",
+    "real-time weather",
+)
+
+
+def _looks_like_ungrounded_refusal(content: str) -> bool:
+    if not content:
+        return False
+    low = content.lower()
+    # Strip a leading <think>…</think> so we judge the user-facing answer only.
+    if "</think>" in low:
+        low = low.split("</think>", 1)[1]
+    return any(marker in low for marker in _REFUSAL_MARKERS)
 
 
 @AgentRegistry.register("orchestrator")
@@ -189,7 +250,7 @@ class OrchestratorAgent(ToolUsingAgent):
                 tool_result = self._executor.execute(tool_call)
                 all_tool_results.append(tool_result)
 
-                observation = f"Observation: {_cap_tool_content(tool_result.content)}"
+                observation = f"Observation: {_format_tool_result(tool_result)}"
                 messages.append(Message(role=Role.USER, content=observation))
                 continue
 
@@ -296,6 +357,22 @@ class OrchestratorAgent(ToolUsingAgent):
             # No tool calls -> check continuation, then final answer
             if not raw_tool_calls:
                 content = self._check_continuation(result, messages)
+                # Grounded-synthesis recovery: some local reasoning models, when the
+                # tool schemas are still present in the request, talk themselves into
+                # "I'm an AI, I don't have real-time access" and deflect — even though
+                # a tool already returned the answer earlier this run. (Measured: with
+                # tools in the payload the 35B refused 6/6; with tools absent it
+                # answered 6/6 from the identical result.) If the final answer reads
+                # like that deflection while we hold a successful tool result, re-ask
+                # ONCE with no tools so the model must answer from what it has.
+                if (
+                    _has_successful_results(all_tool_results)
+                    and _looks_like_ungrounded_refusal(content)
+                ):
+                    recovered = self._generate(messages)  # no tools -> forces synthesis
+                    rec_content = self._check_continuation(recovered, messages)
+                    if rec_content and not _looks_like_ungrounded_refusal(rec_content):
+                        content = rec_content
                 content = self._strip_think_tags(content)
                 self._emit_turn_end(turns=turns, content_length=len(content))
                 return AgentResult(
@@ -361,7 +438,7 @@ class OrchestratorAgent(ToolUsingAgent):
                     messages.append(
                         Message(
                             role=Role.TOOL,
-                            content=_cap_tool_content(tool_result.content),
+                            content=_format_tool_result(tool_result),
                             tool_call_id=tc.id,
                             name=tc.name,
                         )
@@ -385,7 +462,7 @@ class OrchestratorAgent(ToolUsingAgent):
                             messages.append(
                                 Message(
                                     role=Role.TOOL,
-                                    content=_cap_tool_content(tool_result.content),
+                                    content=_format_tool_result(tool_result),
                                     tool_call_id=tc.id,
                                     name=tc.name,
                                 )
@@ -399,7 +476,7 @@ class OrchestratorAgent(ToolUsingAgent):
                     messages.append(
                         Message(
                             role=Role.TOOL,
-                            content=_cap_tool_content(tool_result.content),
+                            content=_format_tool_result(tool_result),
                             tool_call_id=tc.id,
                             name=tc.name,
                         )
