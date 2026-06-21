@@ -6,17 +6,19 @@
 //   local35 -> local 35B-A3B lane on :8084 (~140 tok/s, 256K) — DEFAULT, reasoning champ
 //   coder   -> local 30B-Coder lane on :8084 (MoE, ~78 tok/s, 64K) — coding-specialized
 //   fast    -> local 27B-MTP lane on :8084 (speculative, 32K)     — Qwen3.6-27B base
+//   gptoss  -> local gpt-oss-20b lane on :8084 (~140 tok/s, 64K)  — fast/frugal agentic
 //   remote  -> 35B-A3B on the LAN worker (via LiteLLM)            — off-box deep-work
-// local35/coder/fast all share the single 24GB GPU lane on :8084, so switching
-// between them triggers a real lane swap (free VRAM + load target, ~1 min). They
-// serve the `qwen3.6-27b-local` alias, so LiteLLM routing follows transparently.
-export type ComposerProfile = 'local35' | 'coder' | 'fast' | 'remote';
+// local35/coder/fast/gptoss all share the single 24GB GPU lane on :8084, so
+// switching between them triggers a real lane swap (free VRAM + load target,
+// ~1 min). They serve the `qwen3.6-27b-local` alias, so LiteLLM routing follows.
+export type ComposerProfile = 'local35' | 'coder' | 'fast' | 'gptoss' | 'remote';
 export type PermissionMode = 'default' | 'readonly' | 'auto';
 
 export const PROFILE_MODEL: Record<ComposerProfile, string> = {
   local35: 'qwen3.6-27b-local',
   coder: 'qwen3.6-27b-local',
   fast: 'qwen3.6-27b-local',
+  gptoss: 'qwen3.6-27b-local',
   remote: 'qwen3.6-35b-a3b-remote',
 };
 
@@ -26,6 +28,7 @@ export const PROFILE_LABELS: Record<ComposerProfile, string> = {
   local35: 'Qwen 35B-A3B (local, 256K)',
   coder: 'Qwen Coder 30B (local)',
   fast: 'Qwen 27B Fast (MTP)',
+  gptoss: 'gpt-oss 20B (local, agentic)',
   remote: 'Remote 35B-A3B',
 };
 
@@ -40,10 +43,10 @@ export function engineForProfile(profile: ComposerProfile): string {
 }
 
 // Local profiles share the :8084 GPU lane and need a swap when switched between.
-export const LOCAL_SWAP_PROFILES: ComposerProfile[] = ['local35', 'coder', 'fast'];
+export const LOCAL_SWAP_PROFILES: ComposerProfile[] = ['local35', 'coder', 'fast', 'gptoss'];
 
 export function isComposerProfile(v: unknown): v is ComposerProfile {
-  return v === 'local35' || v === 'coder' || v === 'fast' || v === 'remote';
+  return v === 'local35' || v === 'coder' || v === 'fast' || v === 'gptoss' || v === 'remote';
 }
 
 export interface SkillOption {

@@ -1,5 +1,5 @@
 param(
-    [Parameter(Mandatory = $true)][ValidateSet("fast", "coder", "q35")][string]$Target,
+    [Parameter(Mandatory = $true)][ValidateSet("fast", "coder", "q35", "gptoss")][string]$Target,
     [string]$RepoRoot = "E:\Claude\OpenJarvis",
     [int]$Port = 8084,
     [int]$WaitSeconds = 300
@@ -86,6 +86,10 @@ if ($Target -eq "q35") {
     # 64K (not the standalone 96K): leaves ~3-4GB headroom so an in-place swap
     # (where the old lane's VRAM may not be 100% reclaimed) loads reliably.
     $script = Join-Path $RepoRoot "scripts\start-qwen3-coder-30b-a3b-wsl.ps1"
+    $startArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $script, "-Port", $Port, "-ContextTokens", 65536, "-WaitSeconds", $WaitSeconds)
+} elseif ($Target -eq "gptoss") {
+    # gpt-oss-20b: fast/frugal agentic lane (~15GB), 64K context with f16 KV.
+    $script = Join-Path $RepoRoot "scripts\start-gptoss-wsl.ps1"
     $startArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $script, "-Port", $Port, "-ContextTokens", 65536, "-WaitSeconds", $WaitSeconds)
 } else {
     $script = Join-Path $RepoRoot "scripts\start-qwen-mtp-froggeric-wsl.ps1"
