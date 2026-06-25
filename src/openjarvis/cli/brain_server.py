@@ -1347,7 +1347,7 @@ def _load_studio_qwen_profile() -> str:
             profile = str(data.get("active") or "").strip().lower()
         except Exception:
             profile = ""
-    if profile not in {"local35", "fast", "quality", "remote", "coder", "gptoss"}:
+    if profile not in {"local35", "fast", "quality", "remote", "coder", "gptoss", "glm47"}:
         profile = "local35"
     os.environ["OPENJARVIS_QWEN_PROFILE"] = profile
     return profile
@@ -1416,6 +1416,16 @@ def _studio_qwen_profile() -> Dict[str, Any]:
             "frugal VRAM (~15GB) with 64K ctx. Fast/frugal agentic option. Selecting it stops the "
             "active lane to free VRAM, then loads gpt-oss (~1 min).",
             "context_tokens": 65536,
+        },
+        "glm47": {
+            "id": "glm47",
+            "label": "GLM-4.7-Flash 30B (local, agentic)",
+            "model": "qwen3.6-27b-local",
+            "base_url": "http://127.0.0.1:8084/v1",
+            "summary": "GLM-4.7-Flash 30B-A3B (deepseek2) on the local 8084 lane — ~187 tok/s "
+            "(fastest), clean tool-calling, strong agentic/coding (SWE-bench 59, tau2 79.5). Thinking "
+            "model, 32K ctx. Selecting it stops the active lane to free VRAM, then loads GLM (~1 min).",
+            "context_tokens": 32768,
         },
     }
     return {"active": profile, "profiles": profiles}
@@ -2191,10 +2201,10 @@ class _Handler(SimpleHTTPRequestHandler):
         try:
             data = self._read_json_body()
             profile = str(data.get("profile") or "").strip().lower()
-            if profile not in {"local35", "fast", "quality", "remote", "coder", "gptoss"}:
+            if profile not in {"local35", "fast", "quality", "remote", "coder", "gptoss", "glm47"}:
                 return self._json_response(
                     400,
-                    {"error": "profile must be local35, fast, quality, remote, coder, or gptoss"},
+                    {"error": "profile must be local35, fast, quality, remote, coder, gptoss, or glm47"},
                 )
             _save_studio_qwen_profile(profile)
             self._json_response(200, _studio_qwen_profile())

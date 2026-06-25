@@ -1,5 +1,5 @@
 param(
-    [Parameter(Mandatory = $true)][ValidateSet("fast", "coder", "q35", "gptoss")][string]$Target,
+    [Parameter(Mandatory = $true)][ValidateSet("fast", "coder", "q35", "gptoss", "glm47")][string]$Target,
     [string]$RepoRoot = "E:\Claude\OpenJarvis",
     [int]$Port = 8084,
     [int]$WaitSeconds = 300
@@ -91,6 +91,11 @@ if ($Target -eq "q35") {
     # gpt-oss-20b: fast/frugal agentic lane (~15GB), 64K context with f16 KV.
     $script = Join-Path $RepoRoot "scripts\start-gptoss-wsl.ps1"
     $startArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $script, "-Port", $Port, "-ContextTokens", 65536, "-WaitSeconds", $WaitSeconds)
+} elseif ($Target -eq "glm47") {
+    # GLM-4.7-Flash 30B-A3B (deepseek2): agentic/coding champ (~187 t/s, SWE-bench
+    # 59). 32K ctx + f16 KV (~22GB) — deepseek2 KV is heavier, keep ctx conservative.
+    $script = Join-Path $RepoRoot "scripts\start-glm47-wsl.ps1"
+    $startArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $script, "-Port", $Port, "-ContextTokens", 32768, "-WaitSeconds", $WaitSeconds)
 } else {
     $script = Join-Path $RepoRoot "scripts\start-qwen-mtp-froggeric-wsl.ps1"
     $startArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $script, "-Port", $Port, "-WaitSeconds", $WaitSeconds)

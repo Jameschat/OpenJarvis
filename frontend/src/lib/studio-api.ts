@@ -80,7 +80,7 @@ export async function cancelStudioRun(runId: string): Promise<Record<string, unk
   });
 }
 
-export async function setStudioQwenProfile(profile: 'local35' | 'fast' | 'quality' | 'remote' | 'coder' | 'gptoss'): Promise<Record<string, unknown>> {
+export async function setStudioQwenProfile(profile: 'local35' | 'fast' | 'quality' | 'remote' | 'coder' | 'gptoss' | 'glm47'): Promise<Record<string, unknown>> {
   return requestJson<Record<string, unknown>>('/studio/qwen-profile', {
     method: 'POST',
     body: JSON.stringify({ profile }),
