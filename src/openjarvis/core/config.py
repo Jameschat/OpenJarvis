@@ -538,9 +538,13 @@ class IntelligenceConfig:
     quantization: str = "none"  # none, fp8, int8, int4, gguf_q4, gguf_q8
     preferred_engine: str = ""  # Override engine for this model (e.g., "vllm")
     provider: str = ""  # local, openai, anthropic, google
-    # Generation defaults (overridable per-call)
+    # Generation defaults (overridable per-call). NOTE: this is the per-turn cap the
+    # agents actually use (_stubs.BaseAgent reads cfg.intelligence.max_tokens). Kept
+    # high for agentic CODING: file_write crams the whole file into the tool-call's
+    # JSON args; a low cap truncates it mid-string -> invalid JSON -> lane 500s
+    # ("Failed to parse tool call arguments"). 16384 ≈ ~60KB/file, fits every lane.
     temperature: float = 0.7
-    max_tokens: int = 1024
+    max_tokens: int = 16384
     top_p: float = 0.9
     top_k: int = 40
     repetition_penalty: float = 1.0

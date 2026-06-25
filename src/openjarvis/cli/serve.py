@@ -234,6 +234,9 @@ def serve(
 
                 if getattr(agent_cls, "accepts_tools", False):
                     agent_kwargs["max_turns"] = config.agent.max_turns
+                    # Per-turn token cap: the orchestrator's own _default_max_tokens
+                    # (16384) is the source of truth — AgentConfig has no max_tokens
+                    # field (it lives under intelligence.*), so don't read it here.
 
                 agent = agent_cls(engine, model_name, **agent_kwargs)
         except Exception as exc:

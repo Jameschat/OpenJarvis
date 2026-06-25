@@ -207,7 +207,14 @@ class OrchestratorAgent(ToolUsingAgent):
 
     agent_id = "orchestrator"
     _default_temperature = 0.7
-    _default_max_tokens = 1024
+    # Per-turn generation cap. Must be large for agentic CODING: a file_write
+    # crams the whole file into the tool-call's JSON `arguments` string, and if the
+    # generation is cut off mid-string the JSON is invalid -> the lane 500s
+    # ("Failed to parse tool call arguments"). 1024 truncated any file >~4KB (and a
+    # thinking model burns budget reasoning first). 16384 ≈ ~60KB/file and fits
+    # every lane's context window. It's a cap, not a target — normal turns stop at
+    # the stop token well before it.
+    _default_max_tokens = 16384
     _default_max_turns = 10
 
     def __init__(
