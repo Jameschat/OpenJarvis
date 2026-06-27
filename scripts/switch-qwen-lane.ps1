@@ -98,9 +98,9 @@ if ($Target -eq "q35") {
     $startArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $script, "-Port", $Port, "-ContextTokens", 32768, "-WaitSeconds", $WaitSeconds)
 } elseif ($Target -eq "gemma4") {
     # Gemma 4 26B-A4B (gemma4): stable big-context agentic (~122 t/s, native tools,
-    # vision). Light sliding-window KV -> 64K fits with headroom (~18GB at 16K).
+    # vision). 32K f16 KV (~20GB) — 64K hit ~23GB and CUDA-crashed under inference.
     $script = Join-Path $RepoRoot "scripts\start-gemma4-wsl.ps1"
-    $startArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $script, "-Port", $Port, "-ContextTokens", 65536, "-WaitSeconds", $WaitSeconds)
+    $startArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $script, "-Port", $Port, "-ContextTokens", 32768, "-WaitSeconds", $WaitSeconds)
 } else {
     $script = Join-Path $RepoRoot "scripts\start-qwen-mtp-froggeric-wsl.ps1"
     $startArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $script, "-Port", $Port, "-WaitSeconds", $WaitSeconds)

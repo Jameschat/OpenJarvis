@@ -4,7 +4,7 @@ param(
     [string]$Model = "/root/models/gemma-4-26B_q4_0-it.gguf",
     [string]$FallbackModel = "/mnt/e/Claude/models/gemma-4-26B_q4_0-it.gguf",
     [int]$Port = 8084,
-    [int]$ContextTokens = 65536,
+    [int]$ContextTokens = 32768,
     [string]$CacheTypeK = "f16",
     [string]$CacheTypeV = "f16",
     [int]$Threads = 24,
@@ -19,7 +19,8 @@ param(
 # MoE, native 256K context, vision-capable (mmproj not loaded here — text/agentic).
 #   - Gemma sliding-window attention keeps KV LIGHT, so big context fits 24GB with
 #     headroom (~18GB at 16K) — the stable choice for large builds where GLM-4.7's
-#     heavy deepseek2 KV OOM-crashed. Run 64K here; can push higher.
+#     heavy deepseek2 KV OOM-crashed. Run 32K here: 64K f16 hit ~23GB and CUDA
+#     illegal-memory-access'd under inference; 32K ≈ ~20GB leaves safe headroom.
 #   - Built-in chat template (--jinja) with native function-calling.
 
 $ErrorActionPreference = "Stop"

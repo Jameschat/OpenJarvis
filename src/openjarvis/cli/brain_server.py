@@ -1433,10 +1433,9 @@ def _studio_qwen_profile() -> Dict[str, Any]:
             "model": "qwen3.6-27b-local",
             "base_url": "http://127.0.0.1:8084/v1",
             "summary": "Gemma 4 26B-A4B (Google, gemma4) on the local 8084 lane — ~122 tok/s, native "
-            "tool-calling, vision-capable, light sliding-window KV so big context (64K) fits with "
-            "headroom — the stable lane for large builds. Selecting it stops the active lane to free "
-            "VRAM, then loads Gemma (~1 min).",
-            "context_tokens": 65536,
+            "tool-calling, vision-capable, 32K ctx (~20GB, safe headroom). Selecting it stops the "
+            "active lane to free VRAM, then loads Gemma (~1 min).",
+            "context_tokens": 32768,
         },
     }
     return {"active": profile, "profiles": profiles}
