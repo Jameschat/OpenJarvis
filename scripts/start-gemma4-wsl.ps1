@@ -10,6 +10,7 @@ param(
     [int]$Threads = 24,
     [int]$BatchSize = 2048,
     [int]$UbatchSize = 512,
+    [int]$CtxCheckpoints = 4,
     [int]$WaitSeconds = 300
 )
 
@@ -17,10 +18,14 @@ param(
 # agentic" local lane on :8084. Benchmarked 2026-06-27 on the 4090: ~122 tok/s,
 # clean native tool-calling, 4/4 reasoning, valid coding. 25.2B total / 3.8B active
 # MoE, native 256K context, vision-capable (mmproj not loaded here — text/agentic).
-#   - Gemma sliding-window attention keeps KV LIGHT, so big context fits 24GB with
-#     headroom (~18GB at 16K) — the stable choice for large builds where GLM-4.7's
-#     heavy deepseek2 KV OOM-crashed. Run 32K here: 64K f16 hit ~23GB and CUDA
-#     illegal-memory-access'd under inference; 32K ≈ ~20GB leaves safe headroom.
+#   - WARNING (2026-06-27): Gemma4 is UNRELIABLE for agentic builds on this
+#     llama.cpp-turboq-mtp build. Under real multi-turn load it dies with
+#     "CUDA error: an illegal memory access" inside the SWA "context checkpoint"
+#     path (it crashed creating even checkpoint 2 of 4, ~300MiB each). Neither 32K
+#     ctx nor --ctx-checkpoints 4 stops it. Possible next tries: --ctx-checkpoints 0,
+#     --swa-full, or --flash-attn off — UNTESTED. Until then, use the Qwen 35B
+#     (local35) lane for agentic coding: non-SWA, no checkpoint path, verified to
+#     build + run a 30KB raycaster FPS end-to-end without crashing.
 #   - Built-in chat template (--jinja) with native function-calling.
 
 $ErrorActionPreference = "Stop"
@@ -208,6 +213,7 @@ exec $Server \
   --cache-type-k $CacheTypeK \
   --cache-type-v $CacheTypeV \
   --no-context-shift \
+  --ctx-checkpoints $CtxCheckpoints \
   --jinja \
   --no-mmap
 "@

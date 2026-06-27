@@ -58,6 +58,16 @@ class TodoWriteTool(BaseTool):
 
     def execute(self, **params: Any) -> ToolResult:
         items = params.get("items")
+        # Local models routinely double-encode nested tool arguments — i.e. they
+        # pass items as a JSON *string* "[{...}]" rather than a real array. Parse
+        # it instead of failing, otherwise planning breaks for every multi-step task.
+        if isinstance(items, str):
+            import json
+
+            try:
+                items = json.loads(items)
+            except Exception:
+                items = None
         if not isinstance(items, list):
             return ToolResult(
                 tool_name="todo_write",
