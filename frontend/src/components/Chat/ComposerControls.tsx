@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Paperclip, ChevronDown, ShieldCheck, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAppStore } from '../../lib/store';
 import { COMPOSER_SKILLS, LOCAL_SWAP_PROFILES, PROFILE_LABELS, type ComposerProfile, type PermissionMode } from '../../lib/store';
-import { setStudioQwenProfile } from '../../lib/studio-api';
+import { setStudioQwenProfile, fetchStudioState } from '../../lib/studio-api';
 
 const PERMISSION_LABELS: Record<PermissionMode, string> = {
   default: 'Default permissions',
@@ -40,6 +40,35 @@ export function ComposerControls() {
   // a rapid second selection can't race two swaps over the single GPU lane.
   const [swapping, setSwapping] = useState(false);
 
+  // Lane status LED (replaces the old right-rail "Qwen Lanes" panel): poll the
+  // active local lane's health. Green = up & ready; red = loading/down.
+  const [laneOnline, setLaneOnline] = useState<boolean | null>(null);
+  useEffect(() => {
+    let alive = true;
+    const tick = () =>
+      fetchStudioState()
+        .then((s: unknown) => {
+          if (!alive) return;
+          const st = s as { runtime_supervisor?: { qwen_runtime?: any }; qwen_runtime?: any };
+          const rt = st?.runtime_supervisor?.qwen_runtime || st?.qwen_runtime;
+          const lanes: any[] = rt?.lanes || [];
+          const active = lanes.find((l) => l.active) || lanes[0];
+          setLaneOnline(active ? active.online !== false : null);
+        })
+        .catch(() => {
+          if (alive) setLaneOnline(false);
+        });
+    tick();
+    const id = window.setInterval(tick, 5000);
+    return () => {
+      alive = false;
+      window.clearInterval(id);
+    };
+  }, []);
+  // Remote routes off-box (no local lane) -> always "ready". Local lanes: green
+  // only when the active lane is up AND we're not mid-swap.
+  const laneReady = !swapping && (composerProfile === 'remote' || laneOnline === true);
+
   // coder and fast share the single :8084 GPU lane, so switching between them
   // triggers a real lane swap on the backend (free VRAM + load target, ~1 min).
   // Remote routes off-box, so it needs no swap. setComposerProfile sets the
@@ -53,7 +82,7 @@ export function ComposerControls() {
     // The lane takes ~1 min to free VRAM + load; keep the selector locked that long.
     window.setTimeout(() => setSwapping(false), 70000);
     try {
-      const res = await setStudioQwenProfile(next as 'local35' | 'fast' | 'coder' | 'gptoss' | 'glm47');
+      const res = await setStudioQwenProfile(next as 'local35' | 'fast' | 'coder' | 'gptoss' | 'glm47' | 'gemma4');
       if (res && (res as { switching?: boolean }).switching) {
         toast.success('Swapping local lane', {
           description: `Freeing VRAM and loading ${PROFILE_LABELS[next]} (~1 min). Local chat pauses until it is ready.`,
@@ -216,7 +245,19 @@ export function ComposerControls() {
           style={pillStyle}
           title={swapping ? 'Swapping local GPU lane — please wait' : 'Model profile / local lane'}
         >
-          {swapping && <span className="text-xs" style={{ color: 'var(--color-accent)' }}>⟳</span>}
+          {/* Lane status LED: green = active & ready, red = loading or down */}
+          <span
+            aria-label={swapping ? 'lane loading' : laneReady ? 'lane ready' : 'lane down'}
+            title={swapping ? 'Lane loading…' : laneReady ? 'Lane active & ready' : 'Lane down or loading'}
+            style={{
+              width: 9,
+              height: 9,
+              borderRadius: '50%',
+              flexShrink: 0,
+              background: laneReady ? '#22c55e' : '#ef4444',
+              boxShadow: `0 0 6px ${laneReady ? '#22c55e' : '#ef4444'}`,
+            }}
+          />
           <select
             aria-label="Model profile"
             value={composerProfile}
@@ -230,6 +271,7 @@ export function ComposerControls() {
             <option value="fast">{PROFILE_LABELS.fast}</option>
             <option value="gptoss">{PROFILE_LABELS.gptoss}</option>
             <option value="glm47">{PROFILE_LABELS.glm47}</option>
+            <option value="gemma4">{PROFILE_LABELS.gemma4}</option>
             <option value="remote">{PROFILE_LABELS.remote}</option>
           </select>
         </label>

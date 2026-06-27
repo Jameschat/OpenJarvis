@@ -1347,7 +1347,7 @@ def _load_studio_qwen_profile() -> str:
             profile = str(data.get("active") or "").strip().lower()
         except Exception:
             profile = ""
-    if profile not in {"local35", "fast", "quality", "remote", "coder", "gptoss", "glm47"}:
+    if profile not in {"local35", "fast", "quality", "remote", "coder", "gptoss", "glm47", "gemma4"}:
         profile = "local35"
     os.environ["OPENJARVIS_QWEN_PROFILE"] = profile
     return profile
@@ -1426,6 +1426,17 @@ def _studio_qwen_profile() -> Dict[str, Any]:
             "(fastest), clean tool-calling, strong agentic/coding (SWE-bench 59, tau2 79.5). Thinking "
             "model, 32K ctx. Selecting it stops the active lane to free VRAM, then loads GLM (~1 min).",
             "context_tokens": 32768,
+        },
+        "gemma4": {
+            "id": "gemma4",
+            "label": "Gemma 4 26B (local, 256K)",
+            "model": "qwen3.6-27b-local",
+            "base_url": "http://127.0.0.1:8084/v1",
+            "summary": "Gemma 4 26B-A4B (Google, gemma4) on the local 8084 lane — ~122 tok/s, native "
+            "tool-calling, vision-capable, light sliding-window KV so big context (64K) fits with "
+            "headroom — the stable lane for large builds. Selecting it stops the active lane to free "
+            "VRAM, then loads Gemma (~1 min).",
+            "context_tokens": 65536,
         },
     }
     return {"active": profile, "profiles": profiles}
@@ -2201,10 +2212,10 @@ class _Handler(SimpleHTTPRequestHandler):
         try:
             data = self._read_json_body()
             profile = str(data.get("profile") or "").strip().lower()
-            if profile not in {"local35", "fast", "quality", "remote", "coder", "gptoss", "glm47"}:
+            if profile not in {"local35", "fast", "quality", "remote", "coder", "gptoss", "glm47", "gemma4"}:
                 return self._json_response(
                     400,
-                    {"error": "profile must be local35, fast, quality, remote, coder, gptoss, or glm47"},
+                    {"error": "profile must be local35, fast, quality, remote, coder, gptoss, glm47, or gemma4"},
                 )
             _save_studio_qwen_profile(profile)
             self._json_response(200, _studio_qwen_profile())

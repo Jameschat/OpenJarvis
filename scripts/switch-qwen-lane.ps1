@@ -1,5 +1,5 @@
 param(
-    [Parameter(Mandatory = $true)][ValidateSet("fast", "coder", "q35", "gptoss", "glm47")][string]$Target,
+    [Parameter(Mandatory = $true)][ValidateSet("fast", "coder", "q35", "gptoss", "glm47", "gemma4")][string]$Target,
     [string]$RepoRoot = "E:\Claude\OpenJarvis",
     [int]$Port = 8084,
     [int]$WaitSeconds = 300
@@ -96,6 +96,11 @@ if ($Target -eq "q35") {
     # 59). 32K ctx + f16 KV (~22GB) — deepseek2 KV is heavier, keep ctx conservative.
     $script = Join-Path $RepoRoot "scripts\start-glm47-wsl.ps1"
     $startArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $script, "-Port", $Port, "-ContextTokens", 32768, "-WaitSeconds", $WaitSeconds)
+} elseif ($Target -eq "gemma4") {
+    # Gemma 4 26B-A4B (gemma4): stable big-context agentic (~122 t/s, native tools,
+    # vision). Light sliding-window KV -> 64K fits with headroom (~18GB at 16K).
+    $script = Join-Path $RepoRoot "scripts\start-gemma4-wsl.ps1"
+    $startArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $script, "-Port", $Port, "-ContextTokens", 65536, "-WaitSeconds", $WaitSeconds)
 } else {
     $script = Join-Path $RepoRoot "scripts\start-qwen-mtp-froggeric-wsl.ps1"
     $startArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $script, "-Port", $Port, "-WaitSeconds", $WaitSeconds)

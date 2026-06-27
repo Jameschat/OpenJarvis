@@ -8,11 +8,12 @@
 //   fast    -> local 27B-MTP lane on :8084 (speculative, 32K)     — Qwen3.6-27B base
 //   gptoss  -> local gpt-oss-20b lane on :8084 (~140 tok/s, 64K)  — fast/frugal agentic
 //   glm47   -> local GLM-4.7-Flash 30B-A3B on :8084 (~187 t/s, 32K) — agentic/coding champ
+//   gemma4  -> local Gemma 4 26B-A4B on :8084 (~122 t/s, 64K)      — stable big-context, vision
 //   remote  -> 35B-A3B on the LAN worker (via LiteLLM)            — off-box deep-work
-// local35/coder/fast/gptoss/glm47 all share the single 24GB GPU lane on :8084, so
-// switching between them triggers a real lane swap (free VRAM + load target,
-// ~1 min). They serve the `qwen3.6-27b-local` alias, so LiteLLM routing follows.
-export type ComposerProfile = 'local35' | 'coder' | 'fast' | 'gptoss' | 'glm47' | 'remote';
+// local35/coder/fast/gptoss/glm47/gemma4 all share the single 24GB GPU lane on
+// :8084, so switching between them triggers a real lane swap (free VRAM + load
+// target, ~1 min). They serve the `qwen3.6-27b-local` alias, so LiteLLM follows.
+export type ComposerProfile = 'local35' | 'coder' | 'fast' | 'gptoss' | 'glm47' | 'gemma4' | 'remote';
 export type PermissionMode = 'default' | 'readonly' | 'auto';
 
 export const PROFILE_MODEL: Record<ComposerProfile, string> = {
@@ -21,6 +22,7 @@ export const PROFILE_MODEL: Record<ComposerProfile, string> = {
   fast: 'qwen3.6-27b-local',
   gptoss: 'qwen3.6-27b-local',
   glm47: 'qwen3.6-27b-local',
+  gemma4: 'qwen3.6-27b-local',
   remote: 'qwen3.6-35b-a3b-remote',
 };
 
@@ -32,6 +34,7 @@ export const PROFILE_LABELS: Record<ComposerProfile, string> = {
   fast: 'Qwen 27B Fast (MTP)',
   gptoss: 'gpt-oss 20B (local, agentic)',
   glm47: 'GLM-4.7-Flash 30B (local, agentic)',
+  gemma4: 'Gemma 4 26B (local, 256K)',
   remote: 'Remote 35B-A3B',
 };
 
@@ -46,10 +49,10 @@ export function engineForProfile(profile: ComposerProfile): string {
 }
 
 // Local profiles share the :8084 GPU lane and need a swap when switched between.
-export const LOCAL_SWAP_PROFILES: ComposerProfile[] = ['local35', 'coder', 'fast', 'gptoss', 'glm47'];
+export const LOCAL_SWAP_PROFILES: ComposerProfile[] = ['local35', 'coder', 'fast', 'gptoss', 'glm47', 'gemma4'];
 
 export function isComposerProfile(v: unknown): v is ComposerProfile {
-  return v === 'local35' || v === 'coder' || v === 'fast' || v === 'gptoss' || v === 'glm47' || v === 'remote';
+  return v === 'local35' || v === 'coder' || v === 'fast' || v === 'gptoss' || v === 'glm47' || v === 'gemma4' || v === 'remote';
 }
 
 export interface SkillOption {
