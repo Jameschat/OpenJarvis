@@ -1,8 +1,8 @@
 param(
     [string]$WslDistro = "JarvisUbuntu",
-    [string]$Server = "/root/llama.cpp-turboq-mtp/build/bin/llama-server",
-    [string]$Model = "/root/models/gemma-4-26B_q4_0-it.gguf",
-    [string]$FallbackModel = "/mnt/e/Claude/models/gemma-4-26B_q4_0-it.gguf",
+    [string]$Server = "/root/llama.cpp-mainline/build/bin/llama-server",
+    [string]$Model = "/root/models/gemma-4-26B_q4_0-it-r2.gguf",
+    [string]$FallbackModel = "/root/models/gemma-4-26B_q4_0-it.gguf",
     [int]$Port = 8084,
     [int]$ContextTokens = 32768,
     [string]$CacheTypeK = "f16",
@@ -18,14 +18,15 @@ param(
 # agentic" local lane on :8084. Benchmarked 2026-06-27 on the 4090: ~122 tok/s,
 # clean native tool-calling, 4/4 reasoning, valid coding. 25.2B total / 3.8B active
 # MoE, native 256K context, vision-capable (mmproj not loaded here — text/agentic).
-#   - WARNING (2026-06-27): Gemma4 is UNRELIABLE for agentic builds on this
-#     llama.cpp-turboq-mtp build. Under real multi-turn load it dies with
-#     "CUDA error: an illegal memory access" inside the SWA "context checkpoint"
-#     path (it crashed creating even checkpoint 2 of 4, ~300MiB each). Neither 32K
-#     ctx nor --ctx-checkpoints 4 stops it. Possible next tries: --ctx-checkpoints 0,
-#     --swa-full, or --flash-attn off — UNTESTED. Until then, use the Qwen 35B
-#     (local35) lane for agentic coding: non-SWA, no checkpoint path, verified to
-#     build + run a 30KB raycaster FPS end-to-end without crashing.
+#   - FIXED (2026-07-28): the "CUDA illegal memory access" crash on agentic loads
+#     was the gemma4 FLASH-ATTENTION CUDA kernel on Ada (4090) — broken in both the
+#     turboq-mtp fork AND mainline. Fix: --flash-attn off (still ~120 t/s, no cost).
+#     Runs on /root/llama.cpp-mainline (built 2026-07-28) with the Jul-17 refreshed
+#     QAT weights (-r2: better tool-call JSON, chat template fixes). Thinking is ON
+#     by default in the refreshed weights -> --reasoning-budget 0 keeps answers in
+#     content (Jarvis reads content, not reasoning_content). Verified 5/5 on the
+#     multi-turn agentic stress that previously crashed it. Do NOT re-enable
+#     --flash-attn on for gemma4 without re-running that stress.
 #   - Built-in chat template (--jinja) with native function-calling.
 
 $ErrorActionPreference = "Stop"
@@ -209,11 +210,12 @@ exec $Server \
   --ubatch-size $UbatchSize \
   --ctx-size $ContextTokens \
   -ngl 99 \
-  --flash-attn on \
+  --flash-attn off \
   --cache-type-k $CacheTypeK \
   --cache-type-v $CacheTypeV \
   --no-context-shift \
   --ctx-checkpoints $CtxCheckpoints \
+  --reasoning-budget 0 \
   --jinja \
   --no-mmap
 "@

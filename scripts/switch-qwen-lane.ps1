@@ -97,8 +97,8 @@ if ($Target -eq "q35") {
     $script = Join-Path $RepoRoot "scripts\start-glm47-wsl.ps1"
     $startArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $script, "-Port", $Port, "-ContextTokens", 32768, "-WaitSeconds", $WaitSeconds)
 } elseif ($Target -eq "gemma4") {
-    # Gemma 4 26B-A4B (gemma4): stable big-context agentic (~122 t/s, native tools,
-    # vision). 32K f16 KV (~20GB) — 64K hit ~23GB and CUDA-crashed under inference.
+    # Gemma 4 26B-A4B (gemma4): Jul-17 refreshed weights on mainline llama.cpp,
+    # flash-attn OFF (Ada FA kernel crash), reasoning-budget 0. ~120 t/s, 32K, ~19GB.
     $script = Join-Path $RepoRoot "scripts\start-gemma4-wsl.ps1"
     $startArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $script, "-Port", $Port, "-ContextTokens", 32768, "-WaitSeconds", $WaitSeconds)
 } else {
