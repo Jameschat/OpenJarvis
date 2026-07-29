@@ -53,7 +53,7 @@ class FileWriteTool(BaseTool):
                         "type": "boolean",
                         "description": (
                             "Create parent directories if they"
-                            " don't exist. Default: false."
+                            " don't exist. Default: true."
                         ),
                     },
                 },
@@ -97,7 +97,11 @@ class FileWriteTool(BaseTool):
                 success=False,
             )
 
-        create_dirs = params.get("create_dirs", False)
+        # Default TRUE: a failed write costs the model a full re-generation of the
+        # entire file content just to retry with create_dirs=true (~12K tokens for a
+        # big file) — the #1 avoidable turn-waster in agentic builds. Path-allowlist
+        # and sensitive-file checks below still gate WHERE dirs can be created.
+        create_dirs = params.get("create_dirs", True)
 
         path = Path(file_path)
 

@@ -52,10 +52,19 @@ class TestFileWriteTool:
         assert result.success is True
         assert f.read_text(encoding="utf-8") == "nested"
 
-    def test_create_dirs_false_missing_parent(self, tmp_path):
+    def test_default_creates_missing_parent(self, tmp_path):
+        # Default is create_dirs=True: a failed write would force the model to
+        # re-generate the whole file content just to retry with the flag.
         f = tmp_path / "nonexistent" / "test.txt"
         tool = FileWriteTool()
         result = tool.execute(path=str(f), content="data")
+        assert result.success is True
+        assert f.read_text(encoding="utf-8") == "data"
+
+    def test_create_dirs_false_missing_parent(self, tmp_path):
+        f = tmp_path / "nonexistent2" / "test.txt"
+        tool = FileWriteTool()
+        result = tool.execute(path=str(f), content="data", create_dirs=False)
         assert result.success is False
         assert "Parent directory does not exist" in result.content
 
