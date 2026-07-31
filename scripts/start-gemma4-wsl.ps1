@@ -2,7 +2,8 @@ param(
     [string]$WslDistro = "JarvisUbuntu",
     [string]$Server = "/root/llama.cpp-mainline/build/bin/llama-server",
     [string]$Model = "/root/models/gemma-4-26B_q4_0-it-r2.gguf",
-    [string]$FallbackModel = "/root/models/gemma-4-26B_q4_0-it.gguf",
+    # No fallback: the pre-refresh gguf was deleted 2026-07-31 (r2 is the only copy).
+    [string]$FallbackModel = "",
     [int]$Port = 8084,
     [int]$ContextTokens = 32768,
     [string]$CacheTypeK = "f16",
