@@ -138,8 +138,10 @@ class ShellExecTool(BaseTool):
                     "working_dir": working_dir,
                 },
             )
-        except ImportError:
-            pass  # Fall through to subprocess below
+        except (ImportError, AttributeError):
+            # ImportError: no rust bridge. AttributeError: a stale rust module
+            # lacking ShellExecTool. Either way, fall back to subprocess below.
+            pass
         except Exception as exc:
             return ToolResult(
                 tool_name="shell_exec",
