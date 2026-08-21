@@ -47,6 +47,11 @@ function Test-LaneHealth {
     } catch { return $false }
 }
 
+function Test-PortOpen {
+    param([int]$LocalPort)
+    return [bool](Get-NetTCPConnection -LocalPort $LocalPort -State Listen -ErrorAction SilentlyContinue)
+}
+
 function Invoke-WslBashExit {
     param([string]$Command)
     & wsl.exe -d $WslDistro -- bash -lc $Command | Out-Null
@@ -56,6 +61,38 @@ function Invoke-WslBashExit {
 function Test-WslLaneHealth {
     param([int]$LocalPort)
     return ((Invoke-WslBashExit -Command "curl -fsS --max-time 3 http://127.0.0.1:$LocalPort/v1/models >/dev/null") -eq 0)
+}
+
+function Get-WslHostIp {
+    $ip = (& wsl.exe -d $WslDistro -- bash -lc "hostname -I | awk '{print `$1}'" 2>$null)
+    return ($ip | Select-Object -First 1).Trim()
+}
+
+# WSL2 localhost forwarding is unreliable (observed: 8085 reachable from Windows,
+# 8084 not, same distro/session). The llama.cpp lane scripts all carry this bridge
+# for the same reason - without it LiteLLM on Windows cannot reach the lane.
+function Start-WindowsLaneBridge {
+    param([int]$LocalPort)
+    $wslIp = Get-WslHostIp
+    if (-not $wslIp) { throw "Lane healthy inside WSL, but the WSL IP could not be resolved for the Windows bridge." }
+    $proxyScript = Join-Path $PSScriptRoot "qwen-wsl-port-proxy.py"
+    if (-not (Test-Path -LiteralPath $proxyScript)) { throw "WSL bridge script missing: $proxyScript" }
+    $repoRootLocal = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
+    $python = Join-Path $repoRootLocal ".venv\Scripts\python.exe"
+    if (-not (Test-Path -LiteralPath $python)) { $python = "python.exe" }
+    $logDirLocal = Join-Path $repoRootLocal "dist"
+    New-Item -ItemType Directory -Force -Path $logDirLocal | Out-Null
+    $proxyArgs = @(
+        $proxyScript,
+        "--listen-host", "127.0.0.1",
+        "--listen-port", [string]$LocalPort,
+        "--target-host", $wslIp,
+        "--target-port", [string]$LocalPort
+    )
+    $p = Start-Process -FilePath $python -ArgumentList $proxyArgs -WindowStyle Hidden `
+        -RedirectStandardOutput (Join-Path $logDirLocal "qwen38-proxy-$LocalPort.log") `
+        -RedirectStandardError (Join-Path $logDirLocal "qwen38-proxy-$LocalPort.err.log") -PassThru
+    Write-Host "Started lane Windows bridge PID $($p.Id) on 127.0.0.1:$LocalPort -> ${wslIp}:$LocalPort"
 }
 
 if (Test-LaneHealth -LocalPort $Port) {
@@ -112,6 +149,15 @@ while ((Get-Date) -lt $deadline) {
     if (Test-LaneHealth -LocalPort $Port) {
         Write-Host "Qwen3.8/NInfer ready at http://127.0.0.1:$Port/v1"
         exit 0
+    }
+    # Serving inside WSL but invisible on Windows -> stand up the port bridge.
+    if ((Test-WslLaneHealth -LocalPort $Port) -and -not (Test-PortOpen -LocalPort $Port)) {
+        Start-WindowsLaneBridge -LocalPort $Port
+        Start-Sleep -Seconds 3
+        if (Test-LaneHealth -LocalPort $Port) {
+            Write-Host "Qwen3.8/NInfer ready through Windows bridge at http://127.0.0.1:$Port/v1"
+            exit 0
+        }
     }
 }
 
