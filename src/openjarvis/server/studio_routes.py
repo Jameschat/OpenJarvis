@@ -313,7 +313,7 @@ def _maybe_switch_local_lane(prior: str, new: str) -> bool:
 
     # Map a profile to the switch-qwen-lane.ps1 -Target. local35/coder/fast share
     # the single :8084 GPU lane, so switching between any of them swaps the lane.
-    lane_of = {"local35": "q35", "coder": "coder", "fast": "fast", "gptoss": "gptoss", "glm47": "glm47", "gemma4": "gemma4"}
+    lane_of = {"local35": "q35", "coder": "coder", "fast": "fast", "gptoss": "gptoss", "glm47": "glm47", "gemma4": "gemma4", "qwen38": "qwen38"}
     target = lane_of.get(new)
     if not target or target == lane_of.get(prior) or sys.platform != "win32":
         return False
@@ -361,8 +361,8 @@ async def studio_qwen_profile_set(request: Request) -> dict[str, Any]:
 
         data = await request.json()
         profile = str(data.get("profile") or "").strip().lower()
-        if profile not in {"local35", "fast", "quality", "remote", "coder", "gptoss", "glm47", "gemma4"}:
-            raise HTTPException(status_code=400, detail={"error": "profile must be local35, fast, quality, remote, coder, gptoss, glm47, or gemma4"})
+        if profile not in {"local35", "fast", "quality", "remote", "coder", "gptoss", "glm47", "gemma4", "qwen38"}:
+            raise HTTPException(status_code=400, detail={"error": "profile must be local35, fast, quality, remote, coder, gptoss, glm47, gemma4, or qwen38"})
         try:
             prior = str(_studio_qwen_profile().get("active") or "")
         except Exception:

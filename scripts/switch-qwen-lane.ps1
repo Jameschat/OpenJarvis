@@ -1,5 +1,5 @@
 param(
-    [Parameter(Mandatory = $true)][ValidateSet("fast", "coder", "q35", "gptoss", "glm47", "gemma4")][string]$Target,
+    [Parameter(Mandatory = $true)][ValidateSet("fast", "coder", "q35", "gptoss", "glm47", "gemma4", "qwen38")][string]$Target,
     [string]$RepoRoot = "E:\Claude\OpenJarvis",
     [int]$Port = 8084,
     [int]$WaitSeconds = 300
@@ -33,9 +33,9 @@ Note "switch requested -> $Target on port $Port"
 #    is a different machine and is untouched. Use pkill -9: the MTP lane aborts
 #    on a graceful shutdown ("free(): invalid pointer") which can strand its CUDA
 #    allocation, so force-kill it to guarantee the VRAM is released.
-& wsl.exe -d JarvisUbuntu -- bash -lc "pkill -9 -f llama-server" 2>$null
+& wsl.exe -d JarvisUbuntu -- bash -lc "pkill -9 -f llama-server; pkill -9 -f ninfer-serve" 2>$null
 Start-Sleep -Seconds 4
-$still = & wsl.exe -d JarvisUbuntu -- bash -lc "ps -eo args | grep llama-server | grep -v grep | wc -l" 2>$null
+$still = & wsl.exe -d JarvisUbuntu -- bash -lc "ps -eo args | grep -E 'llama-server|ninfer-serve' | grep -v grep | wc -l" 2>$null
 Note "local llama-servers after stop: $still"
 
 # 1a. Kill the Windows-native BeeLlama fallback (C:\tmp\beellama-...\llama-server.exe).
@@ -101,6 +101,15 @@ if ($Target -eq "q35") {
     # flash-attn OFF (Ada FA kernel crash), reasoning-budget 0. ~120 t/s, 32K, ~19GB.
     $script = Join-Path $RepoRoot "scripts\start-gemma4-wsl.ps1"
     $startArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $script, "-Port", $Port, "-ContextTokens", 32768, "-WaitSeconds", $WaitSeconds)
+} elseif ($Target -eq "qwen38") {
+    # Qwen3.8-27B on the NInfer engine (NOT llama.cpp): 131K ctx + rk4v4 4-bit
+    # Hadamard KV, ~90 t/s via MTP3 (verified 110K-token prefill). llama.cpp with the stock chat
+    # template mangles large tool payloads into a 16K-token runaway (zero tool
+    # calls); ninfer handles them cleanly. NOTE: our 45.7 t/s llama.cpp figure was
+    # measured without --spec-type draft-mtp, so it is NOT a fair speed comparison. Serves the same qwen3.6-27b-local model id
+    # on 8084, so LiteLLM routing is unchanged.
+    $script = Join-Path $RepoRoot "scripts\start-qwen38-ninfer-wsl.ps1"
+    $startArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $script, "-Port", $Port, "-ContextTokens", 131072, "-WaitSeconds", $WaitSeconds)
 } else {
     $script = Join-Path $RepoRoot "scripts\start-qwen-mtp-froggeric-wsl.ps1"
     $startArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $script, "-Port", $Port, "-WaitSeconds", $WaitSeconds)
@@ -116,6 +125,11 @@ for ($i = 0; $i -lt $tries; $i++) {
     try {
         $h = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/health" -TimeoutSec 3
         if ($h.status -eq "ok") { Note "lane healthy on $Port after $($i*3)s"; Clear-SwapLock; exit 0 }
+    } catch {}
+    # NInfer (qwen38 lane) exposes no /health - probe the OpenAI models endpoint.
+    try {
+        $m = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/v1/models" -TimeoutSec 3
+        if ($m.data) { Note "lane healthy (v1/models) on $Port after $($i*3)s"; Clear-SwapLock; exit 0 }
     } catch {}
     Start-Sleep -Seconds 3
 }

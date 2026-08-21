@@ -82,7 +82,7 @@ export function ComposerControls() {
     // The lane takes ~1 min to free VRAM + load; keep the selector locked that long.
     window.setTimeout(() => setSwapping(false), 70000);
     try {
-      const res = await setStudioQwenProfile(next as 'local35' | 'fast' | 'coder' | 'gptoss' | 'glm47' | 'gemma4');
+      const res = await setStudioQwenProfile(next as 'local35' | 'fast' | 'coder' | 'gptoss' | 'glm47' | 'gemma4' | 'qwen38');
       if (res && (res as { switching?: boolean }).switching) {
         toast.success('Swapping local lane', {
           description: `Freeing VRAM and loading ${PROFILE_LABELS[next]} (~1 min). Local chat pauses until it is ready.`,
@@ -272,6 +272,7 @@ export function ComposerControls() {
             <option value="gptoss">{PROFILE_LABELS.gptoss}</option>
             <option value="glm47">{PROFILE_LABELS.glm47}</option>
             <option value="gemma4">{PROFILE_LABELS.gemma4}</option>
+            <option value="qwen38">{PROFILE_LABELS.qwen38}</option>
             <option value="remote">{PROFILE_LABELS.remote}</option>
           </select>
         </label>
