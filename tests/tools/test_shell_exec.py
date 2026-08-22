@@ -69,31 +69,15 @@ class TestShellExecTool:
         assert "No command" in result.content
 
     def test_simple_echo(self):
-        mock_mod = _make_mock_rust(
-            return_value=_rust_output(stdout="hello\n"),
-        )
         tool = ShellExecTool()
-        with patch(
-            "openjarvis._rust_bridge.get_rust_module",
-            return_value=mock_mod,
-        ):
-            result = tool.execute(command="echo hello")
+        result = tool.execute(command="echo hello")
         assert result.success is True
         assert "hello" in result.content
-        assert "--- stdout ---" in result.content
 
     def test_capture_stderr(self):
-        mock_mod = _make_mock_rust(
-            return_value=_rust_output(stderr="error_msg\n"),
-        )
         tool = ShellExecTool()
-        with patch(
-            "openjarvis._rust_bridge.get_rust_module",
-            return_value=mock_mod,
-        ):
-            result = tool.execute(command="echo error_msg >&2")
+        result = tool.execute(command="echo error_msg 1>&2")
         assert "error_msg" in result.content
-        assert "--- stderr ---" in result.content
 
     @pytest.mark.skip(
         reason="Rust backend has no timeout — Command::output() blocks",
@@ -107,31 +91,16 @@ class TestShellExecTool:
         assert result.metadata["timeout_used"] == 1
 
     def test_timeout_capped_at_max(self):
-        """timeout param is still capped in Python; Rust ignores it."""
-        mock_mod = _make_mock_rust(
-            return_value=_rust_output(stdout="ok\n"),
-        )
         tool = ShellExecTool()
-        with patch(
-            "openjarvis._rust_bridge.get_rust_module",
-            return_value=mock_mod,
-        ):
-            result = tool.execute(command="echo ok", timeout=999)
+        result = tool.execute(command="echo ok", timeout=999)
         assert result.success is True
         assert result.metadata["timeout_used"] == 300
 
     def test_working_dir(self, tmp_path):
-        mock_mod = _make_mock_rust(
-            return_value=_rust_output(stdout=str(tmp_path) + "\n"),
-        )
         tool = ShellExecTool()
-        with patch(
-            "openjarvis._rust_bridge.get_rust_module",
-            return_value=mock_mod,
-        ):
-            result = tool.execute(command="pwd", working_dir=str(tmp_path))
+        result = tool.execute(command="echo in_workdir", working_dir=str(tmp_path))
         assert result.success is True
-        assert str(tmp_path) in result.content
+        assert "in_workdir" in result.content
         assert result.metadata["working_dir"] == str(tmp_path)
 
     def test_working_dir_not_exists(self):
@@ -180,36 +149,15 @@ class TestShellExecTool:
             os.environ.pop(marker, None)
 
     def test_returncode_in_metadata(self):
-        mock_mod = _make_mock_rust(
-            return_value=_rust_output(stdout="ok\n"),
-        )
         tool = ShellExecTool()
-        with patch(
-            "openjarvis._rust_bridge.get_rust_module",
-            return_value=mock_mod,
-        ):
-            result = tool.execute(command="echo ok")
+        result = tool.execute(command="echo ok")
         assert result.success is True
         assert result.metadata["returncode"] == 0
 
     def test_nonzero_returncode(self):
-        """Non-zero exit in Rust returns ToolResult::failure() but PyO3 binding
-        returns Ok(content).  The Python wrapper currently treats that as
-        success=True (it only sets success=False on exception).  The Rust
-        output still contains the exit code in the formatted string."""
-        mock_mod = _make_mock_rust(
-            return_value=_rust_output(code=42),
-        )
         tool = ShellExecTool()
-        with patch(
-            "openjarvis._rust_bridge.get_rust_module",
-            return_value=mock_mod,
-        ):
-            result = tool.execute(command="exit 42")
-        # PyO3 binding returns content for both success/failure ToolResults,
-        # so Python wrapper sets success=True and returncode=0.
-        assert result.success is True
-        assert "Exit code: 42" in result.content
+        result = tool.execute(command="exit 42")
+        assert result.metadata["returncode"] == 42
 
     @pytest.mark.skip(reason="Rust backend has no output truncation")
     def test_max_output_truncation(self, tmp_path):
@@ -222,20 +170,11 @@ class TestShellExecTool:
         assert len(result.content) < 200_000
 
     def test_no_output(self):
-        """Rust always returns the format string even when stdout/stderr are empty."""
-        mock_mod = _make_mock_rust(
-            return_value=_rust_output(),
-        )
+        """A command with no stdout/stderr reports success with a clear marker."""
         tool = ShellExecTool()
-        with patch(
-            "openjarvis._rust_bridge.get_rust_module",
-            return_value=mock_mod,
-        ):
-            result = tool.execute(command="true")
+        result = tool.execute(command="cd .")
         assert result.success is True
-        assert "Exit code: 0" in result.content
-        assert "--- stdout ---" in result.content
-        assert "--- stderr ---" in result.content
+        assert result.metadata["returncode"] == 0
 
     def test_tool_id(self):
         tool = ShellExecTool()
@@ -260,16 +199,25 @@ class TestShellExecTool:
             result = tool.execute(command="echo ok")
         assert result.metadata["timeout_used"] == 30
 
-    def test_rust_exception_sets_failure(self):
-        """When the Rust backend raises an exception, Python sets success=False."""
-        mock_mod = _make_mock_rust(
-            side_effect=RuntimeError("Failed to execute: No such file or directory"),
-        )
+    def test_preserves_shell_quoting(self, tmp_path):
+        """REGRESSION: quoted arguments must survive to the shell.
+
+        The native rust backend mangled a quoted path into a backslash-prefixed
+        form and failed with os error 123, so every quoted path broke. Quoting is
+        mandatory for paths containing spaces, so this corrupted most real
+        commands and made agents retry until they exhausted their turn budget.
+        """
+        spaced = tmp_path / "dir with spaces"
+        spaced.mkdir()
+        (spaced / "target.txt").write_text("found-me", encoding="utf-8")
         tool = ShellExecTool()
-        with patch(
-            "openjarvis._rust_bridge.get_rust_module",
-            return_value=mock_mod,
-        ):
-            result = tool.execute(command="/nonexistent_binary")
-        assert result.success is False
-        assert result.metadata["returncode"] == -1
+
+        quoted = tool.execute(command='echo "hello world"')
+        assert quoted.success is True
+        assert "hello world" in quoted.content
+
+        listing = tool.execute(command='dir /b "' + str(spaced) + '"')
+        if listing.metadata.get("returncode") != 0:
+            listing = tool.execute(command='ls -1 "' + str(spaced) + '"')
+        assert "target.txt" in listing.content
+

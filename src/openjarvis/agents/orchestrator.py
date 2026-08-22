@@ -45,7 +45,7 @@ _TOOL_USE_SYSTEM_PROMPT = (
     "holds persistent notes about prior work. Before telling the user you don't "
     "know about something they reference, LOOK FOR IT: list/read files in the "
     "workspace (file_read), search the vault, and search memory "
-    "(memory_search/knowledge_search). Only say you can't find it after you have "
+    "(memory_search / memory_retrieve / retrieval). Only say you can't find it after you have "
     "actually checked. "
     "When building or changing a website/web app, preview it: call preview_start "
     "on the project folder to get a URL, then browser_navigate to it and "
@@ -69,7 +69,7 @@ _TOOL_USE_SYSTEM_PROMPT = (
     "memory across conversations', or 'each session is independent' — those "
     "statements are FALSE for you and must never be said. When the user asks what you "
     "remember, did before, or know about their projects, SEARCH first "
-    "(memory_search, memory_retrieve, knowledge_search) and read the vault "
+    "(memory_search, memory_retrieve, retrieval) and read the vault "
     "(file_read), then answer from what you actually find. "
     "When the work is done, give a short, clear final answer."
 )
@@ -144,7 +144,7 @@ def _looks_like_ungrounded_refusal(content: str) -> bool:
 def _maybe_brain_context() -> str:
     """A COMPACT vault snapshot (active project names + a few recent notes) to
     append to the chat system prompt, so the agent knows what's already in the
-    second brain and can pull details on demand via file_read / knowledge_search /
+    second brain and can pull details on demand via file_read / retrieval /
     memory_search.
 
     Deliberately NOT the heavy ``agent_runner._build_brain_context`` block: that
@@ -189,7 +189,7 @@ def _maybe_brain_context() -> str:
         lines = [
             "## Your second brain (Obsidian vault)",
             f"You keep persistent notes at {root}. You can read any of them with "
-            "file_read, and search them with knowledge_search / memory_search. "
+            "file_read, and search them with retrieval / memory_search. "
             "Use them before saying you don't know about something the user references.",
         ]
         if projects:

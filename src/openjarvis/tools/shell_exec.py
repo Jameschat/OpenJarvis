@@ -123,36 +123,16 @@ class ShellExecTool(BaseTool):
             if val is not None:
                 env[key] = val
 
-        try:
-            from openjarvis._rust_bridge import get_rust_module
-
-            _rust = get_rust_module()
-            output = _rust.ShellExecTool().execute(command, working_dir)
-            return ToolResult(
-                tool_name="shell_exec",
-                content=output or "(no output)",
-                success=True,
-                metadata={
-                    "returncode": 0,
-                    "timeout_used": timeout,
-                    "working_dir": working_dir,
-                },
-            )
-        except (ImportError, AttributeError):
-            # ImportError: no rust bridge. AttributeError: a stale rust module
-            # lacking ShellExecTool. Either way, fall back to subprocess below.
-            pass
-        except Exception as exc:
-            return ToolResult(
-                tool_name="shell_exec",
-                content=str(exc),
-                success=False,
-                metadata={
-                    "returncode": -1,
-                    "timeout_used": timeout,
-                    "working_dir": working_dir,
-                },
-            )
+        # NOTE (2026-08-22): the native rust ShellExecTool is deliberately NOT used.
+        # It does not preserve shell quoting: `ls -1 "E:/Claude/CursedTides"` reaches
+        # the OS as `\E:/Claude/CursedTides"` (opening quote turned into a backslash,
+        # closing quote kept) and fails with os error 123. Agents naturally quote
+        # paths - and quoting is mandatory for paths containing spaces - so this
+        # corrupted a large fraction of all shell commands and made models retry
+        # endlessly until they burned their whole turn budget. Python's
+        # subprocess(shell=True) below hands the string to the real shell and quotes
+        # work correctly. Process spawn dominates the runtime here, so the native
+        # path bought no measurable speed anyway. Re-enable only with a quoting test.
         try:
             result = subprocess.run(
                 command,
