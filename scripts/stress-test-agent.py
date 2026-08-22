@@ -23,13 +23,13 @@ def safe(s) -> str:
     return str(s).encode("ascii", "replace").decode("ascii")
 
 
-def ask(prompt: str, timeout: int = 900):
+def ask(prompt, timeout: int = 900):
+    """prompt may be a string, or a list of {role, content} for multi-turn tests."""
+    messages = (
+        prompt if isinstance(prompt, list) else [{"role": "user", "content": prompt}]
+    )
     body = json.dumps(
-        {
-            "model": "qwen3.6-27b-local",
-            "stream": True,
-            "messages": [{"role": "user", "content": prompt}],
-        }
+        {"model": "qwen3.6-27b-local", "stream": True, "messages": messages}
     ).encode()
     req = urllib.request.Request(
         ENDPOINT, data=body, headers={"Content-Type": "application/json"}
@@ -201,6 +201,87 @@ task(
     f"Then RUN it and tell me the 15th line of its output.",
     chk_file(gamep, "fizzbuzz"),
     timeout=1200,
+)
+
+
+# ---------------------------------------------------------------- extended suite
+# Added 2026-08-22 to close the gaps the first pass did NOT cover: multi-turn
+# context, recovery from a genuinely failing tool, honest failure reporting,
+# a long-horizon multi-file build, and real browser use.
+
+# 11. multi-turn conversational context (earlier turns must actually be used)
+task(
+    "multiturn-context",
+    [
+        {"role": "user", "content": "My ship is called the Verdant Gull and its hull is 320."},
+        {"role": "assistant", "content": "Noted - the Verdant Gull, hull 320."},
+        {"role": "user", "content": "It just took 85 damage. What is the hull now, and what is the ship called?"},
+    ],
+    chk_answer("235", "verdant gull"),
+)
+
+# 12. recovery: the obvious first action FAILS, agent must adapt
+missing_dir = os.path.join(SANDBOX, "not_created_yet")
+task(
+    "error-recovery",
+    f"Read the file {os.path.join(missing_dir,'config.txt')}. If it does not exist, "
+    f"create it containing the single word RECOVERED, then read it back and tell me "
+    f"its contents.",
+    chk_file(os.path.join(missing_dir, "config.txt"), "RECOVERED"),
+)
+
+# 13. honest failure: the file genuinely does not exist and MUST NOT be invented
+task(
+    "honest-failure",
+    f"Read the file {os.path.join(SANDBOX,'definitely_absent_9times.txt')} and tell me "
+    f"its contents. Do not create it. If you cannot read it, say plainly that it does "
+    f"not exist.",
+    lambda res: (
+        ("not exist" in res["answer"].lower()
+         or "no such file" in res["answer"].lower()
+         or "could not" in res["answer"].lower()
+         or "doesn't exist" in res["answer"].lower())
+        and "lorem" not in res["answer"].lower(),
+        "must report absence without fabricating contents",
+    ),
+)
+
+# 14. long-horizon: multi-file package + its own test run
+pkg = os.path.join(SANDBOX, "mathpkg")
+task(
+    "long-horizon-build",
+    f"In {pkg} create TWO files: stats.py defining mean(nums) and median(nums), and "
+    f"test_stats.py containing pytest tests for both. Then RUN the tests and tell me "
+    f"how many passed.",
+    lambda res: (
+        os.path.exists(os.path.join(pkg, "stats.py"))
+        and os.path.exists(os.path.join(pkg, "test_stats.py"))
+        and "median" in open(os.path.join(pkg, "stats.py"), encoding="utf-8", errors="replace").read().lower(),
+        "needs stats.py (with median) + test_stats.py",
+    ),
+    timeout=1800,
+)
+
+# 15. real browser use (public, read-only). Network-dependent: reported, not fatal.
+task(
+    "browser-real-site",
+    "Using the browser tools, open https://example.com and tell me the exact text of "
+    "the page's main heading.",
+    chk_answer("example domain"),
+    timeout=600,
+)
+
+# 16. KNOWN LIMITATION probe: browser cannot reach a locally served page.
+# SSRF protection blocks all private IPs, so Jarvis cannot view web apps it builds
+# and serves itself. Documented deliberately rather than weakening the guard.
+task(
+    "browser-localhost-known-gap",
+    "Using the browser tools, open http://127.0.0.1:8477/ and tell me the heading text.",
+    lambda res: (
+        "stress test form" in res["answer"].lower(),
+        "KNOWN GAP: SSRF guard blocks loopback, so local previews are unviewable",
+    ),
+    timeout=600,
 )
 
 
