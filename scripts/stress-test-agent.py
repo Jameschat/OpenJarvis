@@ -11,10 +11,16 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import time
 import urllib.request
 
 ENDPOINT = "http://127.0.0.1:7710/v1/chat/completions"
+WEBDIR = r"E:\Claude\stress-web"
+WEBPORT = 8477
+# Secret only obtainable by actually typing into the page and clicking submit -
+# it appears nowhere in the prompt, so it cannot be answered from model memory.
+WEB_SECRET = "ACCESS-GRANTED-ZEPHYR"
 SANDBOX = r"E:\Claude\stress-sandbox"
 CODEX = r"C:\Users\User\Documents\Codex\2026-05-03\https-store-steampowered-com-app-3041230\CursedTides"
 
@@ -262,32 +268,58 @@ task(
     timeout=1800,
 )
 
-# 15. real browser use (public, read-only). Network-dependent: reported, not fatal.
+# 15. browser must actually LOAD a local page (heading is not guessable)
 task(
-    "browser-real-site",
-    "Using the browser tools, open https://example.com and tell me the exact text of "
-    "the page's main heading.",
-    chk_answer("example domain"),
+    "browser-loopback-view",
+    f"Using the browser tools, open http://127.0.0.1:{WEBPORT}/ and tell me the exact "
+    f"text of the page's h1 heading.",
+    chk_answer("stress test form"),
     timeout=600,
 )
 
-# 16. KNOWN LIMITATION probe: browser cannot reach a locally served page.
-# SSRF protection blocks all private IPs, so Jarvis cannot view web apps it builds
-# and serves itself. Documented deliberately rather than weakening the guard.
+# 16. browser must TYPE and CLICK - the answer only exists after real interaction
 task(
-    "browser-localhost-known-gap",
-    "Using the browser tools, open http://127.0.0.1:8477/ and tell me the heading text.",
-    lambda res: (
-        "stress test form" in res["answer"].lower(),
-        "KNOWN GAP: SSRF guard blocks loopback, so local previews are unviewable",
-    ),
-    timeout=600,
+    "browser-interact",
+    f"Using the browser tools, open http://127.0.0.1:{WEBPORT}/ , type OTTER42 into the "
+    f"input with id 'codebox', click the button with id 'go', then read the text of the "
+    f"element with id 'result' and tell me exactly what it says.",
+    chk_answer(WEB_SECRET),
+    timeout=900,
 )
+
+
+def _serve_page():
+    """Serve the interactive test page on loopback for the browser tasks."""
+    os.makedirs(WEBDIR, exist_ok=True)
+    with open(os.path.join(WEBDIR, "index.html"), "w", encoding="utf-8") as f:
+        f.write(
+            "<!doctype html><html><head><title>Stress Form</title></head><body>"
+            "<h1 id='hdr'>Stress Test Form</h1>"
+            "<input id='codebox' type='text' placeholder='enter code' />"
+            "<button id='go' onclick='run()'>Submit</button>"
+            "<div id='result'>awaiting input</div>"
+            "<script>function run(){var v=document.getElementById('codebox').value.trim();"
+            "document.getElementById('result').textContent="
+            "(v==='OTTER42')?'" + WEB_SECRET + "':('REJECTED:'+v);}</script>"
+            "</body></html>"
+        )
+    try:
+        urllib.request.urlopen(f"http://127.0.0.1:{WEBPORT}/", timeout=2)
+        return None  # already serving
+    except Exception:
+        pass
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "http.server", str(WEBPORT), "--directory", WEBDIR],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+    time.sleep(2)
+    return proc
 
 
 def main():
     shutil.rmtree(SANDBOX, ignore_errors=True)
     os.makedirs(SANDBOX, exist_ok=True)
+    page_proc = _serve_page()
     results = []
     for i, t in enumerate(TASKS, 1):
         if t["setup"]:
@@ -330,6 +362,8 @@ def main():
         )
     print(f"\nSCORE: {p}/{len(results)} passed")
     json.dump(results, open(os.path.join(SANDBOX, "results.json"), "w"), indent=2)
+    if page_proc is not None:
+        page_proc.terminate()
 
 
 if __name__ == "__main__":

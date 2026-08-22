@@ -850,6 +850,13 @@ class BrowserConfig:
     timeout_ms: int = 30000
     viewport_width: int = 1280
     viewport_height: int = 720
+    # Allow the BROWSER tool (only) to open strictly-loopback URLs. SSRF
+    # protection otherwise blocks every private IP, which means the agent can
+    # build and serve a web app but never look at it. Off by default: loopback
+    # on this host also serves the Jarvis backend, LiteLLM and the model lane,
+    # so this is opt-in. Never widens beyond loopback, and http_request stays
+    # fully guarded (that is the classic SSRF vector).
+    allow_loopback: bool = False
 
 
 @dataclass(slots=True)

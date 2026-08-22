@@ -10,6 +10,46 @@ from openjarvis.core.types import ToolResult
 from openjarvis.tools._stubs import BaseTool, ToolSpec
 
 
+def _loopback_navigation_allowed(url: str) -> bool:
+    """True only for a strictly-loopback URL when tools.browser.allow_loopback is on.
+
+    Rationale: SSRF protection blocks every private IP, so the agent could build
+    and serve a web app but never open it - the build/preview/verify loop was
+    broken for web work. This carve-out is deliberately the narrowest thing that
+    fixes that:
+
+      * opt-in only (config flag, default False);
+      * applies to the BROWSER tool alone - http_request keeps the full guard,
+        since fetching an attacker-supplied URL is the classic SSRF vector;
+      * loopback ONLY. LAN ranges (10/8, 172.16/12, 192.168/16), link-local and
+        the cloud-metadata endpoints stay blocked;
+      * IP literals plus the exact host "localhost" only. A hostname that merely
+        *resolves* to 127.0.0.1 is still refused, so DNS rebinding cannot use
+        this path to reach local services.
+    """
+    try:
+        import ipaddress
+        from urllib.parse import urlparse
+
+        from openjarvis.core.config import load_config
+
+        if not getattr(load_config().tools.browser, "allow_loopback", False):
+            return False
+
+        host = (urlparse(url).hostname or "").strip().lower()
+        if not host:
+            return False
+        if host == "localhost":
+            return True
+
+        addr = ipaddress.ip_address(host)  # ValueError => not a literal => refuse
+        if isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped is not None:
+            addr = addr.ipv4_mapped
+        return addr.is_loopback
+    except Exception:
+        return False  # fail closed
+
+
 class _BrowserSession:
     """Manages a shared Playwright browser session (lazy init)."""
 
@@ -135,7 +175,7 @@ class BrowserNavigateTool(BaseTool):
             from openjarvis.security.ssrf import check_ssrf
 
             ssrf_error = check_ssrf(url)
-            if ssrf_error:
+            if ssrf_error and not _loopback_navigation_allowed(url):
                 return ToolResult(
                     tool_name="browser_navigate",
                     content=f"SSRF blocked: {ssrf_error}",
